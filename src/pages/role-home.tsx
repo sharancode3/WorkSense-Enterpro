@@ -69,23 +69,37 @@ const MODULES = [
   { icon: ScrollText, title: "Audit Trail", desc: "Every decision, every transition." },
 ];
 
-function ModuleStubs() {
+function ModuleStubs({ role }: { role: string }) {
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-      {MODULES.map(({ icon: Icon, title, desc }) => (
-        <div key={title} className="group flex cursor-pointer flex-col gap-3 rounded-lg bg-muted p-5 transition-all duration-200 hover:scale-[1.02]">
-          <span className="flex h-12 w-12 items-center justify-center rounded-md bg-white text-primary transition-transform duration-200 group-hover:scale-110">
-            <Icon className="h-6 w-6" strokeWidth={2.5} />
-          </span>
-          <div>
-            <h3 className="font-bold text-foreground">{title}</h3>
-            <p className="mt-1 text-sm text-muted-foreground">{desc}</p>
+      {MODULES.map(({ icon: Icon, title, desc }) => {
+        const open = role === "hr_executive" && title === "Skill Intelligence Graph";
+        const card = (
+          <div className="group flex h-full flex-col gap-3 rounded-lg bg-muted p-5 transition-all duration-200 hover:scale-[1.02]">
+            <span className="flex h-12 w-12 items-center justify-center rounded-md bg-white text-primary transition-transform duration-200 group-hover:scale-110">
+              <Icon className="h-6 w-6" strokeWidth={2.5} />
+            </span>
+            <div>
+              <h3 className="font-bold text-foreground">{title}</h3>
+              <p className="mt-1 text-sm text-muted-foreground">{desc}</p>
+            </div>
+            <span
+              className={`mt-auto inline-flex w-fit items-center gap-1 rounded-md px-2.5 py-1 text-xs font-bold uppercase tracking-wider ${
+                open ? "bg-primary text-white" : "bg-foreground text-white"
+              }`}
+            >
+              {open ? "Open explorer" : "Phase 1+"}
+            </span>
           </div>
-          <span className="mt-auto inline-flex w-fit items-center gap-1 rounded-md bg-foreground px-2.5 py-1 text-xs font-bold uppercase tracking-wider text-white">
-            Phase 1+
-          </span>
-        </div>
-      ))}
+        );
+        return open ? (
+          <Link key={title} to="/graph" className="block">
+            {card}
+          </Link>
+        ) : (
+          <div key={title}>{card}</div>
+        );
+      })}
     </div>
   );
 }
@@ -383,7 +397,7 @@ export default function RoleHome() {
             All modules share the same six entities — no disconnected tools.
           </p>
           <div className="mt-6">
-            <ModuleStubs />
+            <ModuleStubs role={role} />
           </div>
         </div>
       </div>

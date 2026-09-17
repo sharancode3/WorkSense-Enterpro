@@ -1,0 +1,2 @@
+alter table public.digital_twins add column seniority_level integer not null default 3;
+alter table public.job_requisitions add column seniority_level integer not null default 3;

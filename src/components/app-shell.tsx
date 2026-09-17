@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
-import { LogOut, RotateCcw, Settings, ShieldCheck } from "lucide-react";
+import { GitBranch, LogOut, RotateCcw, Settings, ShieldCheck } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 import { can, ROLE_BADGE_CLASS, ROLE_LABEL } from "@/lib/rbac";
 import { resetDemo } from "@/lib/api";
@@ -44,6 +44,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </Link>
 
           <div className="flex items-center gap-2">
+            {role && can(role, "view_all_workforce") && (
+              <Link
+                to="/graph"
+                className="hidden items-center gap-1.5 rounded-md px-3 py-2 text-sm font-semibold text-foreground transition-colors hover:bg-muted md:flex"
+              >
+                <GitBranch className="h-4 w-4 text-primary" />
+                Skill Graph
+              </Link>
+            )}
             {role && (
               <span
                 className={`hidden rounded-md px-2.5 py-1 text-xs font-semibold uppercase tracking-wider sm:inline-block ${ROLE_BADGE_CLASS[role]}`}

@@ -3376,6 +3376,7 @@ export type Database = {
           org_id: string | null
           performance_history: Json
           role: string
+          seniority_level: number
           signals: Json
           status: string
           tenure_months: number
@@ -3397,6 +3398,7 @@ export type Database = {
           org_id?: string | null
           performance_history?: Json
           role: string
+          seniority_level?: number
           signals?: Json
           status?: string
           tenure_months?: number
@@ -3418,6 +3420,7 @@ export type Database = {
           org_id?: string | null
           performance_history?: Json
           role?: string
+          seniority_level?: number
           signals?: Json
           status?: string
           tenure_months?: number
@@ -3449,6 +3452,7 @@ export type Database = {
           id: string
           org_id: string
           required_skills: Json
+          seniority_level: number
           title: string
           updated_at: string
         }
@@ -3461,6 +3465,7 @@ export type Database = {
           id?: string
           org_id: string
           required_skills?: Json
+          seniority_level?: number
           title: string
           updated_at?: string
         }
@@ -3473,6 +3478,7 @@ export type Database = {
           id?: string
           org_id?: string
           required_skills?: Json
+          seniority_level?: number
           title?: string
           updated_at?: string
         }
@@ -3666,6 +3672,7 @@ export type Database = {
           org_id: string | null
           performance_history: Json
           role: string
+          seniority_level: number
           signals: Json
           status: string
           tenure_months: number

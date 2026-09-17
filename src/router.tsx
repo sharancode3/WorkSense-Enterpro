@@ -2,6 +2,7 @@ import Landing from "./pages/landing";
 import Login from "./pages/login";
 import CandidateStatus from "./pages/candidate-status";
 import RoleHome from "./pages/role-home";
+import SkillGraph from "./pages/skill-graph";
 import NotFound from "./pages/NotFound";
 import { ProtectedRoute } from "./components/protected-route";
 
@@ -27,6 +28,15 @@ export const routers = [
     element: (
       <ProtectedRoute>
         <RoleHome />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: "/graph",
+    name: "skill-graph",
+    element: (
+      <ProtectedRoute>
+        <SkillGraph />
       </ProtectedRoute>
     ),
   },
