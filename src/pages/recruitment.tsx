@@ -16,6 +16,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/auth-context";
 import { AppShell } from "@/components/app-shell";
 import { FitCard } from "@/components/fit-card";
+import { ResumeReviewFlow } from "@/components/resume-review-flow";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -134,6 +135,7 @@ export default function Recruitment() {
 
   // Resume modal
   const [resumeTwin, setResumeTwin] = useState<CandidateRow | null>(null);
+  const [resumeMode, setResumeMode] = useState<"file" | "text">("file");
   const [resumeText, setResumeText] = useState("");
   const [extractBusy, setExtractBusy] = useState(false);
   const [extractResult, setExtractResult] = useState<{ skills: string[]; years: number; fit: number | null } | null>(null);
@@ -569,31 +571,47 @@ export default function Recruitment() {
         </DialogContent>
       </Dialog>
 
-      {/* Resume modal */}
-      <Dialog open={!!resumeTwin} onOpenChange={(o) => !o && setResumeTwin(null)}>
-        <DialogContent className="max-w-xl">
+      {/* Resume modal (file-first ingestion + evidence review; textarea fallback) */}
+      <Dialog open={!!resumeTwin} onOpenChange={(o) => !o && (setResumeTwin(null), setResumeMode("file"), setResumeText(""), setExtractResult(null))}>
+        <DialogContent className={resumeMode === "file" ? "max-w-5xl" : "max-w-xl"}>
           <DialogHeader>
             <DialogTitle>Resume intake · {resumeTwin?.name}</DialogTitle>
           </DialogHeader>
-          {resumeTwin && (
+          {resumeTwin && resumeMode === "file" && (
+            <ResumeReviewFlow
+              twin={{ id: resumeTwin.id, name: resumeTwin.name }}
+              reqId={req?.id}
+              onManualImport={() => setResumeMode("text")}
+              onSaved={(res) => {
+                setExtractResult({ skills: [], years: 0, fit: res.fit?.score ?? null });
+                invalidate();
+              }}
+            />
+          )}
+          {resumeTwin && resumeMode === "text" && (
             <div className="flex flex-col gap-3">
+              <button type="button" onClick={() => setResumeMode("file")} className="text-left text-xs font-semibold text-primary">
+                ← Back to file upload (PDF/DOCX preferred)
+              </button>
               <Textarea
                 rows={6}
                 value={resumeText}
                 onChange={(e) => setResumeText(e.target.value)}
-                placeholder="Paste the resume text. It is treated as untrusted input — instruction-like phrases are neutralized before any model call."
+                placeholder="Fallback: paste the resume text. It is treated as untrusted input — instruction-like phrases are neutralized before any model call."
               />
               <Button onClick={() => void runExtract()} disabled={extractBusy}>
                 {extractBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
-                Extract skills
+                Extract skills (text fallback)
               </Button>
               {extractResult && (
                 <div className="rounded-lg bg-muted p-4">
                   <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Extracted</p>
-                  <p className="mt-1 text-sm font-semibold text-foreground">{extractResult.skills.join(", ")}</p>
+                  <p className="mt-1 text-sm font-semibold text-foreground">
+                    {extractResult.skills.length > 0 ? extractResult.skills.join(", ") : "Review saved as extracted claims — open the Skill Graph fit card for the refreshed match."}
+                  </p>
                   <p className="mt-2 text-xs text-muted-foreground">
-                    {extractResult.years} years experience · deterministic match score:{" "}
-                    {extractResult.fit !== null ? `${Math.round(extractResult.fit * 100)}/100` : "—"}
+                    {extractResult.years > 0 && `${extractResult.years} years experience · `}
+                    deterministic match score: {extractResult.fit !== null ? `${Math.round(extractResult.fit * 100)}/100` : "—"}
                   </p>
                 </div>
               )}

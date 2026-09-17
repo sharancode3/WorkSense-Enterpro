@@ -14,7 +14,8 @@ Bounded repair loop: max 3 attempts per external blocker, then stop + report evi
 | AUDIT-FIX | Recruiter fit 403; RLS org-scoping; RPC lockdown; onboarding completion gate; seed consistency; 403 UX; escalation state | ✅ Verified live | curl checks + build |
 | PHASE-1 | Foundation: build/deploy provenance, authorization, session safety, error contract | ✅ Gate passed (below) | See §9 |
 | PHASE-2 | Qwen gateway: config, capability handling, validated generation, durable jobs, UI, observability | ✅ **Gate passed** (constrained flow documented) | See §10 |
-| PHASE-3 | Evidence model + demo fixtures (assertion wiring, lineage UI, fixture generator) | 🚧 In progress (foundation + assertion slice + lineage + fixtures **verified**; compact mode + authenticated visual click-through pending) | See §11 |
+| PHASE-3 | Evidence model + demo fixtures (assertion wiring, lineage UI, fixture generator) | ✅ **Complete** (incl. compact mode, action tasks, policy-qa → policy_documents) | See §11 |
+| PHASE-4 | File-based resume ingestion with traceable extraction | 🚧 In progress (full vertical + gate **verified**; OCR intentionally unavailable; authed browser click-through of the review UI pending) | See §12 |
 
 ## 9. Phase 1 — Foundation (completion gate)
 
@@ -92,6 +93,33 @@ Bounded repair loop: max 3 attempts per external blocker, then stop + report evi
 **Tests**: 83 (73 baseline + 9 evidence + 1 fixture generator). `pnpm check` green (lint, tsc app, tsc functions, tests) + build green. Bundler hardened: strips **multi-line** `../_shared` imports (a real deploy-time failure was found + fixed).
 
 **Pending for Phase-3 completion**: compact-mode generator option; authenticated browser click-through of the lineage panel; `action_tasks` seeding (dispatch workflow); policy-qa reading `policy_documents` (still uses `organizations.policies` jsonb).
+
+**Phase-3 leftovers — completed (this slice)**
+- `reset-demo` **compact mode** (`{compact:true}` → the small golden seed: 1 org, 9 personas, 18 skills, 2 reqs, 1 journey, 3 recs) — verified live.
+- **Action tasks**: seeded a dispatched upskilling recommendation + 2 `action_tasks` (open / in_progress) — verified in DB.
+- **policy-qa reads `policy_documents`** (latest version per doc_code, org-scoped) with `organizations.policies` jsonb fallback — deployed; verified grounded answer citing `POL-RMT s1` from the new table.
+
+## 12. Phase 4 — File-based resume ingestion with traceable extraction (status: full vertical verified; OCR intentionally unavailable; authed click-through of review UI pending)
+
+**Ingestion (verified live)**
+- `resume-import` backend function: base64 intake (4 MiB cap), safe filenames (paths/control chars stripped), magic-byte content sniffing (extension never trusted — a renamed text file is rejected with a clear error), PDF via `unpdf` (page-text map + page count) and DOCX via `mammoth` (no page geometry), encrypted/malformed → useful errors (`DOCUMENT_ENCRYPTED` / `DOCUMENT_PARSE_FAILED`), private bucket `resumes` (created idempotently by the function; never public), expiring signed download via `resume-download` (org+role gated).
+- **Scanned/low-text detection**: <160 chars → `low_text:true`, `ocr_available:false` with an honest message — OCR is not implemented in this deployment; manual text import is offered instead.
+- **Original file and extracted text stored separately** (`storage_path` + `extracted_text`/`text_pages`); sanitization for the LLM never touches the stored evidence (verified: adversarial directive text survives in `extracted_text`).
+
+**Extraction schema** — contact, roles+date ranges, education, certifications, projects, skill claims (years + tier + quoted evidence), ambiguities, conflicts. **Alias normalization** against `skill_graph.aliases` (Postgres → PostgreSQL; no duplicate concepts). Proficiency is kept as a **claim** (tier from the model, low rigor) — never auto-verified. **Overlapping employment dates** merged (9.5y deduped for the strong-go fixture), unknown dates stay unknown.
+
+**Evidence validation** — every quote is checked against the stored source text at import (violations → `association:unsupported` + conflict warning) **and** re-checked at save (`resume-review` rejects with 422 listing the fabricated quotes — verified live).
+
+**Review UI** — `ResumeReviewFlow` in the Recruitment resume modal (file-first, textarea fallback): dropzone + fictional demo-resume picker, two-pane review (source text with clickable claim-quote highlights + structured editable extraction), ambiguity/conflict warnings with dismiss, duplicate-upload handling, explicit **Save** that records claims as `extracted` (never verified), version history (v1 draft → v2 reviewed), and a refreshed deterministic fit after save.
+
+**Demo resumes** — 9 fictional assets in `public/resume-fixtures/` (example.com contacts only): strong Go/PostgreSQL/Docker, Python→Go adjacent, keyword-stuffed weak, junior small-projects, SQL/BI analyst (PDF + DOCX), career-switcher, scanned/low-text, adversarial (instruction-injection) — generated by `scripts/generate-resume-fixtures.mjs` (hand-built multi-page PDFs + STORED-zip DOCX).
+
+**Completion gate — verified live**
+- Upload → extraction → evidence review → save → refreshed fit (strong-go → fit 0.748). Duplicate upload → dedup (same doc, no new evidence). Invalid file → magic-sniff rejection. Empty/scanned → low-text path. Conflicting evidence → overlap warnings surfaced. Fabricated quote → 422. Model failure → `MODEL_UNAVAILABLE` + failed doc, nothing trusted persisted. Malicious instructions → neutralized (no inflated rank; claims at FOUNDATIONAL). Isolation: org-2 admin sees 0 org-1 resume docs. Claims remain claims (verified_skills unchanged).
+
+**Tests** — 93 (10 new: sniffing, safe filenames, alias normalization, quote matching, overlap/unknown-date totals, rich-schema validator). `pnpm check` + build green. Bundler: esm.sh parser libs verified at deploy.
+
+**Limitations** — OCR intentionally unavailable (honest `ocr_available:false` + manual fallback); 4 MiB cap with base64 transport; extraction latency on the local 4B model can exceed 40s (gateway timeout raised to 100s; one timed-out attempt observed and correctly handled); browser click-through of the review UI pending a logged-in session (API-verified end-to-end).
 
 ## 6. Unresolved defects / open requirements (queued for P3+)
 

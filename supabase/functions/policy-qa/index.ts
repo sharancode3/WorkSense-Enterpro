@@ -34,7 +34,7 @@ export const QWEN_MODEL = getEnv("QWEN_MODEL", "qwen3:4b-instruct-2507-q4_K_M");
 export const QWEN_API_KEY = getEnv("QWEN_API_KEY", "local");
 /** Optional real gateway auth (e.g. "Basic dXNlcjpwYXNz" or "Bearer x") for a protected tunnel. */
 export const QWEN_GATEWAY_AUTH = getEnv("QWEN_GATEWAY_AUTH", "");
-export const QWEN_TIMEOUT_MS = getEnvInt("QWEN_TIMEOUT_MS", 40000);
+export const QWEN_TIMEOUT_MS = getEnvInt("QWEN_TIMEOUT_MS", 100000);
 export const QWEN_MAX_INPUT_CHARS = getEnvInt("QWEN_MAX_INPUT_CHARS", 8000);
 export const QWEN_MAX_TOKENS = getEnvInt("QWEN_MAX_TOKENS", 1600);
 
@@ -509,6 +509,89 @@ export function validateRecommendationExplanation(d: unknown): ValidationResult 
   return fail(errors);
 }
 
+// 7) Rich Resume Review (Phase 4) — the full traceable extraction schema.
+export function validateResumeReview(d: unknown): ValidationResult {
+  const errors: string[] = [];
+  if (!isObj(d)) return { ok: false, errors: ["response is not an object"] };
+  if (!isStr(d.full_name) || d.full_name.trim().length === 0) errors.push("full_name must be a non-empty string");
+
+  const contact = d.contact;
+  if (contact !== undefined && contact !== null && !isObj(contact)) errors.push("contact must be an object");
+  else if (isObj(contact)) {
+    for (const k of ["email", "phone", "location", "linkedin"]) {
+      if (contact[k] !== undefined && contact[k] !== null && !isStr(contact[k])) errors.push(`contact.${k} must be a string`);
+      if (isStr(contact[k]) && (contact[k] as string).length > 200) errors.push(`contact.${k} too long`);
+    }
+  }
+
+  const checkRoles = (arr: unknown, label: string) => {
+    if (!isArr(arr)) {
+      errors.push(`${label} must be an array`);
+      return;
+    }
+    for (const raw of arr) {
+      const r = isObj(raw) ? raw : null;
+      if (!r) {
+        errors.push(`${label}: entry must be an object`);
+        return;
+      }
+      if (!isStr(r.title) || r.title.trim().length === 0) errors.push(`${label}: title missing`);
+      if (!isStr(r.company)) errors.push(`${label}: company must be a string`);
+      if (r.start !== undefined && !isStr(r.start)) errors.push(`${label}: start must be a string`);
+      if (r.end !== undefined && !isStr(r.end)) errors.push(`${label}: end must be a string`);
+      if (r.years_claimed !== undefined && (!isNum(r.years_claimed) || r.years_claimed < 0 || r.years_claimed > 60)) errors.push(`${label}: years_claimed must be 0..60`);
+      if (!isStr(r.quote) || r.quote.trim().length === 0 || r.quote.length > 300) errors.push(`${label}: quote must be a short string`);
+    }
+  };
+  checkRoles(d.roles, "roles");
+
+  const checkSimple = (arr: unknown, label: string, quoteRequired: boolean) => {
+    if (!isArr(arr)) {
+      errors.push(`${label} must be an array`);
+      return;
+    }
+    for (const raw of arr) {
+      const r = isObj(raw) ? raw : null;
+      if (!r) {
+        errors.push(`${label}: entry must be an object`);
+        return;
+      }
+      const names = label === "education" ? ["institution", "degree", "year"] : label === "certifications" ? ["name", "issuer", "year"] : ["name", "role"];
+      for (const k of names) if (!isStr(r[k])) errors.push(`${label}: ${k} must be a string`);
+      if (label === "projects") {
+        if (!isArr(r.tech_stack)) errors.push(`${label}: tech_stack must be an array`);
+        if (r.impact_metric !== undefined && !isStr(r.impact_metric)) errors.push(`${label}: impact_metric must be a string`);
+      }
+      if (quoteRequired && (!isStr(r.quote) || r.quote.trim().length === 0 || r.quote.length > 300)) errors.push(`${label}: quote must be a short string`);
+    }
+  };
+  checkSimple(d.education, "education", true);
+  checkSimple(d.certifications, "certifications", true);
+  checkSimple(d.projects, "projects", true);
+
+  const claims = d.skill_claims;
+  if (!isArr(claims)) errors.push("skill_claims must be an array");
+  else {
+    for (const raw of claims) {
+      const c = isObj(raw) ? raw : null;
+      if (!c) {
+        errors.push("skill_claims: entry must be an object");
+        return;
+      }
+      if (!isStr(c.skill) || c.skill.trim().length === 0 || c.skill.length > 80) errors.push("skill_claims: skill missing/too long");
+      if (c.years !== undefined && (!isNum(c.years) || c.years < 0 || c.years > 50)) errors.push("skill_claims: years out of bounds");
+      if (!isStr(c.proficiency_tier) || !TIERS.includes(c.proficiency_tier)) errors.push(`skill_claims: proficiency_tier must be one of ${TIERS.join(",")}`);
+      if (!isStr(c.quote) || c.quote.trim().length === 0 || c.quote.length > 300) errors.push("skill_claims: quote must be a short string");
+      if (!isStr(c.association) || !["explicit", "inferred", "unsupported"].includes(c.association)) {
+        errors.push("skill_claims: association must be explicit|inferred|unsupported");
+      }
+    }
+  }
+  if (!isArr(d.ambiguities)) errors.push("ambiguities must be an array");
+  if (!isArr(d.conflicts)) errors.push("conflicts must be an array");
+  return fail(errors);
+}
+
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
 
@@ -559,12 +642,34 @@ Deno.serve(async (req) => {
   // Untrusted input handling: neutralize instruction-like phrases.
   const question = sanitizeUntrusted(raw);
 
-  const { data: org } = await supabase
-    .from("organizations")
-    .select("policies")
-    .eq("id", caller.org_id)
-    .maybeSingle();
-  const policies = (org?.policies ?? []) as PolicyDoc[];
+  // Policy source: versioned policy_documents (Phase 3) with jsonb fallback.
+  const { data: docRows } = await supabase
+    .from("policy_documents")
+    .select("doc_code, version, title, category, sections, effective_from")
+    .eq("org_id", caller.org_id);
+  let policies: PolicyDoc[] = [];
+  if ((docRows ?? []).length > 0) {
+    const byCode = new Map<string, PolicyDoc & { version?: number }>();
+    for (const row of docRows as { doc_code: string; version: number; title: string; category: string | null; sections: { code: string; heading: string; text: string }[]; effective_from: string }[]) {
+      const cur = byCode.get(row.doc_code);
+      if (!cur || row.version > (cur.version ?? 1)) {
+        byCode.set(row.doc_code, {
+          id: `pol-${row.doc_code}`,
+          doc_code: row.doc_code,
+          version: row.version,
+          title: row.title,
+          category: row.category ?? "General",
+          sections: row.sections,
+          effective_date: row.effective_from,
+        });
+      }
+    }
+    policies = [...byCode.values()];
+  }
+  if (policies.length === 0) {
+    const { data: org } = await supabase.from("organizations").select("policies").eq("id", caller.org_id).maybeSingle();
+    policies = (org?.policies ?? []) as PolicyDoc[];
+  }
 
   // 1) DETERMINISTIC retrieval — zero LLM credits.
   const retrieval = retrieveChunks(policies, question, 3);

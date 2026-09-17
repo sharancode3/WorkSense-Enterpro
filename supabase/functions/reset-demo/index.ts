@@ -1595,6 +1595,32 @@ async function tearDownDemo(supabase, authIds: Record<string, string>) {
   await supabase.from("organizations").delete().in("id", orgs);
 }
 
+async function reseedLegacy(supabase, authIds: Record<string, string>) {
+  // Compact mode: the small golden seed (single org, 9 personas) — a quick demo.
+  await supabase.from("recommendations").delete().eq("org_id", DEMO_ORG_ID);
+  await supabase.from("onboarding_journeys").delete().eq("org_id", DEMO_ORG_ID);
+  await supabase.from("job_requisitions").delete().eq("org_id", DEMO_ORG_ID);
+  await supabase.from("skill_graph").delete().eq("org_id", DEMO_ORG_ID);
+  await supabase.from("model_jobs").delete().eq("org_id", DEMO_ORG_ID);
+  const demoIds = Object.values(authIds);
+  if (demoIds.length > 0) await supabase.from("digital_twins").delete().in("auth_user_id", demoIds);
+  await supabase.from("digital_twins").delete().eq("org_id", DEMO_ORG_ID);
+  await supabase.from("organizations").delete().eq("id", DEMO_ORG_ID);
+
+  const { error: orgErr } = await supabase.from("organizations").insert({ id: DEMO_ORG_ID, name: "WorkSense Demo Org", policies: POLICIES });
+  if (orgErr) throw new Error(`org insert: ${orgErr.message}`);
+  const { error: twinsErr } = await supabase.from("digital_twins").insert(buildTwins(authIds));
+  if (twinsErr) throw new Error(`twins insert: ${twinsErr.message}`);
+  const { error: skillsErr } = await supabase.from("skill_graph").insert(SKILLS.map((s) => ({ ...s, org_id: DEMO_ORG_ID })));
+  if (skillsErr) throw new Error(`skills insert: ${skillsErr.message}`);
+  const { error: reqsErr } = await supabase.from("job_requisitions").insert(REQUISITIONS.map((r) => ({ ...r, org_id: DEMO_ORG_ID })));
+  if (reqsErr) throw new Error(`reqs insert: ${reqsErr.message}`);
+  const { error: journeyErr } = await supabase.from("onboarding_journeys").insert(SEED_JOURNEY);
+  if (journeyErr) throw new Error(`journey insert: ${journeyErr.message}`);
+  const { error: recsErr } = await supabase.from("recommendations").insert(RECOMMENDATIONS.map((r) => ({ ...r, org_id: DEMO_ORG_ID })));
+  if (recsErr) throw new Error(`recs insert: ${recsErr.message}`);
+}
+
 async function reseed(supabase, authIds: Record<string, string>) {
   await tearDownDemo(supabase, authIds);
   const fx = DEMO_FIXTURES;
@@ -1692,6 +1718,58 @@ async function reseed(supabase, authIds: Record<string, string>) {
     RECOMMENDATIONS.map((r) => ({ ...r, org_id: DEMO_ORG_ID }))
   );
   if (recsErr) throw new Error(`recs insert: ${recsErr.message}`);
+
+  // 7b) Dispatched upskilling recommendation + action tasks (dispatch workflow demo).
+  const s05 = fx.scenarios.find((s) => s.id === "s05");
+  const upskillRec = {
+    id: "44444444-4444-4444-4444-444444444404",
+    org_id: DEMO_ORG_ID,
+    twin_id: s05?.twin_id ?? null,
+    category: "upskilling",
+    urgency: "low",
+    status: "approved",
+    evidence_ledger: [
+      { source: "SKILL_GRAPH", fact: "Future fit exceeds current fit for the Data Analyst role; the dbt/statistics ladder is the shortest path." },
+      { source: "POLICY", fact: "Learning & Development policy (POL-LND) covers role-relevant courses up to 2,500/year." },
+    ],
+    proposed_action: {
+      title: "Approve the upskilling route (no external hire)",
+      description: "Route the analyst through the L&D program instead of opening a requisition.",
+      steps: [
+        { order: 1, action: "Enroll in Advanced SQL & dbt." },
+        { order: 2, action: "Pair with the Data team on the dbt migration project." },
+        { order: 3, action: "Re-run the future-fit match after the course." },
+      ],
+    },
+    required_signoff_role: "manager",
+    reviewer_rationale: { last: "Manager approved: cheaper and faster than hiring.", by: "jordan@worksense.demo", at: fx.clock },
+    audit_events: [{ actor: "system", action: "approved", note: "Seeded dispatched recommendation (fixture).", timestamp: fx.clock }],
+  };
+  const { error: upRecErr } = await supabase.from("recommendations").insert(upskillRec);
+  if (upRecErr) throw new Error(`upskill rec insert: ${upRecErr.message}`);
+  if (upskillRec.twin_id) {
+    const { error: tasksErr } = await supabase.from("action_tasks").insert([
+      {
+        org_id: DEMO_ORG_ID,
+        recommendation_id: upskillRec.id,
+        owner_twin_id: upskillRec.twin_id,
+        title: "Enroll in Advanced SQL & dbt (L&D)",
+        status: "open",
+        due_at: new Date(new Date(fx.clock).getTime() + 14 * 86400000).toISOString(),
+        outcome: {},
+      },
+      {
+        org_id: DEMO_ORG_ID,
+        recommendation_id: upskillRec.id,
+        owner_twin_id: upskillRec.twin_id,
+        title: "Pair with the Data team on the dbt migration",
+        status: "in_progress",
+        due_at: new Date(new Date(fx.clock).getTime() + 30 * 86400000).toISOString(),
+        outcome: {},
+      },
+    ]);
+    if (tasksErr) throw new Error(`action_tasks insert: ${tasksErr.message}`);
+  }
 
   // 8) Evidence items + skill assertions (normalized source of truth).
   const toEvidence = (p: { id: string; assertions?: { skill_id: string; quote: string; review_state: string }[] }, orgId: string) =>
@@ -1814,7 +1892,22 @@ Deno.serve(async (req) => {
   }
 
   try {
+    let body: { compact?: boolean } = {};
+    try {
+      body = await req.json();
+    } catch {
+      /* empty */
+    }
     const { created, idByEmail } = await ensureDemoAuthUsers(supabase);
+    if (body.compact === true) {
+      await reseedLegacy(supabase, idByEmail);
+      return jsonResponse({
+        ok: true,
+        compact: true,
+        created_users: created,
+        seeded: { organizations: 1, digital_twins: buildTwins({}).length, skill_graph: SKILLS.length, job_requisitions: REQUISITIONS.length, onboarding_journeys: 1, recommendations: RECOMMENDATIONS.length },
+      });
+    }
     await reseed(supabase, idByEmail);
     const fx = DEMO_FIXTURES;
     return jsonResponse({

@@ -4003,6 +4003,146 @@ export type Database = {
           },
         ]
       }
+      resume_documents: {
+        Row: {
+          checksum: string
+          content_type: string
+          created_at: string
+          error_code: string | null
+          error_message: string | null
+          extracted_text: string | null
+          file_name: string
+          id: string
+          low_text: boolean
+          org_id: string
+          page_count: number | null
+          size_bytes: number
+          status: string
+          storage_path: string
+          text_pages: Json
+          twin_id: string
+          updated_at: string
+        }
+        Insert: {
+          checksum: string
+          content_type: string
+          created_at?: string
+          error_code?: string | null
+          error_message?: string | null
+          extracted_text?: string | null
+          file_name: string
+          id?: string
+          low_text?: boolean
+          org_id: string
+          page_count?: number | null
+          size_bytes: number
+          status?: string
+          storage_path: string
+          text_pages?: Json
+          twin_id: string
+          updated_at?: string
+        }
+        Update: {
+          checksum?: string
+          content_type?: string
+          created_at?: string
+          error_code?: string | null
+          error_message?: string | null
+          extracted_text?: string | null
+          file_name?: string
+          id?: string
+          low_text?: boolean
+          org_id?: string
+          page_count?: number | null
+          size_bytes?: number
+          status?: string
+          storage_path?: string
+          text_pages?: Json
+          twin_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "resume_documents_org_id_fkey"
+            columns: ["org_id"]
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "resume_documents_twin_id_fkey"
+            columns: ["twin_id"]
+            referencedRelation: "digital_twins"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      resume_versions: {
+        Row: {
+          created_at: string
+          document_id: string
+          id: string
+          org_id: string
+          payload: Json
+          review_state: string
+          reviewed_at: string | null
+          reviewed_by: string | null
+          source_hash: string
+          twin_id: string
+          version: number
+        }
+        Insert: {
+          created_at?: string
+          document_id: string
+          id?: string
+          org_id: string
+          payload?: Json
+          review_state?: string
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          source_hash: string
+          twin_id: string
+          version?: number
+        }
+        Update: {
+          created_at?: string
+          document_id?: string
+          id?: string
+          org_id?: string
+          payload?: Json
+          review_state?: string
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          source_hash?: string
+          twin_id?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "resume_versions_document_id_fkey"
+            columns: ["document_id"]
+            referencedRelation: "resume_documents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "resume_versions_org_id_fkey"
+            columns: ["org_id"]
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "resume_versions_reviewed_by_fkey"
+            columns: ["reviewed_by"]
+            referencedRelation: "digital_twins"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "resume_versions_twin_id_fkey"
+            columns: ["twin_id"]
+            referencedRelation: "digital_twins"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       skill_assertions: {
         Row: {
           claimed_proficiency: number

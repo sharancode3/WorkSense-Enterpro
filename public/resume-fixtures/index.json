@@ -1,0 +1,56 @@
+[
+  {
+    "file": "strong-go.pdf",
+    "kind": "strong",
+    "label": "strong go",
+    "bytes": 2222
+  },
+  {
+    "file": "python-to-go.pdf",
+    "kind": "adjacent",
+    "label": "python to go",
+    "bytes": 1932
+  },
+  {
+    "file": "keyword-stuffed.pdf",
+    "kind": "weak",
+    "label": "keyword stuffed",
+    "bytes": 1695
+  },
+  {
+    "file": "junior-small-projects.pdf",
+    "kind": "junior",
+    "label": "junior small projects",
+    "bytes": 1492
+  },
+  {
+    "file": "data-analyst-sql-bi.pdf",
+    "kind": "analyst",
+    "label": "data analyst sql bi",
+    "bytes": 1567
+  },
+  {
+    "file": "career-switcher.pdf",
+    "kind": "switcher",
+    "label": "career switcher",
+    "bytes": 1625
+  },
+  {
+    "file": "scanned-lowtext.pdf",
+    "kind": "scanned",
+    "label": "scanned lowtext",
+    "bytes": 591
+  },
+  {
+    "file": "adversarial.pdf",
+    "kind": "adversarial",
+    "label": "adversarial",
+    "bytes": 1468
+  },
+  {
+    "file": "data-analyst-sql-bi.docx",
+    "kind": "analyst",
+    "label": "data analyst sql bi (docx)",
+    "bytes": 2554
+  }
+]

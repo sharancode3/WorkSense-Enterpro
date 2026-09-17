@@ -325,3 +325,115 @@ export interface HealthView {
 export const fetchModelJob = (jobId: string) => invoke<{ ok: true; job: ModelJobView }>("model-job", { job_id: jobId });
 
 export const fetchHealth = () => invoke<HealthView>("health", {});
+
+// ---- Phase 4: file-based resume ingestion & evidence review ----
+
+export interface ResumeSkillClaim {
+  skill: string;
+  years?: number;
+  proficiency_tier: string;
+  quote: string;
+  association: "explicit" | "inferred" | "unsupported";
+}
+export interface ResumeRole {
+  title: string;
+  company: string;
+  start?: string;
+  end?: string;
+  years_claimed?: number;
+  quote: string;
+}
+export interface ResumeProject {
+  name: string;
+  role: string;
+  tech_stack: string[];
+  impact_metric: string;
+  quote: string;
+}
+export interface ResumeReviewPayload {
+  full_name: string;
+  contact?: { email?: string; phone?: string; location?: string; linkedin?: string };
+  roles?: ResumeRole[];
+  education?: { institution: string; degree: string; year: string; quote: string }[];
+  certifications?: { name: string; issuer: string; year: string; quote: string }[];
+  projects?: ResumeProject[];
+  skill_claims?: ResumeSkillClaim[];
+  ambiguities?: string[];
+  conflicts?: string[];
+  computed?: {
+    total_years_deduped?: number;
+    roles_merged?: number;
+    overlap_warnings?: string[];
+    claims_unsupported?: number;
+  };
+}
+export interface ResumeImportResult {
+  ok: true;
+  duplicate?: boolean;
+  document_id: string;
+  version_id?: string;
+  version?: number;
+  status: string;
+  low_text: boolean;
+  ocr_available: boolean;
+  page_count: number | null;
+  file_name: string;
+  extracted_text: string;
+  review?: ResumeReviewPayload;
+  message?: string;
+  job_id?: string;
+  warnings?: { conflicts: string[]; overlaps: string[] };
+  versions?: { id: string; version: number; review_state: string; created_at: string }[];
+}
+export interface ResumeReviewSaveResult {
+  ok: true;
+  document_id: string;
+  version: number;
+  claims_saved: number;
+  evidence_saved: number;
+  conflicts_resolved: string[];
+  fit: FitRecordShape | null;
+}
+export interface ResumeDownloadResult {
+  ok: true;
+  url: string;
+  file_name: string;
+  content_type: string;
+}
+
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).split(",")[1] ?? "");
+    reader.onerror = () => reject(new Error("Could not read the file."));
+    reader.readAsDataURL(file);
+  });
+}
+
+export const resumeImport = (twinId: string, reqId: string | undefined, file: File) =>
+  fileToBase64(file).then((file_base64) =>
+    invoke<ResumeImportResult>("resume-import", {
+      twin_id: twinId,
+      req_id: reqId,
+      file_name: file.name,
+      file_base64,
+    })
+  );
+
+export const resumeReview = (documentId: string, twinId: string, reqId: string | undefined, review: ResumeReviewPayload) =>
+  invoke<ResumeReviewSaveResult>("resume-review", { document_id: documentId, twin_id: twinId, req_id: reqId, review });
+
+export const resumeDownload = (documentId: string) => invoke<ResumeDownloadResult>("resume-download", { document_id: documentId });
+
+export interface DemoResumeFixture {
+  file: string;
+  kind: string;
+  label: string;
+  bytes: number;
+}
+
+export async function listDemoResumes(): Promise<DemoResumeFixture[]> {
+  const res = await fetch(`${import.meta.env.BASE_URL ?? "/"}resume-fixtures/index.json`);
+  if (!res.ok) throw new Error("Demo resumes unavailable.");
+  return (await res.json()) as DemoResumeFixture[];
+}

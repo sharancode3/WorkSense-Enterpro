@@ -34,7 +34,7 @@ export const QWEN_MODEL = getEnv("QWEN_MODEL", "qwen3:4b-instruct-2507-q4_K_M");
 export const QWEN_API_KEY = getEnv("QWEN_API_KEY", "local");
 /** Optional real gateway auth (e.g. "Basic dXNlcjpwYXNz" or "Bearer x") for a protected tunnel. */
 export const QWEN_GATEWAY_AUTH = getEnv("QWEN_GATEWAY_AUTH", "");
-export const QWEN_TIMEOUT_MS = getEnvInt("QWEN_TIMEOUT_MS", 40000);
+export const QWEN_TIMEOUT_MS = getEnvInt("QWEN_TIMEOUT_MS", 100000);
 export const QWEN_MAX_INPUT_CHARS = getEnvInt("QWEN_MAX_INPUT_CHARS", 8000);
 export const QWEN_MAX_TOKENS = getEnvInt("QWEN_MAX_TOKENS", 1600);
 

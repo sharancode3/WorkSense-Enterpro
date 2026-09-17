@@ -47,12 +47,34 @@ Deno.serve(async (req) => {
   // Untrusted input handling: neutralize instruction-like phrases.
   const question = sanitizeUntrusted(raw);
 
-  const { data: org } = await supabase
-    .from("organizations")
-    .select("policies")
-    .eq("id", caller.org_id)
-    .maybeSingle();
-  const policies = (org?.policies ?? []) as PolicyDoc[];
+  // Policy source: versioned policy_documents (Phase 3) with jsonb fallback.
+  const { data: docRows } = await supabase
+    .from("policy_documents")
+    .select("doc_code, version, title, category, sections, effective_from")
+    .eq("org_id", caller.org_id);
+  let policies: PolicyDoc[] = [];
+  if ((docRows ?? []).length > 0) {
+    const byCode = new Map<string, PolicyDoc & { version?: number }>();
+    for (const row of docRows as { doc_code: string; version: number; title: string; category: string | null; sections: { code: string; heading: string; text: string }[]; effective_from: string }[]) {
+      const cur = byCode.get(row.doc_code);
+      if (!cur || row.version > (cur.version ?? 1)) {
+        byCode.set(row.doc_code, {
+          id: `pol-${row.doc_code}`,
+          doc_code: row.doc_code,
+          version: row.version,
+          title: row.title,
+          category: row.category ?? "General",
+          sections: row.sections,
+          effective_date: row.effective_from,
+        });
+      }
+    }
+    policies = [...byCode.values()];
+  }
+  if (policies.length === 0) {
+    const { data: org } = await supabase.from("organizations").select("policies").eq("id", caller.org_id).maybeSingle();
+    policies = (org?.policies ?? []) as PolicyDoc[];
+  }
 
   // 1) DETERMINISTIC retrieval — zero LLM credits.
   const retrieval = retrieveChunks(policies, question, 3);
