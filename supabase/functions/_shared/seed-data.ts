@@ -7,6 +7,7 @@
 
 import type { FitRecord } from "./skill-graph-engine.ts";
 import { SEED_FITS } from "./generated-seed-fits.ts";
+import { SEED_JOURNEY_TASKS } from "./generated-seed-journey.ts";
 
 export const DEMO_ORG_ID = "11111111-1111-1111-1111-111111111111";
 
@@ -658,12 +659,13 @@ export function buildTwins(authIds: Record<string, string>) {
   }));
 }
 
-/** Seed onboarding journey for the mid-onboarding persona (Alex). */
+/** Seed onboarding journey for the mid-onboarding persona (Alex) — tasks are a
+ *  pre-generated plan from the deterministic Kahn engine (see generated-seed-journey.ts). */
 export const SEED_JOURNEY = {
   id: "55555555-5555-5555-5555-555555555555",
   org_id: DEMO_ORG_ID,
   twin_id: "22222222-2222-2222-2222-222222222203",
-  tasks: JOURNEY_TASKS,
+  tasks: SEED_JOURNEY_TASKS,
   status: "pending",
   plan: { start_date: "2026-07-21T09:00:00Z", approvals: [], generated_at: "2026-07-20T09:00:00Z" },
   audit_events: JOURNEY_AUDIT_EVENTS,

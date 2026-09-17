@@ -34,8 +34,10 @@ const STATUS_CHIP: Record<ScheduledTask["status"], { label: string; cls: string 
   pending: { label: "Required", cls: "bg-muted text-foreground" },
 };
 
-function fmt(d: string | null) {
-  return d ? new Date(d).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "waiting";
+function fmt(d: string | null | undefined) {
+  if (!d) return "—";
+  const t = new Date(d);
+  return Number.isNaN(t.getTime()) ? "—" : t.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
 function TaskCard({
@@ -89,7 +91,7 @@ function TaskCard({
 
       <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
         <span className="font-medium text-foreground">{fmt(task.start_date)} → {fmt(task.end_date)}</span>
-        <span>{task.duration_days}d</span>
+        {typeof task.duration_days === "number" && <span>{task.duration_days}d</span>}
       </div>
 
       {task.blocked && (
@@ -235,9 +237,28 @@ export default function Onboarding() {
 
   const columns = useMemo(() => {
     const tasks = journey.data?.tasks ?? [];
-    const maxLevel = tasks.reduce((m, t) => Math.max(m, t.topological_level), 0);
+    // Resilient wave computation: use stored topological_level, else derive
+    // from depends_on depth so legacy/seed plans still render correctly.
+    const levelOf = new Map<string, number>();
+    const resolveLevel = (t: ScheduledTask): number => {
+      const known = levelOf.get(t.id);
+      if (known !== undefined) return known;
+      if (typeof t.topological_level === "number") {
+        levelOf.set(t.id, t.topological_level);
+        return t.topological_level;
+      }
+      const depLevel = (t.depends_on ?? [])
+        .map((d) => {
+          const dep = tasks.find((x) => x.id === d);
+          return dep ? resolveLevel(dep) + 1 : 0;
+        })
+        .reduce((m, l) => Math.max(m, l), 0);
+      levelOf.set(t.id, depLevel);
+      return depLevel;
+    };
+    const maxLevel = tasks.reduce((m, t) => Math.max(m, resolveLevel(t)), -1);
     const cols: ScheduledTask[][] = Array.from({ length: maxLevel + 1 }, () => []);
-    for (const t of tasks) cols[t.topological_level]?.push(t);
+    for (const t of tasks) cols[resolveLevel(t)]?.push(t);
     return cols;
   }, [journey.data]);
 

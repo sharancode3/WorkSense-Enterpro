@@ -22,13 +22,14 @@ const policy = stripAllImports(read("supabase/functions/_shared/policy-retrieval
 const signal = stripAllImports(read("supabase/functions/_shared/workforce-signal-engine.ts"));
 const recEngine = stripAllImports(read("supabase/functions/_shared/recommendation-engine.ts"));
 const generated = stripAllImports(read("supabase/functions/_shared/generated-seed-fits.ts"));
+const journey = stripAllImports(read("supabase/functions/_shared/generated-seed-journey.ts"));
 const seed = stripAllImports(read("supabase/functions/_shared/seed-data.ts"));
 
-const SHARED = { engine, onboarding, qwen, policy, signal, recEngine, generated, seed };
+const SHARED = { engine, onboarding, qwen, policy, signal, recEngine, generated, journey, seed };
 
 // Function -> shared dependencies (in import order) it needs inlined.
 const FNS = {
-  "reset-demo": ["generated", "seed"],
+  "reset-demo": ["generated", "journey", "seed"],
   "skill-match": ["engine"],
   "extract-resume": ["engine", "qwen"],
   "rubric": ["qwen"],
