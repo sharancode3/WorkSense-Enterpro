@@ -657,3 +657,14 @@ export function buildTwins(authIds: Record<string, string>) {
     computed_fits: (SEED_FITS[t.id] ?? []) as FitRecord[],
   }));
 }
+
+/** Seed onboarding journey for the mid-onboarding persona (Alex). */
+export const SEED_JOURNEY = {
+  id: "55555555-5555-5555-5555-555555555555",
+  org_id: DEMO_ORG_ID,
+  twin_id: "22222222-2222-2222-2222-222222222203",
+  tasks: JOURNEY_TASKS,
+  status: "pending",
+  plan: { start_date: "2026-07-21T09:00:00Z", approvals: [], generated_at: "2026-07-20T09:00:00Z" },
+  audit_events: JOURNEY_AUDIT_EVENTS,
+};

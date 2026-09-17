@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import {
   Activity,
@@ -200,6 +201,8 @@ function RecommendationCard({
 export default function RecommendationHub() {
   const { role, user } = useAuth();
   const qc = useQueryClient();
+  const [searchParams] = useSearchParams();
+  const focusRec = searchParams.get("rec");
   const [dialog, setDialog] = useState<{ rec: RecommendationRow; decision: string } | null>(null);
   const [rationale, setRationale] = useState("");
   const [busy, setBusy] = useState(false);
@@ -212,6 +215,18 @@ export default function RecommendationHub() {
       return (data ?? []) as RecommendationRow[];
     },
   });
+
+  // Drill-in from the dashboard feed: scroll to + highlight the target card.
+  useEffect(() => {
+    if (!focusRec || !recs.data) return;
+    const el = document.getElementById(`rec-${focusRec}`);
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      el.classList.add("ring-4", "ring-primary/40");
+      const t = setTimeout(() => el.classList.remove("ring-4", "ring-primary/40"), 2500);
+      return () => clearTimeout(t);
+    }
+  }, [focusRec, recs.data]);
 
   if (role && !can(role, "approve_recommendations")) {
     return (
@@ -297,15 +312,16 @@ export default function RecommendationHub() {
         <div className="mt-8 flex flex-col gap-6">
           {recs.data && recs.data.length > 0 ? (
             recs.data.map((rec) => (
-              <RecommendationCard
-                key={rec.id}
-                rec={rec}
-                busy={busy}
-                onAct={(decision) => {
-                  setDialog({ rec, decision });
-                  setRationale("");
-                }}
-              />
+              <div key={rec.id} id={`rec-${rec.id}`} className="rounded-lg transition-all duration-500">
+                <RecommendationCard
+                  rec={rec}
+                  busy={busy}
+                  onAct={(decision) => {
+                    setDialog({ rec, decision });
+                    setRationale("");
+                  }}
+                />
+              </div>
             ))
           ) : (
             <div className="flex flex-col items-center gap-3 rounded-lg bg-muted px-6 py-16 text-center">

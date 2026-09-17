@@ -275,3 +275,25 @@ export const recommendationDecision = (recId: string, decision: string, rational
     "recommendation-decision",
     { rec_id: recId, decision, rationale }
   );
+
+// ---- Executive Decision Dashboard ----
+
+export interface DashboardData {
+  ok: true;
+  scope: "org" | "team";
+  threshold: number;
+  cards: {
+    headcount: number;
+    open_requisitions: number;
+    active_candidates: number;
+    journeys_in_progress: number;
+    journeys_on_track: number;
+    journeys_blocked: number;
+    at_risk_employees: number;
+    pending_recommendations: number;
+  };
+  heatmap: { skill: string; target_proficiency: number; req_id: string; req_title: string; gap_count: number; total: number }[];
+  recommendations: { id: string; category: string; urgency: string; title: string; executive_summary: string }[];
+}
+
+export const fetchDashboard = () => invoke<DashboardData>("dashboard", {});

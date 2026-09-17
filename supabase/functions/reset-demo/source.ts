@@ -1,5 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
-import { buildTwins, DEMO_ACCOUNTS, DEMO_ORG_ID, JOURNEY_AUDIT_EVENTS, JOURNEY_TASKS, POLICIES, RECOMMENDATIONS, REQUISITIONS, SKILLS } from "../_shared/seed-data.ts";
+import { buildTwins, DEMO_ACCOUNTS, DEMO_ORG_ID, POLICIES, RECOMMENDATIONS, REQUISITIONS, SEED_JOURNEY, SKILLS } from "../_shared/seed-data.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -74,13 +74,7 @@ async function reseed(supabase, authIds: Record<string, string>) {
   );
   if (reqsErr) throw new Error(`reqs insert: ${reqsErr.message}`);
 
-  const { error: journeyErr } = await supabase.from("onboarding_journeys").insert({
-    id: "55555555-5555-5555-5555-555555555555",
-    org_id: DEMO_ORG_ID,
-    twin_id: "22222222-2222-2222-2222-222222222203",
-    tasks: JOURNEY_TASKS,
-    audit_events: JOURNEY_AUDIT_EVENTS,
-  });
+  const { error: journeyErr } = await supabase.from("onboarding_journeys").insert(SEED_JOURNEY);
   if (journeyErr) throw new Error(`journey insert: ${journeyErr.message}`);
 
   const { error: recsErr } = await supabase.from("recommendations").insert(
