@@ -359,10 +359,14 @@ Deno.serve(async (req) => {
     return jsonResponse({ error: "NOT_FOUND", message: "DigitalTwin not found." }, 404);
   }
 
-  // Visibility: HR (same org) sees anyone; manager sees own team; employee self.
+  // Visibility: HR (same org) sees anyone; recruiter sees candidates (their
+  // core workflow — the Fit card in the Recruitment Studio); manager sees own
+  // team; employee self.
   let allowed = false;
   if (caller.role === "hr_executive" && caller.org_id === targetTwin.org_id) allowed = true;
-  else if (caller.role === "manager" || caller.role === "employee") {
+  else if (caller.role === "recruiter" && caller.org_id === targetTwin.org_id && targetTwin.role === "candidate") {
+    allowed = true;
+  } else if (caller.role === "manager" || caller.role === "employee") {
     allowed = targetTwin.id === caller.id || (await isTeamMember(supabase, caller.id, targetTwin.id));
   }
   if (!allowed) {

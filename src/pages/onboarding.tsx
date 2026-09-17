@@ -43,6 +43,9 @@ function fmt(d: string | null | undefined) {
 function TaskCard({
   task,
   canAct,
+  canComplete,
+  journeyActive,
+  depsDone,
   blockerOpen,
   blockerText,
   onOpenBlocker,
@@ -54,6 +57,9 @@ function TaskCard({
 }: {
   task: ScheduledTask;
   canAct: boolean;
+  canComplete: boolean;
+  journeyActive: boolean;
+  depsDone: boolean;
   blockerOpen: boolean;
   blockerText: string;
   onOpenBlocker: () => void;
@@ -107,7 +113,7 @@ function TaskCard({
         </Button>
       )}
 
-      {canAct && task.status !== "done" && task.status !== "blocked" && (
+      {canAct && task.status !== "done" && task.status !== "blocked" && task.status !== "waived" && (
         <div className="flex flex-col gap-2">
           {blockerOpen ? (
             <div className="flex flex-col gap-2">
@@ -124,15 +130,23 @@ function TaskCard({
                 </Button>
               </div>
             </div>
-          ) : (
-            <Button size="sm" variant="secondary" onClick={onComplete} disabled={busy}>
+          ) : canComplete ? (
+            <Button size="sm" onClick={onComplete} disabled={busy}>
               <CheckCircle2 className="h-3.5 w-3.5" /> Mark complete
             </Button>
+          ) : (
+            <p className="rounded-md bg-muted px-2 py-1.5 text-[11px] leading-snug text-muted-foreground">
+              {!journeyActive
+                ? "Requires Manager + HR approval before tasks can be completed."
+                : !depsDone
+                  ? "Waiting on prerequisites to complete."
+                  : "Cannot complete this task yet."}
+            </p>
           )}
         </div>
       )}
 
-      {canAct && task.status !== "done" && task.status !== "blocked" && !blockerOpen && (
+      {canAct && task.status !== "done" && task.status !== "blocked" && task.status !== "waived" && !blockerOpen && canComplete && (
         <Button size="sm" variant="ghost" onClick={onOpenBlocker} disabled={busy}>
           <AlertTriangle className="h-3.5 w-3.5" /> Report blocker
         </Button>
@@ -396,21 +410,28 @@ export default function Onboarding() {
                       </span>
                     </div>
                     <div className="flex flex-col gap-3">
-                      {col.map((task) => (
-                        <TaskCard
-                          key={task.id}
-                          task={task}
-                          canAct={canAct}
-                          blockerOpen={blockerState.taskId === task.id && blockerState.open}
-                          blockerText={blockerState.taskId === task.id ? blockerState.text : ""}
-                          onOpenBlocker={() => setBlockerState({ taskId: task.id, open: true, text: "" })}
-                          onBlockerChange={(v) => setBlockerState((s) => ({ ...s, text: v }))}
-                          onBlockerSubmit={() => void act(task.id, "block", blockerState.text)}
-                          onComplete={() => void act(task.id, "complete")}
-                          onResolve={() => void act(task.id, "resolve")}
-                          busy={busy === `complete-${task.id}` || busy === `block-${task.id}` || busy === `resolve-${task.id}`}
-                        />
-                      ))}
+                      {col.map((task) => {
+                        const depsDone = (task.depends_on ?? []).every((d) => tasks.find((x) => x.id === d)?.status === "done");
+                        const journeyActive = journey.data?.status === "active";
+                        return (
+                          <TaskCard
+                            key={task.id}
+                            task={task}
+                            canAct={canAct}
+                            canComplete={journeyActive && depsDone && !task.waived}
+                            journeyActive={journeyActive}
+                            depsDone={depsDone}
+                            blockerOpen={blockerState.taskId === task.id && blockerState.open}
+                            blockerText={blockerState.taskId === task.id ? blockerState.text : ""}
+                            onOpenBlocker={() => setBlockerState({ taskId: task.id, open: true, text: "" })}
+                            onBlockerChange={(v) => setBlockerState((s) => ({ ...s, text: v }))}
+                            onBlockerSubmit={() => void act(task.id, "block", blockerState.text)}
+                            onComplete={() => void act(task.id, "complete")}
+                            onResolve={() => void act(task.id, "resolve")}
+                            busy={busy === `complete-${task.id}` || busy === `block-${task.id}` || busy === `resolve-${task.id}`}
+                          />
+                        );
+                      })}
                     </div>
                     {level < columns.length - 1 && (
                       <ArrowRight className="mx-auto my-3 hidden h-5 w-5 text-muted-foreground lg:block" strokeWidth={2.5} />

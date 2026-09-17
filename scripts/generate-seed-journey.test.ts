@@ -36,9 +36,12 @@ describe("generate seed journey (offline, deterministic)", () => {
       tasks,
       skills: alex.verified_skills as { name: string; proficiency: number }[],
       startDate: "2026-07-21T09:00:00Z",
+      // Mid-onboarding persona: IT, security and team intro already done.
+      doneTaskIds: ["it", "security", "team_intro"],
     });
 
     expect(scheduled.length).toBe(12);
+    expect(scheduled.filter((t) => t.status === "done").length).toBe(3);
     expect(scheduled.every((t) => typeof t.topological_level === "number")).toBe(true);
     expect(scheduled.every((t) => t.start_date !== null)).toBe(true);
 

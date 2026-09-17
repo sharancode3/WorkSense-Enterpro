@@ -47,7 +47,7 @@ export default function CandidateStatus() {
       setView({ kind: "success", data });
     } catch (err) {
       if (err instanceof ApiError) {
-        if (err.code === "FORBIDDEN_FIELD") {
+        if (err.code === "FORBIDDEN_FIELD" || /scores, rubrics|not available to candidates/i.test(err.message)) {
           setView({ kind: "forbidden", fields: forbiddenIncludes(include), message: err.message });
           return;
         }

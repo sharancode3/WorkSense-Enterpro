@@ -31,6 +31,7 @@ export default function PolicyStudio() {
   const [result, setResult] = useState<PolicyAnswer | null>(null);
   const [busy, setBusy] = useState(false);
   const [escalating, setEscalating] = useState(false);
+  const [escalated, setEscalated] = useState(false);
 
   if (role && !can(role, "use_policy_studio")) {
     return (
@@ -55,6 +56,7 @@ export default function PolicyStudio() {
     }
     setBusy(true);
     setResult(null);
+    setEscalated(false);
     try {
       const res = await policyAsk(q);
       setResult(res);
@@ -73,6 +75,7 @@ export default function PolicyStudio() {
     setEscalating(true);
     try {
       await escalatePolicy(question, result.status, result.best_score);
+      setEscalated(true);
       toast.success("Escalated to HR — a recommendation was created for follow-up.");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Escalation failed");
@@ -181,14 +184,14 @@ export default function PolicyStudio() {
                   <FileSearch className="h-4 w-4" /> Citations
                 </p>
                 <ul className="mt-3 flex flex-col divide-y divide-border">
-                  {result.citations.map((c, i) => (
+                  {result.citations.filter((c) => c.exact_quote).map((c, i) => (
                     <li key={i} className="flex flex-col gap-1 py-3">
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="rounded-md bg-foreground px-2 py-0.5 font-mono text-[11px] font-bold text-white">
                           {c.doc_code}
                         </span>
                         <span className="text-sm font-semibold text-foreground">{c.section}</span>
-                        <span className="text-xs text-muted-foreground">{c.claim}</span>
+                        {c.claim && <span className="text-xs text-muted-foreground">{c.claim}</span>}
                       </div>
                       <blockquote className="rounded-md bg-muted px-3 py-2 text-sm italic text-foreground/80">
                         “{c.exact_quote}”
@@ -201,12 +204,13 @@ export default function PolicyStudio() {
 
             <div className="flex items-center justify-between gap-4 rounded-lg bg-muted p-4">
               <p className="text-sm text-muted-foreground">
-                Not satisfied or need a human decision? Escalate to HR — it creates a recommendation
-                for follow-up.
+                {escalated
+                  ? "This question has been escalated — an HR recommendation is awaiting review."
+                  : "Not satisfied or need a human decision? Escalate to HR — it creates a recommendation for follow-up."}
               </p>
-              <Button variant="outline" onClick={() => void escalate()} disabled={escalating}>
-                {escalating ? <Loader2 className="h-4 w-4 animate-spin" /> : <MessageSquareText className="h-4 w-4" />}
-                Escalate to HR
+              <Button variant="outline" onClick={() => void escalate()} disabled={escalating || escalated}>
+                {escalating ? <Loader2 className="h-4 w-4 animate-spin" /> : escalated ? <CheckCircle2 className="h-4 w-4" /> : <MessageSquareText className="h-4 w-4" />}
+                {escalated ? "Escalated to HR" : "Escalate to HR"}
               </Button>
             </div>
           </div>

@@ -1,0 +1,105 @@
+-- RLS hardening: org-scope every policy that lacked a tenant constraint.
+
+-- drop existing policies (recreated below with org scoping)
+drop policy if exists twin_select on public.digital_twins;
+drop policy if exists twin_write on public.digital_twins;
+drop policy if exists twin_select_hr_partner on public.digital_twins;
+drop policy if exists twin_select_recruiter on public.digital_twins;
+drop policy if exists req_select on public.job_requisitions;
+drop policy if exists req_select_hr_recruiter on public.job_requisitions;
+drop policy if exists req_write on public.job_requisitions;
+drop policy if exists skill_select on public.skill_graph;
+drop policy if exists skill_write on public.skill_graph;
+drop policy if exists onboarding_select on public.onboarding_journeys;
+drop policy if exists onboarding_select_hr_partner on public.onboarding_journeys;
+drop policy if exists onboarding_write on public.onboarding_journeys;
+drop policy if exists rec_select on public.recommendations;
+drop policy if exists rec_select_hr_partner on public.recommendations;
+drop policy if exists rec_write on public.recommendations;
+drop policy if exists org_write on public.organizations;
+
+-- digital_twins
+create policy twin_select on public.digital_twins for select using (
+  (select id from public.current_twin()) = id
+  or ((select role from public.current_twin()) = 'hr_executive' and org_id = (select org_id from public.current_twin()))
+  or public.is_team_member(id)
+);
+create policy twin_write on public.digital_twins for all using (
+  (select role from public.current_twin()) = 'hr_executive' and org_id = (select org_id from public.current_twin())
+) with check (
+  (select role from public.current_twin()) = 'hr_executive' and org_id = (select org_id from public.current_twin())
+);
+create policy twin_select_hr_partner on public.digital_twins for select using (
+  (select role from public.current_twin()) in ('hr_executive','hr_partner') and org_id = (select org_id from public.current_twin())
+);
+create policy twin_select_recruiter on public.digital_twins for select using (
+  (select role from public.current_twin()) = 'recruiter' and org_id = (select org_id from public.current_twin()) and public.digital_twins.role = 'candidate'
+);
+
+-- job_requisitions
+create policy req_select on public.job_requisitions for select using (
+  (select role from public.current_twin()) in ('hr_executive','manager') and org_id = (select org_id from public.current_twin())
+);
+create policy req_select_hr_recruiter on public.job_requisitions for select using (
+  (select role from public.current_twin()) in ('hr_partner','recruiter') and org_id = (select org_id from public.current_twin())
+);
+create policy req_write on public.job_requisitions for all using (
+  (select role from public.current_twin()) = 'hr_executive' and org_id = (select org_id from public.current_twin())
+) with check (
+  (select role from public.current_twin()) = 'hr_executive' and org_id = (select org_id from public.current_twin())
+);
+
+-- skill_graph
+create policy skill_select on public.skill_graph for select using (
+  exists (select 1 from public.current_twin() ct where ct.org_id = public.skill_graph.org_id)
+);
+create policy skill_write on public.skill_graph for all using (
+  (select role from public.current_twin()) = 'hr_executive' and org_id = (select org_id from public.current_twin())
+) with check (
+  (select role from public.current_twin()) = 'hr_executive' and org_id = (select org_id from public.current_twin())
+);
+
+-- onboarding_journeys
+create policy onboarding_select on public.onboarding_journeys for select using (
+  (select id from public.current_twin()) = twin_id
+  or ((select role from public.current_twin()) = 'hr_executive' and org_id = (select org_id from public.current_twin()))
+  or public.is_team_member(twin_id)
+);
+create policy onboarding_select_hr_partner on public.onboarding_journeys for select using (
+  (select role from public.current_twin()) = 'hr_partner' and org_id = (select org_id from public.current_twin())
+);
+create policy onboarding_write on public.onboarding_journeys for all using (
+  ((select role from public.current_twin()) = 'hr_executive' and org_id = (select org_id from public.current_twin()))
+  or public.is_team_member(twin_id)
+) with check (
+  ((select role from public.current_twin()) = 'hr_executive' and org_id = (select org_id from public.current_twin()))
+  or public.is_team_member(twin_id)
+);
+
+-- recommendations
+create policy rec_select on public.recommendations for select using (
+  (select id from public.current_twin()) = twin_id
+  or ((select role from public.current_twin()) = 'hr_executive' and org_id = (select org_id from public.current_twin()))
+  or public.is_team_member(twin_id)
+);
+create policy rec_select_hr_partner on public.recommendations for select using (
+  (select role from public.current_twin()) = 'hr_partner' and org_id = (select org_id from public.current_twin())
+);
+create policy rec_write on public.recommendations for all using (
+  ((select role from public.current_twin()) = 'hr_executive' and org_id = (select org_id from public.current_twin()))
+  or public.is_team_member(twin_id)
+) with check (
+  ((select role from public.current_twin()) = 'hr_executive' and org_id = (select org_id from public.current_twin()))
+  or public.is_team_member(twin_id)
+);
+
+-- organizations
+create policy org_write on public.organizations for all using (
+  (select role from public.current_twin()) = 'hr_executive' and id = (select org_id from public.current_twin())
+) with check (
+  (select role from public.current_twin()) = 'hr_executive' and id = (select org_id from public.current_twin())
+);
+
+-- candidate conversion RPC must only be callable by the backend (service role), never directly by clients.
+revoke execute on function public.convert_candidate_to_employee(uuid, uuid) from public, anon, authenticated;
+grant execute on function public.convert_candidate_to_employee(uuid, uuid) to service_role;

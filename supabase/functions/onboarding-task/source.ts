@@ -90,6 +90,21 @@ Deno.serve(async (req) => {
   let auditNote: string;
 
   if (action === "complete") {
+    // Workflow gate: completing a task requires an ACTIVE (dual-approved) plan,
+    // a task that is not waived, and all prerequisites already done.
+    if (journey.status !== "active") {
+      return json({ error: "PLAN_NOT_ACTIVE", message: "The plan must be approved by the Manager and HR Executive before tasks can be completed." }, 400);
+    }
+    if (target.waived) {
+      return json({ error: "TASK_WAIVED", message: `"${target.title}" is waived by verified skill — nothing to complete.` }, 400);
+    }
+    const unmet = (target.depends_on ?? []).filter((d) => {
+      const dep = tasks.find((t) => t.id === d);
+      return !dep || dep.status !== "done";
+    });
+    if (unmet.length > 0) {
+      return json({ error: "PREREQUISITES_NOT_MET", message: `Prerequisites not complete: ${unmet.join(", ")}.` }, 400);
+    }
     nextTasks = tasks.map((t) => (t.id === taskId ? { ...t, status: "done" as const } : t));
     auditAction = "task_completed";
     auditNote = `${owner.name} completed "${target.title}".`;
