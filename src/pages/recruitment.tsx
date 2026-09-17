@@ -241,6 +241,12 @@ export default function Recruitment() {
     setBusyAction(`kit-${c.id}`);
     setKit(null);
     try {
+      // Local 4B model: pre-generate rubrics one competency per call (each is
+      // cached per role and completes reliably), then the kit runs its single
+      // candidate-biased probe.
+      for (const comp of [...req.required_skills.map((s) => s.skill), "Collaboration"]) {
+        await generateRubrics(req.id, [comp]);
+      }
       const res = await generateInterviewKit(c.id, req.id);
       setKit(res.kit);
       toast.success(`Interview kit ready — probes biased to ${res.kit.focus_items.join(", ") || "core skills"}.`);

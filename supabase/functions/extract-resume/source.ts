@@ -1,7 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
 import { callQwen, QwenError, QWEN_MODEL, sanitizeUntrusted, wrapUntrusted } from "../_shared/qwen.ts";
 import { computeFit } from "../_shared/skill-graph-engine.ts";
-import { createJob, findOpenJob, finishJob, hashInput as hashJobInput, markJobRunning } from "../_shared/jobs.ts";
+import { createJob, findOpenJob, finishJob, hashInput, markJobRunning } from "../_shared/jobs.ts";
 import { validateResumeExtraction } from "../_shared/validate.ts";
 
 const corsHeaders = {
@@ -88,7 +88,7 @@ Deno.serve(async (req) => {
 
   const sanitized = sanitizeUntrusted(raw);
   const wrapped = wrapUntrusted(sanitized);
-  const inputHash = hashJobInput(sanitized);
+  const inputHash = hashInput(sanitized);
 
   // Durable job lifecycle: dedup open duplicates -> queued -> running -> done.
   const open = await findOpenJob(supabase, caller.org_id, caller.id, "resume_extraction", inputHash);
@@ -96,7 +96,7 @@ Deno.serve(async (req) => {
     return json({ error: "CONFLICT", message: "A generation for this exact resume is already in progress.", job_id: open.id }, 409);
   }
   const job = await createJob(supabase, {
-    orgId: caller.org_id, actorId: caller.id, task: "resume_extraction", inputHash,
+    orgId: caller.org_id, actorId: uid, task: "resume_extraction", inputHash,
     promptVersion: "resume-extract-v1", model: QWEN_MODEL,
   });
   await markJobRunning(supabase, job.id);

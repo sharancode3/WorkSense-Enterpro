@@ -1523,6 +1523,7 @@ async function reseed(supabase, authIds: Record<string, string>) {
   await supabase.from("onboarding_journeys").delete().eq("org_id", DEMO_ORG_ID);
   await supabase.from("job_requisitions").delete().eq("org_id", DEMO_ORG_ID);
   await supabase.from("skill_graph").delete().eq("org_id", DEMO_ORG_ID);
+  await supabase.from("model_jobs").delete().eq("org_id", DEMO_ORG_ID);
   const demoIds = Object.values(authIds);
   if (demoIds.length > 0) {
     await supabase.from("digital_twins").delete().in("auth_user_id", demoIds);

@@ -545,12 +545,12 @@ export interface JobRow {
 }
 
 /** Open duplicate for the same actor+task+input while still queued/running.
- *  A 'running' job older than 5 minutes is treated as stale (an interrupted
- *  serverless invocation) so a retry can proceed. */
+ *  A queued/running job older than 5 minutes is treated as stale (an
+ *  interrupted serverless invocation) so a retry can proceed. */
 export async function findOpenJob(supabase, orgId: string, actorId: string, task: string, inputHash: string) {
   const { data, error } = await supabase
     .from("model_jobs")
-    .select("id, status, started_at")
+    .select("id, status, created_at, started_at")
     .eq("org_id", orgId)
     .eq("actor_id", actorId)
     .eq("task", task)
@@ -559,10 +559,9 @@ export async function findOpenJob(supabase, orgId: string, actorId: string, task
     .maybeSingle();
   if (error) throw error;
   if (!data) return null;
-  if (data.status === "queued") return { id: data.id };
-  const started = data.started_at ? new Date(data.started_at).getTime() : 0;
-  if (started > 0 && Date.now() - started < 5 * 60 * 1000) return { id: data.id };
-  return null; // stale running -> allow a fresh attempt
+  const ageMs = Date.now() - new Date(data.created_at).getTime();
+  if (ageMs >= 5 * 60 * 1000) return null; // stale -> allow a fresh attempt
+  return { id: data.id };
 }
 
 export async function createJob(supabase, params: {
@@ -854,7 +853,7 @@ Deno.serve(async (req) => {
 
   const sanitized = sanitizeUntrusted(raw);
   const wrapped = wrapUntrusted(sanitized);
-  const inputHash = hashJobInput(sanitized);
+  const inputHash = hashInput(sanitized);
 
   // Durable job lifecycle: dedup open duplicates -> queued -> running -> done.
   const open = await findOpenJob(supabase, caller.org_id, caller.id, "resume_extraction", inputHash);
@@ -862,7 +861,7 @@ Deno.serve(async (req) => {
     return json({ error: "CONFLICT", message: "A generation for this exact resume is already in progress.", job_id: open.id }, 409);
   }
   const job = await createJob(supabase, {
-    orgId: caller.org_id, actorId: caller.id, task: "resume_extraction", inputHash,
+    orgId: caller.org_id, actorId: uid, task: "resume_extraction", inputHash,
     promptVersion: "resume-extract-v1", model: QWEN_MODEL,
   });
   await markJobRunning(supabase, job.id);

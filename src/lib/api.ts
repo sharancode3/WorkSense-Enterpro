@@ -134,8 +134,8 @@ async function invoke<T>(name: string, body: unknown): Promise<T> {
 export const extractResume = (twinId: string, resumeText: string, reqId?: string) =>
   invoke<ExtractResumeResult>("extract-resume", { twin_id: twinId, resume_text: resumeText, req_id: reqId });
 
-export const generateRubrics = (reqId: string) =>
-  invoke<{ ok: true; rubrics: RubricCompetency[] }>("rubric", { req_id: reqId });
+export const generateRubrics = (reqId: string, competencies?: string[]) =>
+  invoke<{ ok: true; rubrics: RubricCompetency[] }>("rubric", { req_id: reqId, competencies });
 
 export const generateInterviewKit = (twinId: string, reqId: string) =>
   invoke<{ ok: true; kit: InterviewKit }>("interview-kit", { twin_id: twinId, req_id: reqId });

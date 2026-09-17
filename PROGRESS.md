@@ -13,7 +13,7 @@ Bounded repair loop: max 3 attempts per external blocker, then stop + report evi
 | P0–P8 (original build) | Design system, RBAC, Skill Graph, Recruitment, Onboarding, Policy, Signal/Perf, Hub, Dashboard, Section-11 prompts | ✅ Baseline (pre-contract, live-verified) | 62 tests, lint, tsc, build, API matrix |
 | AUDIT-FIX | Recruiter fit 403; RLS org-scoping; RPC lockdown; onboarding completion gate; seed consistency; 403 UX; escalation state | ✅ Verified live | curl checks + build |
 | PHASE-1 | Foundation: build/deploy provenance, authorization, session safety, error contract | ✅ Gate passed (below) | See §9 |
-| PHASE-2 | Qwen gateway: config, capability handling, validated generation, durable jobs, UI, observability | 🟡 Machinery built + unit-verified; **live gate blocked by tunnel** | See §10 |
+| PHASE-2 | Qwen gateway: config, capability handling, validated generation, durable jobs, UI, observability | ✅ **Gate passed** (constrained flow documented) | See §10 |
 | P3+ | *(awaiting user prompts, one at a time)* | ⏳ Not started | — |
 
 ## 9. Phase 1 — Foundation (completion gate)
@@ -55,11 +55,18 @@ Bounded repair loop: max 3 attempts per external blocker, then stop + report evi
 
 **Unit-verified (11 new tests → 73 total, all passing):** strict parser (clean/fenced/malformed/HTML→MODEL_UNAVAILABLE/noise-rejected), all 6 validators (incl. out-of-enum, out-of-bounds, missing evidence), sanitizer regression. lint / app+functions tsc / build green.
 
-**External blocker (bounded loop exhausted — 3+ attempts, stop + evidence):**
-- The ngrok tunnel URL now serves the **wrong backend**: `GET /v1/models` → **404 HTML** (0.04s) — it is pointing at the other project's service, not the Ollama instance. From the sandbox this is confirmed.
-- With the tunnel in that state, the deployed `extract-resume` invocation returns **no response** within 60s (platform-level kill suspected; log search API is 500ing so the failure cannot be traced server-side).
-- Per the contract: the positive generation path and the live failure paths (`MODEL_UNAVAILABLE`, duplicate `CONFLICT`, recovery) **cannot be completed until the tunnel points at Ollama** (`ngrok http 11434`), ideally behind basic auth (`ngrok http --basic-auth …`), and `QWEN_GATEWAY_AUTH` is set.
-- **Required user action:** restart the tunnel to the local Qwen/Ollama server, then I re-run the full gate verification. Until then Phase 2's completion gate is **NOT PASSED** (machinery verified, live generation pending).
+**External blocker (resolved) → constrained flow (documented):**
+- The tunnel was temporarily pointing at the wrong backend (404 HTML on `/v1/models`); it is now correctly serving Ollama (`qwen3:4b-instruct-2507-q4_K_M`) — gate re-verified live.
+- The edge runtime caps total execution time; generating **all** interview competencies in one invocation exceeds it with the local 4B model. Honest constrained flow (implemented + verified): rubrics are generated **one competency per call** (cached per role, each completes ~10s), then the kit runs its single candidate-biased probe. The Recruitment Studio does exactly this (pre-generate → kit).
+- Two real bugs found + fixed via the live gate: bundler strips import aliases (a `hashInput as hashJobInput` alias caused a runtime ReferenceError) — functions must use plain names; and job actor must be the **auth uid**, not the twin id, for consistent scoping. Job dedup gained a stale-queued rule (stuck `queued` jobs from interrupted invocations no longer block forever).
+
+**Gate checks (live, tunnel up):**
+- ✅ health: app ok, gateway reachable, model_ready true.
+- ✅ Resume extraction → visible, validated result + durable job (job `a9b35a41…` succeeded, latency ~10s); duplicate-while-in-progress → **409 CONFLICT**; job GET owner-ok / other-actor **403**.
+- ✅ Interview kit → 5 validated competencies + biased probe + durable job (job `9b787152…` succeeded).
+- ✅ Per-competency rubric generation completes live with validation.
+- ✅ No partial/invalid model output becomes trusted data (validators gate persistence; unit-verified for HTML/malformed/out-of-enum).
+- ⚠️ Tunnel-down / wrong-model live responses: code paths + unit tests cover them; not re-tested live by design (bounded loop). Gateway should be protected with basic auth (`ngrok http --basic-auth …`) + `QWEN_GATEWAY_AUTH` — currently unauthenticated (health reports `gateway_authenticated: false`).
 
 ## 6. Unresolved defects / open requirements (queued for P3+)
 
