@@ -1,0 +1,23 @@
+-- WorkSense Phase 1b: two additional roles (HR Business Partner, Technical Recruiter)
+alter table public.digital_twins drop constraint digital_twins_role_check;
+alter table public.digital_twins add constraint digital_twins_role_check check (role in ('hr_executive','hr_partner','manager','recruiter','employee','candidate'));
+
+-- RLS: additive permissive policies for the new roles (OR semantics).
+-- HR Business Partner: read the whole workforce, onboarding and recommendations.
+create policy twin_select_hr_partner on public.digital_twins for select using (
+  (select role from public.current_twin()) in ('hr_executive','hr_partner')
+);
+create policy onboarding_select_hr_partner on public.onboarding_journeys for select using (
+  (select role from public.current_twin()) = 'hr_partner'
+);
+create policy rec_select_hr_partner on public.recommendations for select using (
+  (select role from public.current_twin()) = 'hr_partner'
+);
+
+-- Technical Recruiter: read requisitions and candidate twins only (never employee data).
+create policy twin_select_recruiter on public.digital_twins for select using (
+  (select role from public.current_twin()) = 'recruiter' and public.digital_twins.role = 'candidate'
+);
+create policy req_select_hr_recruiter on public.job_requisitions for select using (
+  (select role from public.current_twin()) in ('hr_partner','recruiter')
+);

@@ -15,7 +15,7 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/auth-context";
 import { AppShell } from "@/components/app-shell";
-import { ROLE_LABEL } from "@/lib/rbac";
+import { can, ROLE_LABEL } from "@/lib/rbac";
 import type { Twin } from "@/lib/api";
 
 interface RecRow {
@@ -73,7 +73,7 @@ function ModuleStubs({ role }: { role: string }) {
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
       {MODULES.map(({ icon: Icon, title, desc }) => {
-        const open = role === "hr_executive" && title === "Skill Intelligence Graph";
+        const open = can(role, "explore_skill_graph") && title === "Skill Intelligence Graph";
         const card = (
           <div className="group flex h-full flex-col gap-3 rounded-lg bg-muted p-5 transition-all duration-200 hover:scale-[1.02]">
             <span className="flex h-12 w-12 items-center justify-center rounded-md bg-white text-primary transition-transform duration-200 group-hover:scale-110">
@@ -117,7 +117,7 @@ export default function RoleHome() {
 
   const hrStats = useQuery({
     queryKey: ["hr-stats"],
-    enabled: role === "hr_executive",
+    enabled: role === "hr_executive" || role === "hr_partner",
     queryFn: async () => {
       const [recs, reqs, headcount, journeys] = await Promise.all([
         supabase.from("recommendations").select("id", { count: "exact", head: true }).eq("status", "needs_review"),
@@ -136,7 +136,7 @@ export default function RoleHome() {
 
   const hrRecs = useQuery({
     queryKey: ["hr-recs"],
-    enabled: role === "hr_executive",
+    enabled: role === "hr_executive" || role === "hr_partner",
     queryFn: async () => {
       const { data } = await supabase
         .from("recommendations")
@@ -194,6 +194,30 @@ export default function RoleHome() {
     },
   });
 
+  const recruiterData = useQuery({
+    queryKey: ["recruiter"],
+    enabled: role === "recruiter",
+    queryFn: async () => {
+      const [reqsRes, candidatesRes] = await Promise.all([
+        supabase.from("job_requisitions").select("*"),
+        supabase.from("digital_twins").select("id, name, role, status").eq("role", "candidate"),
+      ]);
+      const reqs = (reqsRes.data ?? []) as {
+        id: string;
+        title: string;
+        department: string;
+        applicants: { twin_id: string; stage: string; match_score: number | null }[];
+      }[];
+      const candidates = (candidatesRes.data ?? []) as { id: string; name: string }[];
+      const applicants = reqs.flatMap((r) => r.applicants ?? []);
+      const finalRound = applicants.filter((a) => a.stage === "final_round").length;
+      const scored = applicants.filter((a) => typeof a.match_score === "number");
+      const avgScore =
+        scored.length > 0 ? scored.reduce((s, a) => s + (a.match_score ?? 0), 0) / scored.length : null;
+      return { reqs, candidates, applicants, finalRound, avgScore };
+    },
+  });
+
   if (!role || !twin) return null;
 
   const tasks = (myJourney.data?.tasks ?? []) as { id: string; title: string; status: string; depends_on: string[] }[];
@@ -218,12 +242,20 @@ export default function RoleHome() {
 
         {/* Role-scoped stats */}
         <div className="mt-8 grid grid-cols-2 gap-4 lg:grid-cols-4">
-          {role === "hr_executive" && (
+          {(role === "hr_executive" || role === "hr_partner") && (
             <>
               <StatBlock label="Recommendations awaiting review" value={hrStats.data?.needsReview} tone="primary" />
               <StatBlock label="Open requisitions" value={hrStats.data?.openReqs} tone="secondary" />
               <StatBlock label="Active headcount" value={hrStats.data?.headcount} tone="accent" />
               <StatBlock label="Onboarding journeys" value={hrStats.data?.journeys} tone="dark" />
+            </>
+          )}
+          {role === "recruiter" && (
+            <>
+              <StatBlock label="Open requisitions" value={recruiterData.data?.reqs.length} tone="primary" />
+              <StatBlock label="Active candidates" value={recruiterData.data?.candidates.length} tone="secondary" />
+              <StatBlock label="In final round" value={recruiterData.data?.finalRound} tone="accent" />
+              <StatBlock label="Avg applicant match" value={recruiterData.data?.avgScore !== null && recruiterData.data?.avgScore !== undefined ? `${Math.round(recruiterData.data.avgScore * 100)}%` : null} tone="dark" />
             </>
           )}
           {role === "manager" && (
@@ -252,7 +284,7 @@ export default function RoleHome() {
 
         {/* Main panels */}
         <div className="mt-10 grid grid-cols-1 gap-6 lg:grid-cols-3">
-          {role === "hr_executive" && (
+          {(role === "hr_executive" || role === "hr_partner") && (
             <div className="rounded-lg bg-white p-6 lg:col-span-2">
               <div className="flex items-center justify-between">
                 <h2 className="text-lg font-extrabold text-foreground">Recommendations awaiting review</h2>
@@ -286,6 +318,63 @@ export default function RoleHome() {
                 </ul>
               ) : (
                 <p className="mt-4 text-sm text-muted-foreground">No recommendations awaiting review.</p>
+              )}
+            </div>
+          )}
+
+          {role === "recruiter" && (
+            <div className="rounded-lg bg-white p-6 lg:col-span-2">
+              <h2 className="text-lg font-extrabold text-foreground">Recruitment pipeline</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Candidates ranked by the Skill Intelligence Graph match score.
+              </p>
+              {recruiterData.data && recruiterData.data.reqs.length > 0 ? (
+                <div className="mt-4 flex flex-col gap-5">
+                  {recruiterData.data.reqs.map((r) => (
+                    <div key={r.id}>
+                      <div className="flex items-center justify-between">
+                        <p className="font-bold text-foreground">{r.title}</p>
+                        <span className="text-xs text-muted-foreground">{r.department}</span>
+                      </div>
+                      {(r.applicants ?? []).length > 0 ? (
+                        <ul className="mt-2 flex flex-col divide-y divide-border">
+                          {r.applicants.map((a, i) => (
+                            <li key={`${r.id}-${a.twin_id}-${i}`} className="flex items-center justify-between gap-4 py-2.5">
+                              <span
+                                className={`rounded-md px-2.5 py-1 text-xs font-bold uppercase tracking-wider ${
+                                  a.stage === "final_round"
+                                    ? "bg-secondary text-white"
+                                    : a.stage === "technical_interview"
+                                      ? "bg-primary text-white"
+                                      : "bg-accent text-foreground"
+                                }`}
+                              >
+                                {a.stage.replace(/_/g, " ")}
+                              </span>
+                              <div className="flex flex-1 items-center gap-3">
+                                <div className="h-2 w-full max-w-40 overflow-hidden rounded-full bg-muted">
+                                  <div
+                                    className="h-full bg-primary"
+                                    style={{ width: `${Math.round((a.match_score ?? 0) * 100)}%` }}
+                                  />
+                                </div>
+                                <span className="w-12 text-right text-sm font-bold text-foreground">
+                                  {a.match_score !== null && a.match_score !== undefined
+                                    ? `${Math.round(a.match_score * 100)}`
+                                    : "—"}
+                                </span>
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="mt-2 text-sm text-muted-foreground">No applicants yet.</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-4 text-sm text-muted-foreground">No requisitions visible.</p>
               )}
             </div>
           )}

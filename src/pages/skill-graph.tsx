@@ -81,7 +81,7 @@ export default function SkillGraph() {
     }
   };
 
-  if (role && !can(role, "view_all_workforce")) {
+  if (role && !can(role, "explore_skill_graph")) {
     return (
       <AppShell>
         <div className="mx-auto flex max-w-xl flex-col items-center gap-4 px-4 py-24 text-center">

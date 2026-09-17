@@ -131,7 +131,7 @@ Deno.serve(async (req) => {
       created_users: created,
       seeded: {
         organizations: 1,
-        digital_twins: 7,
+        digital_twins: buildTwins({}).length,
         skill_graph: SKILLS.length,
         job_requisitions: REQUISITIONS.length,
         onboarding_journeys: 1,

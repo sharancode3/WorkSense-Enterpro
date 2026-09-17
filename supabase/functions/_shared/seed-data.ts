@@ -12,7 +12,9 @@ export const DEMO_ORG_ID = "11111111-1111-1111-1111-111111111111";
 
 export const DEMO_ACCOUNTS = [
   { email: "dana@worksense.demo", password: "WorkSenseDemo!2026", name: "Dana Whitmore", twinId: "22222222-2222-2222-2222-222222222201" },
+  { email: "riley@worksense.demo", password: "WorkSenseDemo!2026", name: "Riley Morgan", twinId: "22222222-2222-2222-2222-222222222208" },
   { email: "jordan@worksense.demo", password: "WorkSenseDemo!2026", name: "Jordan Reyes", twinId: "22222222-2222-2222-2222-222222222202" },
+  { email: "chris@worksense.demo", password: "WorkSenseDemo!2026", name: "Chris Okafor", twinId: "22222222-2222-2222-2222-222222222209" },
   { email: "alex@worksense.demo", password: "WorkSenseDemo!2026", name: "Alex Chen", twinId: "22222222-2222-2222-2222-222222222203" },
   { email: "sam@worksense.demo", password: "WorkSenseDemo!2026", name: "Samira Patel", twinId: "22222222-2222-2222-2222-222222222204" },
 ];
@@ -382,6 +384,54 @@ export const TWINS: TwinSeed[] = [
     audit_events: [
       { actor: "system", action: "signal_updated", note: "Workforce review signal recomputed to 78", timestamp: "2026-09-10T09:00:00Z" },
     ],
+  },
+  {
+    id: "22222222-2222-2222-2222-222222222208",
+    org_id: DEMO_ORG_ID,
+    role: "hr_partner",
+    status: "active",
+    name: "Riley Morgan",
+    email: "riley@worksense.demo",
+    department: "People Operations",
+    job_title: "HR Business Partner",
+    manager_id: "22222222-2222-2222-2222-222222222201",
+    tenure_months: 30,
+    seniority_level: 4,
+    verified_skills: [
+      { name: "Leadership", proficiency: 4, evidence_source: "performance_review", verification_rigor: "high" },
+      { name: "People Analytics", proficiency: 3, evidence_source: "certification", verification_rigor: "medium" },
+      { name: "Policy Management", proficiency: 3, evidence_source: "project", verification_rigor: "medium" },
+    ],
+    interview_rubrics: [],
+    performance_history: [
+      { cycle: "2026-H1", rating: "Exceeds Expectations", summary: "Partnered with Platform and Data orgs on retention." },
+    ],
+    signals: [],
+    audit_events: [],
+  },
+  {
+    id: "22222222-2222-2222-2222-222222222209",
+    org_id: DEMO_ORG_ID,
+    role: "recruiter",
+    status: "active",
+    name: "Chris Okafor",
+    email: "chris@worksense.demo",
+    department: "Talent Acquisition",
+    job_title: "Technical Recruiter",
+    manager_id: "22222222-2222-2222-2222-222222222201",
+    tenure_months: 18,
+    seniority_level: 3,
+    verified_skills: [
+      { name: "Sourcing", proficiency: 4, evidence_source: "performance_review", verification_rigor: "high" },
+      { name: "Interview Design", proficiency: 3, evidence_source: "certification", verification_rigor: "medium" },
+      { name: "Stakeholder Management", proficiency: 3, evidence_source: "peer_feedback", verification_rigor: "medium" },
+    ],
+    interview_rubrics: [],
+    performance_history: [
+      { cycle: "2026-H1", rating: "Exceeds Expectations", summary: "Filled 12 roles; cut time-to-hire by 20%." },
+    ],
+    signals: [],
+    audit_events: [],
   },
   {
     id: "22222222-2222-2222-2222-222222222205",

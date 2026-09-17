@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { ArrowLeft, Loader2, LogIn, UserPlus } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
+import { DemoQuickAccess } from "@/components/demo-quick-access";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -55,15 +56,14 @@ export default function Login() {
         </div>
       </header>
 
-      <main className="flex flex-1 items-center justify-center px-4 py-16">
-        <div className="w-full max-w-md">
+      <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-16 sm:px-6">
+        <div className="grid grid-cols-1 gap-10 lg:grid-cols-2">
           <div className="rounded-lg bg-white p-8">
             <h1 className="text-2xl font-extrabold tracking-tight text-foreground">
-              {mode === "signin" ? "Sign in" : "Create an account"}
+              {mode === "signin" ? "Sign in to WorkSense" : "Create an account"}
             </h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              The demo path uses one-click personas on the landing page — this form is for
-              completeness.
+              Evidence-first workforce decision intelligence platform.
             </p>
 
             <div className="mt-6 grid grid-cols-2 gap-1 rounded-md bg-muted p-1">
@@ -135,6 +135,19 @@ export default function Login() {
                 {mode === "signin" ? "Sign in" : "Create account"}
               </Button>
             </form>
+          </div>
+
+          <div className="flex flex-col gap-4">
+            <div>
+              <h2 className="text-xl font-extrabold tracking-tight text-foreground">
+                Demo Environment Quick Access
+              </h2>
+              <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+                Pre-seeded personas authenticate with real JWT tokens and row-level security —
+                one click, zero typing.
+              </p>
+            </div>
+            <DemoQuickAccess />
           </div>
         </div>
       </main>

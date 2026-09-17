@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import { ArrowDown, GitBranch, ShieldCheck, Sparkles } from "lucide-react";
 import { FlowDiagram } from "@/components/flow-diagram";
-import { DemoAccessPanel } from "@/components/demo-access-panel";
+import { DemoQuickAccess } from "@/components/demo-quick-access";
 import { Button } from "@/components/ui/button";
 
 export default function Landing() {
@@ -68,7 +68,7 @@ export default function Landing() {
                 Quick demo access
               </span>
               <h2 className="mt-2 text-3xl font-extrabold tracking-tight text-foreground md:text-4xl">
-                One click. Three roles. Real data.
+                One click. Every role. Real data.
               </h2>
             </div>
             <p className="max-w-md text-sm leading-relaxed text-muted-foreground">
@@ -77,7 +77,7 @@ export default function Landing() {
             </p>
           </div>
 
-          <DemoAccessPanel />
+          <DemoQuickAccess />
         </div>
       </section>
 

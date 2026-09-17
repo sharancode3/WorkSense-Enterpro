@@ -4,20 +4,28 @@ import { toast } from "sonner";
 import { ExternalLink } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 import { DEMO_ACCOUNTS, DEMO_CANDIDATE_CODE } from "@/lib/demo-accounts";
+import type { Role } from "@/lib/rbac";
 import { RoleCard, type CardTone } from "@/components/role-card";
 
 const ROLE_TONE: Record<string, CardTone> = {
-  hr_executive: "primary",
+  hr_executive: "dark",
+  hr_partner: "primary",
   manager: "secondary",
-  employee: "accent",
+  recruiter: "accent",
+  employee: "muted",
 };
 
-export function DemoAccessPanel() {
+/**
+ * The "Demo Environment Quick Access" grid — one-click personas matching the
+ * reference UI: Administrator, HR Business Partner, People Manager, Technical
+ * Recruiter, Employee, Candidate. Zero typing; real JWT + RLS per role.
+ */
+export function DemoQuickAccess() {
   const { signInDemo } = useAuth();
   const navigate = useNavigate();
   const [busy, setBusy] = useState<string | null>(null);
 
-  const enterAs = async (role: "hr_executive" | "manager" | "employee") => {
+  const enterAs = async (role: Exclude<Role, "candidate">) => {
     setBusy(role);
     try {
       await signInDemo(role);
@@ -30,15 +38,16 @@ export function DemoAccessPanel() {
   };
 
   return (
-    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
       {DEMO_ACCOUNTS.map((account) => (
         <RoleCard
           key={account.role}
           tone={ROLE_TONE[account.role]}
-          eyebrow={`Enter as ${account.role.replace("_", " ")}`}
-          title={account.name.split(" ")[0] + "'s view"}
+          eyebrow={account.badge}
+          title={account.name}
           description={account.blurb}
-          cta="Enter demo"
+          meta={account.email}
+          cta="One-click demo"
           loading={busy === account.role}
           onClick={() => void enterAs(account.role)}
         />
@@ -46,22 +55,20 @@ export function DemoAccessPanel() {
 
       <RoleCard
         tone="muted"
-        eyebrow="No login needed"
-        title="Candidate view"
+        eyebrow="CANDIDATE"
+        title="Candidate"
         description="Check your application status and see your extracted skill summary."
+        meta="no login needed"
         cta="View status"
         onClick={() => navigate(`/candidate-status?code=${DEMO_CANDIDATE_CODE}`)}
       />
 
-      <div className="flex flex-col items-start justify-center gap-2 rounded-lg bg-background p-6 md:col-span-2 lg:col-span-1">
-        <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Why instant?</span>
+      <div className="col-span-full flex items-center gap-3 rounded-lg bg-muted px-5 py-4">
+        <ExternalLink className="h-5 w-5 shrink-0 text-primary" strokeWidth={2.5} />
         <p className="text-sm leading-relaxed text-foreground">
-          One click logs into a pre-seeded demo persona with real credentials — zero typing, real
-          role-based access.
+          Each card signs into a pre-seeded persona with real credentials. Role-based access is
+          enforced at the data layer — not hidden UI.
         </p>
-        <span className="inline-flex items-center gap-1 text-xs font-semibold text-primary">
-          <ExternalLink className="h-3 w-3" /> live demo path
-        </span>
       </div>
     </div>
   );

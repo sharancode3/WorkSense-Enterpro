@@ -1,7 +1,14 @@
-export type Role = "hr_executive" | "manager" | "employee" | "candidate";
+export type Role =
+  | "hr_executive"
+  | "hr_partner"
+  | "manager"
+  | "recruiter"
+  | "employee"
+  | "candidate";
 
 export type Action =
   | "view_all_workforce"
+  | "explore_skill_graph"
   | "manage_recruitment"
   | "approve_recommendations"
   | "reset_demo"
@@ -9,18 +16,40 @@ export type Action =
   | "approve_onboarding"
   | "self_service";
 
-export const ROLES: Role[] = ["hr_executive", "manager", "employee", "candidate"];
+export const ROLES: Role[] = [
+  "hr_executive",
+  "hr_partner",
+  "manager",
+  "recruiter",
+  "employee",
+  "candidate",
+];
 
+/** Full display names (demo quick-access cards + app shell). */
 export const ROLE_LABEL: Record<Role, string> = {
-  hr_executive: "HR Executive",
-  manager: "Manager",
+  hr_executive: "Administrator",
+  hr_partner: "HR Business Partner",
+  manager: "People Manager",
+  recruiter: "Technical Recruiter",
   employee: "Employee",
   candidate: "Candidate",
 };
 
+/** Short badge text shown on quick-access cards (matches the reference UI). */
+export const ROLE_BADGE_LABEL: Record<Role, string> = {
+  hr_executive: "ADMIN",
+  hr_partner: "HR",
+  manager: "MANAGER",
+  recruiter: "RECRUITER",
+  employee: "EMPLOYEE",
+  candidate: "CANDIDATE",
+};
+
 export const ROLE_BADGE_CLASS: Record<Role, string> = {
   hr_executive: "bg-primary text-white",
+  hr_partner: "bg-primary text-white",
   manager: "bg-secondary text-white",
+  recruiter: "bg-accent text-foreground",
   employee: "bg-accent text-foreground",
   candidate: "bg-muted text-foreground",
 };
@@ -31,7 +60,9 @@ export const ROLE_BADGE_CLASS: Record<Role, string> = {
  */
 export const ROLE_LANDING: Record<Role, string> = {
   hr_executive: "/app",
+  hr_partner: "/app",
   manager: "/app",
+  recruiter: "/app",
   employee: "/app",
   candidate: "/candidate-status",
 };
@@ -39,11 +70,14 @@ export const ROLE_LANDING: Record<Role, string> = {
 export const ROLE_ACTIONS: Record<Role, Action[]> = {
   hr_executive: [
     "view_all_workforce",
+    "explore_skill_graph",
     "manage_recruitment",
     "approve_recommendations",
     "reset_demo",
   ],
+  hr_partner: ["view_all_workforce", "approve_recommendations"],
   manager: ["view_team", "approve_recommendations", "approve_onboarding"],
+  recruiter: ["manage_recruitment"],
   employee: ["self_service"],
   candidate: [],
 };

@@ -44,7 +44,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </Link>
 
           <div className="flex items-center gap-2">
-            {role && can(role, "view_all_workforce") && (
+            {role && can(role, "explore_skill_graph") && (
               <Link
                 to="/graph"
                 className="hidden items-center gap-1.5 rounded-md px-3 py-2 text-sm font-semibold text-foreground transition-colors hover:bg-muted md:flex"
