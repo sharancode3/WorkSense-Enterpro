@@ -3320,6 +3320,7 @@ async function tearDownDemo(supabase, authIds: Record<string, string>) {
   const orgs = [DEMO_ORG_ID, SECOND_ORG_ID];
   for (const orgId of orgs) {
     await supabase.from("action_tasks").delete().eq("org_id", orgId);
+    await supabase.from("workflow_events").delete().eq("org_id", orgId);
     await supabase.from("workforce_observations").delete().eq("org_id", orgId);
     await supabase.from("performance_summaries").delete().eq("org_id", orgId);
     await supabase.from("workforce_review_cases").delete().eq("org_id", orgId);
@@ -3745,6 +3746,8 @@ async function reseed(supabase, authIds: Record<string, string>) {
   if (recsErr) throw new Error(`recs insert: ${recsErr.message}`);
 
   // 7b) Dispatched upskilling recommendation + action tasks (dispatch workflow demo).
+  //     Approved recs whose tasks exist are in execution_pending — dispatch is
+  //     only "done" when the task rows exist (Phase 11 transaction rule).
   const s05 = fx.scenarios.find((s) => s.id === "s05");
   const upskillRec = {
     id: "44444444-4444-4444-4444-444444444404",
@@ -3752,7 +3755,8 @@ async function reseed(supabase, authIds: Record<string, string>) {
     twin_id: s05?.twin_id ?? null,
     category: "upskilling",
     urgency: "low",
-    status: "approved",
+    status: "execution_pending",
+    version: 2,
     evidence_ledger: [
       { source: "SKILL_GRAPH", fact: "Future fit exceeds current fit for the Data Analyst role; the dbt/statistics ladder is the shortest path." },
       { source: "POLICY", fact: "Learning & Development policy (POL-LND) covers role-relevant courses up to 2,500/year." },
@@ -3778,18 +3782,31 @@ async function reseed(supabase, authIds: Record<string, string>) {
         org_id: DEMO_ORG_ID,
         recommendation_id: upskillRec.id,
         owner_twin_id: upskillRec.twin_id,
+        owner_role: "employee",
+        task_code: "targeted_learning",
         title: "Enroll in Advanced SQL & dbt (L&D)",
         status: "open",
         due_at: new Date(new Date(fx.clock).getTime() + 14 * 86400000).toISOString(),
+        instructions: "Enroll in the Advanced SQL & dbt course and attach the completion reference.",
+        resource_link: "https://learning.worksense.demo/lnd",
+        required_evidence: ["completion_reference"],
+        outcome_measure: { metric: "learning_completed", target: true },
+        created_by_request_id: "seed-upskill-dispatch",
         outcome: {},
       },
       {
         org_id: DEMO_ORG_ID,
         recommendation_id: upskillRec.id,
         owner_twin_id: upskillRec.twin_id,
+        owner_role: "employee",
+        task_code: "pair_data",
         title: "Pair with the Data team on the dbt migration",
         status: "in_progress",
         due_at: new Date(new Date(fx.clock).getTime() + 30 * 86400000).toISOString(),
+        instructions: "Pair with the Data team on the dbt migration; record the delivered work.",
+        required_evidence: ["work_reference"],
+        outcome_measure: { metric: "migration_paired", target: true },
+        created_by_request_id: "seed-upskill-dispatch",
         outcome: {},
       },
     ]);

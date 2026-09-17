@@ -28,6 +28,7 @@ const policy = stripAllImports(read("supabase/functions/_shared/policy-retrieval
 const reviewIndex = stripAllImports(read("supabase/functions/_shared/workforce-review-index.ts"));
 const performance = stripAllImports(read("supabase/functions/_shared/performance-intelligence.ts"));
 const recEngine = stripAllImports(read("supabase/functions/_shared/recommendation-engine.ts"));
+const workflow = stripAllImports(read("supabase/functions/_shared/workflow-engine.ts"));
 const jobs = stripAllImports(read("supabase/functions/_shared/jobs.ts"));
 const validate = stripAllImports(read("supabase/functions/_shared/validate.ts"));
 const evidence = stripAllImports(read("supabase/functions/_shared/evidence.ts"));
@@ -42,7 +43,7 @@ const pcontext = stripAllImports(read("supabase/functions/_shared/policy-context
 const leave = stripAllImports(read("supabase/functions/_shared/leave-calc.ts"));
 const policyseed = stripAllImports(read("supabase/functions/_shared/policy-seed.ts"));
 
-const SHARED = { engine, onboarding, onboardingV2, qwen, policy, reviewIndex, performance, recEngine, jobs, validate, evidence, resume, generated, journey, fixtures, seed, stageEngine, assessment, pcontext, leave, policyseed };
+const SHARED = { engine, onboarding, onboardingV2, qwen, policy, reviewIndex, performance, recEngine, workflow, jobs, validate, evidence, resume, generated, journey, fixtures, seed, stageEngine, assessment, pcontext, leave, policyseed };
 
 // Function -> shared dependencies (in import order) it needs inlined.
 const FNS = {
@@ -63,8 +64,10 @@ const FNS = {
   "workforce-review-index": ["reviewIndex"],
   "performance-summary": ["performance", "qwen"],
   "performance-synthesis": ["qwen", "validate"],
-  "recommendation-scan": ["engine", "recEngine", "reviewIndex", "qwen", "validate"],
-  "recommendation-decision": [],
+  "recommendation-review": ["workflow"],
+  "recommendation-execute": ["workflow"],
+  "action-task-update": ["workflow"],
+  "recommendation-scan": ["engine", "recEngine", "reviewIndex", "workflow", "qwen", "validate"],
   "dashboard": ["engine", "reviewIndex"],
   "model-job": ["jobs"],
   "health": ["qwen"],

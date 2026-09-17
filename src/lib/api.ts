@@ -376,14 +376,38 @@ export const escalatePolicy = (question: string, context?: Record<string, unknow
     { question, context, sources, reason }
   );
 
-// ---- Recommendation & Action Hub ----
+// ---- Recommendation & Action Hub (Phase 11 transactional lifecycle) ----
+
+export type RecommendationStatus =
+  | "suggested"
+  | "needs_review"
+  | "approved"
+  | "rejected"
+  | "execution_pending"
+  | "in_progress"
+  | "completed"
+  | "failed"
+  | "cancelled"
+  | "stale";
 
 export interface RecommendationRow {
   id: string;
   twin_id: string | null;
   category: string;
   urgency: string;
-  status: "needs_review" | "approved" | "rejected" | "dispatched" | "completed";
+  status: RecommendationStatus;
+  version: number;
+  source_hash: string | null;
+  resource_ref: string | null;
+  alternatives: { req_id: string; title: string; fit_score: number; coverage: number }[];
+  required_approvers: unknown[];
+  expires_at: string | null;
+  stale: boolean;
+  stale_reason: string | null;
+  superseded_by: string | null;
+  intended_outcome: { review_kind?: string; outcome?: string };
+  approved_at: string | null;
+  outcomes: { time_to_ready_days?: number; completed_at?: string; reviewer_feedback?: string; task_summary?: { total: number; completed: number; failed: number; cancelled: number }; note?: string };
   evidence_ledger: { source: string; fact: string }[];
   proposed_action: {
     title: string;
@@ -399,13 +423,63 @@ export interface RecommendationRow {
   created_at: string;
 }
 
-export const recommendationScan = () =>
-  invoke<{ ok: true; scanned_candidates: number; created: number; created_ids: string[] }>("recommendation-scan", {});
+export type TaskStatus = "open" | "in_progress" | "blocked" | "completed" | "failed" | "cancelled";
 
-export const recommendationDecision = (recId: string, decision: string, rationale: string) =>
-  invoke<{ ok: true; status: string; effect?: string | null; rationale: string }>(
-    "recommendation-decision",
-    { rec_id: recId, decision, rationale }
+export interface ActionTaskRow {
+  id: string;
+  recommendation_id: string | null;
+  owner_twin_id: string;
+  owner_role: string | null;
+  task_code: string | null;
+  title: string;
+  status: TaskStatus;
+  due_at: string | null;
+  resource_link: string | null;
+  instructions: string | null;
+  required_evidence: string[];
+  depends_on: string[];
+  outcome_measure: Record<string, unknown>;
+  verification: { evidence?: string[]; completed_by?: string; at?: string; note?: string };
+  outcome: Record<string, unknown>;
+  last_error: string | null;
+  retry_count: number;
+  version: number;
+  created_at: string;
+}
+
+export interface WorkflowEventRow {
+  id: string;
+  resource_type: "recommendation" | "action_task";
+  resource_id: string;
+  actor_role: string | null;
+  resource: string | null;
+  prior_status: string | null;
+  new_status: string | null;
+  reason: string | null;
+  source_version: string | null;
+  request_id: string;
+  created_at: string;
+}
+
+export const recommendationScan = () =>
+  invoke<{ ok: true; scanned_candidates: number; created: number; unchanged: number; made_stale: number; created_ids: string[] }>("recommendation-scan", {});
+
+export const recommendationReview = (recId: string, action: string, rationale: string, requestId?: string, supersededBy?: string) =>
+  invoke<{ ok: true; request_id: string; prior_status: string; status: string; idempotent: boolean; effect?: string | null }>(
+    "recommendation-review",
+    { rec_id: recId, action, rationale, request_id: requestId, superseded_by: supersededBy }
+  );
+
+export const recommendationExecute = (recId: string, action: string, rationale: string, requestId?: string, reviewerFeedback?: string) =>
+  invoke<{ ok: true; request_id: string; prior_status: string; status: string; created_tasks: number; idempotent: boolean; effect?: string | null }>(
+    "recommendation-execute",
+    { rec_id: recId, action, rationale, request_id: requestId, reviewer_feedback: reviewerFeedback }
+  );
+
+export const actionTaskUpdate = (taskId: string, action: string, rationale: string, requestId?: string, evidence?: string[], outcome?: Record<string, unknown>) =>
+  invoke<{ ok: true; request_id: string; prior_status: string; status: string; recommendation_status: string | null; idempotent: boolean }>(
+    "action-task-update",
+    { task_id: taskId, action, rationale, request_id: requestId, evidence, outcome }
   );
 
 // ---- Executive Decision Dashboard ----

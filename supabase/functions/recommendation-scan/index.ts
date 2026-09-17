@@ -290,7 +290,12 @@ export function fitKey(record: { target_type: string; target_id: string; scenari
 
 
 
-export type RecCategory = "INTERNAL_MOBILITY" | "RETENTION_INTERVENTION" | "ONBOARDING_REPLAN" | "DEVELOPMENT_SUPPORT";
+export type RecCategory =
+  | "INTERNAL_MOBILITY"
+  | "RETENTION_INTERVENTION"
+  | "ONBOARDING_REPLAN"
+  | "DEVELOPMENT_SUPPORT"
+  | "RECRUITMENT_ASSESSMENT_REVIEW";
 
 export interface EvidenceFact {
   source: string;
@@ -303,7 +308,10 @@ export interface RecCandidate {
   urgency: "low" | "medium" | "high" | "critical";
   evidence_ledger: EvidenceFact[];
   proposed_action: { title: string; description: string; steps: { order: number; action: string }[] };
-  required_signoff_role: "manager" | "hr_executive";
+  required_signoff_role: "manager" | "hr_executive" | "recruiter";
+  // Phase 11: the req the recommendation is about + ranked alternatives.
+  resource_ref?: string;
+  alternatives?: { req_id: string; title: string; fit_score: number; coverage: number }[];
 }
 
 export interface ScanInputs {
@@ -329,6 +337,8 @@ export interface ScanInputs {
   }[];
   graph: GraphSkill[];
   journeys: { twin_id: string; status: string; tasks: { id: string; title: string; status: string; blocked?: { note: string } | null }[] }[];
+  // Phase 11: recruitment recommendations REQUIRE actual application evidence.
+  applications?: { twin_id: string; requisition_id: string; stage: string; application_code: string; unverified_claims?: number }[];
 }
 
 const RATING_ORDER: Record<string, number> = {
@@ -421,16 +431,19 @@ export function scanForRecommendations(inputs: ScanInputs): RecCandidate[] {
     }
 
     // 3) INTERNAL_MOBILITY — elevated index AND strong/stable performance AND
-    //    the Skill Graph shows >=70% adjacent/transferable fit to an OPEN req.
+    //    meaningful target coverage: >=60% of the req's required skills are
+    //    covered by direct/adjacent/transferable paths, >=70% of covered
+    //    skills are reached via adjacent/transferable edges, and at least two
+    //    paths exist. ALL requisitions are evaluated and the best fit is
+    //    selected (with ranked alternatives), not the first match.
     if (index > 65 && (RATING_ORDER[latestRating(twin.performance_history)] ?? 0) >= 4) {
-      // Domain mapping: the scan may carry partial skill claims; the engine
-      // requires full SkillClaim records, so fill defaults explicitly.
       const candidateSkills: import("./skill-graph-engine.ts").SkillClaim[] = (twin.verified_skills ?? []).map((s) => ({
         name: s.name,
         proficiency: s.proficiency,
         evidence_source: s.evidence_source ?? "skill_scan",
         verification_rigor: (s.verification_rigor as "low" | "medium" | "high") ?? "low",
       }));
+      const evaluated: { req: (typeof inputs.requisitions)[number]; fit: import("./skill-graph-engine.ts").FitRecord; soft: number; direct: number; covered: number; covered_ratio: number; soft_share: number; coverage_score: number }[] = [];
       for (const req of inputs.requisitions) {
         const fit = computeFit({
           candidateSkills,
@@ -443,40 +456,91 @@ export function scanForRecommendations(inputs: ScanInputs): RecCandidate[] {
         });
         const soft = fit.classification.adjacent.length + fit.classification.transferable.length;
         const direct = fit.classification.direct.length;
-        // ">=70% adjacent/transferable fit": at least 70% of the COVERED
-        // requirement paths were reached via adjacent/transferable edges, and
-        // at least two such paths exist (a single same-category transfer is
-        // too weak to justify a mobility recommendation).
+        const total = (req.required_skills ?? []).length;
         const covered = direct + soft;
-        const softShare = covered > 0 ? soft / covered : 0;
-        if (softShare >= 0.7 && covered >= 2) {
-          candidates.push({
-            twin_id: twin.id,
-            category: "INTERNAL_MOBILITY",
-            urgency: index > 75 ? "high" : "medium",
-            evidence_ledger: [
-              { source: "WORKFORCE_REVIEW_SIGNAL", fact: `Workforce Review Index ${index}/100 — interpretable review priority, NOT a probability of leaving.` },
-              { source: "PERFORMANCE", fact: `Latest rating: ${latestRating(twin.performance_history)} — strong, stable.` },
-              { source: "SKILL_GRAPH", fact: `${Math.round(fit.score * 100)}% match vs ${req.title}; ${direct} direct, ${soft} adjacent/transferable path(s) across required_skills.` },
-            ],
-            proposed_action: {
-              title: "Manager review for internal mobility",
-              description: `Evaluate ${twin.name} for movement toward ${req.title} using the adjacent/transferable fit.`,
-              steps: [
-                { order: 1, action: "Review the skill-graph fit breakdown." },
-                { order: 2, action: "Discuss scope/growth with the employee." },
-                { order: 3, action: "Decide on a mobility or upskilling path." },
-              ],
-            },
-            required_signoff_role: "manager",
-          });
-          break;
+        const covered_ratio = total > 0 ? covered / total : 0;
+        const soft_share = covered > 0 ? soft / covered : 0;
+        // Meaningful coverage: a majority of the TARGET skills must be
+        // covered — not merely a high soft-share among a few covered skills.
+        if (covered_ratio >= 0.6 && soft_share >= 0.7 && covered >= 2) {
+          evaluated.push({ req, fit, soft, direct, covered, covered_ratio, soft_share, coverage_score: covered_ratio * fit.score });
         }
+      }
+      if (evaluated.length > 0) {
+        evaluated.sort((a, b) => b.coverage_score - a.coverage_score);
+        const best = evaluated[0];
+        const alternatives = evaluated.slice(1, 4).map((e) => ({
+          req_id: e.req.id,
+          title: e.req.title,
+          fit_score: +e.fit.score.toFixed(3),
+          coverage: +e.covered_ratio.toFixed(2),
+        }));
+        candidates.push({
+          twin_id: twin.id,
+          category: "INTERNAL_MOBILITY",
+          urgency: index > 75 ? "high" : "medium",
+          resource_ref: best.req.id,
+          alternatives,
+          evidence_ledger: [
+            { source: "WORKFORCE_REVIEW_SIGNAL", fact: `Workforce Review Index ${index}/100 — interpretable review priority, NOT a probability of leaving.` },
+            { source: "PERFORMANCE", fact: `Latest rating: ${latestRating(twin.performance_history)} — strong, stable.` },
+            { source: "SKILL_GRAPH", fact: `${Math.round(best.fit.score * 100)}% match vs ${best.req.title}; ${best.direct} direct, ${best.soft} adjacent/transferable path(s); ${Math.round(best.covered_ratio * 100)}% of the target skills covered (meaningful coverage).` },
+            ...(alternatives.length > 0 ? [{ source: "ALTERNATIVES", fact: `Alternatives considered: ${alternatives.map((a) => `${a.title} (${Math.round(a.fit_score * 100)}% fit)`).join(", ")}.` }] : []),
+          ],
+          proposed_action: {
+            title: "Manager review for internal mobility",
+            description: `Evaluate ${twin.name} for movement toward ${best.req.title} (best coverage among ${evaluated.length} candidate role(s)).`,
+            steps: [
+              { order: 1, action: "Review the skill-graph fit breakdown and the alternatives considered." },
+              { order: 2, action: "Confirm capacity with the manager (staffing cover)." },
+              { order: 3, action: "Discuss scope/growth with the employee." },
+              { order: 4, action: "Decide on a mobility or upskilling path." },
+            ],
+          },
+          required_signoff_role: "manager",
+        });
       }
     }
   }
 
-  // 3) ONBOARDING_REPLAN — a journey with a blocked task needs a replan.
+  // 4) RECRUITMENT_ASSESSMENT_REVIEW — requires an ACTUAL application record
+  //    (evidence), not just a fit score, and visible assessment gaps
+  //    (unverified skill claims). The action task is owned by the recruiter.
+  const apps = inputs.applications ?? [];
+  const appliedCandidates = new Map<string, (typeof apps)[number]>();
+  for (const a of apps) {
+    if (!appliedCandidates.has(a.twin_id)) appliedCandidates.set(a.twin_id, a);
+  }
+  for (const twin of inputs.twins) {
+    if (twin.role !== "candidate" || !["candidate", "active"].includes(twin.status)) continue;
+    const app = appliedCandidates.get(twin.id);
+    if (!app) continue; // no application record -> no recruitment recommendation
+    const unverified = app.unverified_claims ?? 0;
+    if (unverified > 0) {
+      candidates.push({
+        twin_id: twin.id,
+        category: "RECRUITMENT_ASSESSMENT_REVIEW",
+        urgency: "medium",
+        resource_ref: app.requisition_id,
+        evidence_ledger: [
+          { source: "APPLICATION", fact: `Application ${app.application_code} for requisition at stage "${app.stage}" — actual application evidence on record.` },
+          { source: "ASSESSMENT_GAPS", fact: `${unverified} skill claim(s) remain unverified (self-reported only) — review assessment gaps before advancing the stage.` },
+        ],
+        proposed_action: {
+          title: "Review assessment gaps before advancing",
+          description: `Have the recruiter review ${twin.name}'s assessment gaps and decide whether to collect more evidence or advance the stage.`,
+          steps: [
+            { order: 1, action: "Review the unverified claims and assessment evidence." },
+            { order: 2, action: "Collect a work sample or interview evidence for the gaps." },
+            { order: 3, action: "Update the application stage with a recorded reason." },
+          ],
+        },
+        required_signoff_role: "recruiter",
+      });
+    }
+  }
+
+  // 5) ONBOARDING_REPLAN — a journey with a blocked task needs a replan.
   for (const j of inputs.journeys) {
     const blocked = (j.tasks ?? []).find((t) => t.status === "blocked");
     if (blocked) {
@@ -789,6 +853,289 @@ export function reviewSourceHash(input: ReviewIndexInput): string {
 // Named fnv1aHex (not fnv1a) so the flat function bundle never collides with
 // other shared modules that keep a private fnv1a.
 export function fnv1aHex(str: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(16).padStart(8, "0");
+}
+
+
+// ---------------------------------------------------------------------------
+// WorkSense workflow engine — deterministic, zero LLM.
+// Mirrors the SQL state machines in the Phase 11 migration so the edge
+// functions and unit tests share ONE definition of the allowed transitions,
+// and owns the per-category task templates created when an approved
+// recommendation is dispatched. The SQL RPCs remain the authoritative
+// enforcement point (atomic + optimistic concurrency + idempotency).
+// ---------------------------------------------------------------------------
+
+export type RecStatus =
+  | "suggested"
+  | "needs_review"
+  | "approved"
+  | "rejected"
+  | "execution_pending"
+  | "in_progress"
+  | "completed"
+  | "failed"
+  | "cancelled"
+  | "stale";
+
+export type RecAction =
+  | "submit"
+  | "approve"
+  | "reject"
+  | "dispatch"
+  | "start"
+  | "complete"
+  | "fail"
+  | "cancel"
+  | "mark_stale"
+  | "re_review";
+
+// Allowed transitions — never arbitrary status assignment.
+export const REC_ACTION_TABLE: Record<RecAction, { from: RecStatus[]; to: RecStatus }> = {
+  submit: { from: ["suggested"], to: "needs_review" },
+  approve: { from: ["needs_review", "stale"], to: "approved" },
+  reject: { from: ["suggested", "needs_review", "stale", "approved"], to: "rejected" },
+  dispatch: { from: ["approved"], to: "execution_pending" },
+  start: { from: ["execution_pending", "failed"], to: "in_progress" },
+  complete: { from: ["in_progress", "execution_pending"], to: "completed" },
+  fail: { from: ["in_progress", "execution_pending"], to: "failed" },
+  cancel: { from: ["needs_review", "approved", "execution_pending", "in_progress", "failed"], to: "cancelled" },
+  mark_stale: { from: ["needs_review", "approved", "execution_pending", "in_progress", "failed"], to: "stale" },
+  re_review: { from: ["stale"], to: "needs_review" },
+};
+
+export type TaskStatus = "open" | "in_progress" | "blocked" | "completed" | "failed" | "cancelled";
+export type TaskAction = "start" | "complete" | "block" | "fail" | "cancel" | "retry";
+
+export const TASK_ACTION_TABLE: Record<TaskAction, { from: TaskStatus[]; to: TaskStatus }> = {
+  start: { from: ["open"], to: "in_progress" },
+  complete: { from: ["in_progress", "blocked"], to: "completed" },
+  block: { from: ["in_progress"], to: "blocked" },
+  fail: { from: ["in_progress", "blocked"], to: "failed" },
+  cancel: { from: ["open", "in_progress", "blocked", "failed"], to: "cancelled" },
+  retry: { from: ["failed"], to: "in_progress" },
+};
+
+export function canTransitionRec(status: string, action: string): boolean {
+  const row = REC_ACTION_TABLE[action as RecAction];
+  return !!row && (row.from as string[]).includes(status);
+}
+
+export function canTransitionTask(status: string, action: string): boolean {
+  const row = TASK_ACTION_TABLE[action as TaskAction];
+  return !!row && (row.from as string[]).includes(status);
+}
+
+export function nextRecStatus(status: string, action: string): string | null {
+  const row = REC_ACTION_TABLE[action as RecAction];
+  return row && (row.from as string[]).includes(status) ? row.to : null;
+}
+
+export function nextTaskStatus(status: string, action: string): string | null {
+  const row = TASK_ACTION_TABLE[action as TaskAction];
+  return row && (row.from as string[]).includes(status) ? row.to : null;
+}
+
+export interface TaskTemplate {
+  task_code: string;
+  title: string;
+  owner_role: "manager" | "employee" | "recruiter" | "hr" | "it_security" | "reviewer";
+  instructions: string;
+  resource_link?: string;
+  required_evidence: string[];
+  outcome_measure: Record<string, unknown>;
+  depends_on?: string[];
+  due_days: number;
+}
+
+// The work an approved recommendation creates, per category. Owner roles are
+// resolved to concrete twins at dispatch time (the edge function knows the org
+// roster); the subject twin is always available.
+export function buildTasksForCategory(
+  category: string,
+  subjectTwinId: string | null,
+  managerTwinId: string | null
+): TaskTemplate[] {
+  const emp = subjectTwinId ?? "employee";
+  const mgr = managerTwinId ?? "manager";
+  const cat = String(category ?? "").toLowerCase();
+
+  if (cat === "workforce_review" || cat === "retention" || cat.includes("workforce")) {
+    return [
+      {
+        task_code: "review_conversation",
+        title: "Manager 1:1 review conversation",
+        owner_role: "manager",
+        instructions:
+          "Book a 1:1 focused on engagement drivers, scope and growth path. Record the outcome as an observation — never as a causal diagnosis.",
+        required_evidence: ["conversation_note"],
+        outcome_measure: { metric: "review_conversation_completed", target: true },
+        due_days: 7,
+      },
+      {
+        task_code: "verify_signals",
+        title: "Verify the review-index factors with the employee's manager",
+        owner_role: "manager",
+        instructions:
+          "Confirm the absence snapshot and delivery load with the manager; distinguish capacity issues from quality issues before any conclusion.",
+        required_evidence: ["manager_confirmation"],
+        outcome_measure: { metric: "factors_verified", target: true },
+        depends_on: ["review_conversation"],
+        due_days: 14,
+      },
+    ];
+  }
+  if (cat === "mobility") {
+    return [
+      {
+        task_code: "confirm_capacity",
+        title: "Confirm capacity for the move",
+        owner_role: "manager",
+        instructions: "Confirm staffing cover exists before committing to the mobility move.",
+        required_evidence: ["capacity_confirmation"],
+        outcome_measure: { metric: "capacity_confirmed", target: true },
+        due_days: 7,
+      },
+      {
+        task_code: "scope_discussion",
+        title: "Scope and growth discussion with the employee",
+        owner_role: "manager",
+        instructions: "Discuss the target role and the adjacent/transferable skill bridge with the employee.",
+        required_evidence: ["discussion_note"],
+        outcome_measure: { metric: "scope_discussed", target: true },
+        due_days: 10,
+      },
+    ];
+  }
+  if (cat === "development_support" || cat === "upskilling") {
+    return [
+      {
+        task_code: "growth_conversation",
+        title: "Development / growth conversation",
+        owner_role: "manager",
+        instructions:
+          "Plan scope, mentoring and upskilling. Development interest is a growth signal — not attrition intent.",
+        required_evidence: ["growth_plan"],
+        outcome_measure: { metric: "growth_plan_created", target: true },
+        due_days: 7,
+      },
+      {
+        task_code: "targeted_learning",
+        title: "Complete the targeted learning (L&D)",
+        owner_role: "employee",
+        instructions: "Enroll in and complete the agreed course; attach the completion reference.",
+        resource_link: "https://learning.worksense.demo/lnd",
+        required_evidence: ["completion_reference"],
+        outcome_measure: { metric: "learning_completed", target: true },
+        depends_on: ["growth_conversation"],
+        due_days: 30,
+      },
+      {
+        task_code: "capability_verification",
+        title: "Verify the resulting capability",
+        owner_role: "reviewer",
+        instructions:
+          "Review the completion evidence and update the skill assertion to reviewer_confirmed when the capability is demonstrated.",
+        required_evidence: ["capability_review"],
+        outcome_measure: { metric: "capability_verified", target: true },
+        depends_on: ["targeted_learning"],
+        due_days: 45,
+      },
+    ];
+  }
+  if (cat === "onboarding_replan") {
+    return [
+      {
+        task_code: "manager_reapprove",
+        title: "Approve the replanned journey (Manager)",
+        owner_role: "manager",
+        instructions: "Review the replanned journey in the onboarding center and approve it.",
+        required_evidence: ["manager_approval"],
+        outcome_measure: { metric: "replan_manager_approved", target: true },
+        due_days: 5,
+      },
+      {
+        task_code: "hr_reapprove",
+        title: "Approve the replanned journey (HR)",
+        owner_role: "hr",
+        instructions: "Confirm the replanned dates and approvals, then approve.",
+        required_evidence: ["hr_approval"],
+        outcome_measure: { metric: "replan_hr_approved", target: true },
+        depends_on: ["manager_reapprove"],
+        due_days: 7,
+      },
+    ];
+  }
+  if (cat === "recruitment_review" || cat === "recruitment") {
+    return [
+      {
+        task_code: "review_assessment_gaps",
+        title: "Review assessment gaps",
+        owner_role: "recruiter",
+        instructions:
+          "Review the candidate's unverified claims and assessment gaps; decide whether to collect more evidence or advance the stage.",
+        required_evidence: ["gap_review"],
+        outcome_measure: { metric: "assessment_gaps_reviewed", target: true },
+        due_days: 5,
+      },
+      {
+        task_code: "stage_update",
+        title: "Update the candidate stage or request more evidence",
+        owner_role: "recruiter",
+        instructions: "Apply the stage change or request additional evidence through the application workflow.",
+        required_evidence: ["stage_decision"],
+        outcome_measure: { metric: "stage_resolved", target: true },
+        depends_on: ["review_assessment_gaps"],
+        due_days: 7,
+      },
+    ];
+  }
+  if (cat === "policy") {
+    return [
+      {
+        task_code: "review_policy_exception",
+        title: "Review the policy exception",
+        owner_role: "hr",
+        instructions: "Review the exception against the current policy version and record the decision.",
+        required_evidence: ["policy_decision"],
+        outcome_measure: { metric: "exception_reviewed", target: true },
+        due_days: 5,
+      },
+    ];
+  }
+  // Fallback: turn the proposed action's steps into tasks owned by the manager.
+  return [
+    {
+      task_code: "action_steps",
+      title: "Execute the approved action steps",
+      owner_role: "manager",
+      instructions: "Follow the approved action steps and record the outcome.",
+      required_evidence: ["action_note"],
+      outcome_measure: { metric: "action_completed", target: true },
+      due_days: 14,
+    },
+  ];
+}
+
+// Stable hash over a scan candidate's evidence — used to dedupe recurring
+// scans and to detect material source changes that must trigger re-review.
+export function candidateSourceHash(payload: { category: string; twin_id: string | null; evidence: unknown }): string {
+  const s = JSON.stringify({
+    category: String(payload.category ?? "").toLowerCase(),
+    twin_id: payload.twin_id ?? "",
+    evidence: payload.evidence ?? [],
+  });
+  return wfFnv1aHex(s);
+}
+
+// FNV-1a 32-bit, hex. Named wfFnv1aHex (not fnv1a/fnv1aHex) so the flat
+// function bundle never collides with other shared modules' private hashes.
+function wfFnv1aHex(str: string): string {
   let h = 0x811c9dc5;
   for (let i = 0; i < str.length; i++) {
     h ^= str.charCodeAt(i);
@@ -1283,6 +1630,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
 
 
 
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -1293,7 +1641,10 @@ const json = (body: unknown, status = 200) =>
 
 const SUMMARY_SYSTEM = `You are the WorkSense Decision Support Synthesizer. You are given an already-computed evidence_ledger and urgency — do not change or second-guess the numbers. Write a short executive_summary connecting the evidence into a clear rationale for the proposed action, for a human to approve or reject. You are not making the decision.
 Respond with JSON only:
-{"title":"string","executive_summary":"string","proposed_action":{"action_type":"string","target_entity_id":"string"},"required_human_signoff_role":"HR_EXECUTIVE|MANAGER"}`;
+{"title":"string","executive_summary":"string","proposed_action":{"action_type":"string","target_entity_id":"string"},"required_human_signoff_role":"HR_EXECUTIVE|MANAGER|RECRUITER"}`;
+
+// Non-terminal states a candidate may already occupy.
+const OPEN_STATUSES = ["suggested", "needs_review", "approved", "execution_pending", "in_progress", "failed"];
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -1319,14 +1670,30 @@ Deno.serve(async (req) => {
   }
 
   // Load the org's data sources.
-  const [twinsRes, reqsRes, graphRes, journeysRes, openRecsRes, obsRes] = await Promise.all([
-    supabase.from("digital_twins").select("id, name, role, status, signals, performance_history, verified_skills, seniority_level, job_title, attendance, delivery, promotion_lag_months").eq("org_id", caller.org_id),
+  const [twinsRes, reqsRes, graphRes, journeysRes, openRecsRes, obsRes, appsRes, assertionsRes] = await Promise.all([
+    supabase.from("digital_twins").select("id, name, role, status, signals, performance_history, verified_skills, seniority_level, job_title, attendance, delivery, promotion_lag_months, manager_id").eq("org_id", caller.org_id),
     supabase.from("job_requisitions").select("id, title, required_skills, future_skills, seniority_level").eq("org_id", caller.org_id),
     supabase.from("skill_graph").select("skill, category, outgoing_edges").eq("org_id", caller.org_id),
     supabase.from("onboarding_journeys").select("twin_id, status, tasks").eq("org_id", caller.org_id),
-    supabase.from("recommendations").select("twin_id, category, status").eq("org_id", caller.org_id).in("status", ["needs_review", "approved", "dispatched"]),
+    supabase.from("recommendations").select("id, twin_id, category, status, source_hash").eq("org_id", caller.org_id).in("status", OPEN_STATUSES),
     supabase.from("workforce_observations").select("twin_id, metric, period_start, value, missing").eq("org_id", caller.org_id),
+    supabase.from("applications").select("candidate_twin_id, requisition_id, stage, application_code").eq("org_id", caller.org_id).in("stage", ["screening", "technical_interview", "final_round"]),
+    supabase.from("skill_assertions").select("twin_id, review_state").eq("org_id", caller.org_id).eq("review_state", "claimed"),
   ]);
+
+  // Unverified claim counts per candidate — recruitment recommendations
+  // require actual application evidence AND visible assessment gaps.
+  const unverifiedByTwin = new Map<string, number>();
+  for (const a of assertionsRes.data ?? []) {
+    unverifiedByTwin.set(a.twin_id, (unverifiedByTwin.get(a.twin_id) ?? 0) + 1);
+  }
+  const applications = (appsRes.data ?? []).map((a) => ({
+    twin_id: a.candidate_twin_id,
+    requisition_id: a.requisition_id,
+    stage: a.stage,
+    application_code: a.application_code,
+    unverified_claims: unverifiedByTwin.get(a.candidate_twin_id) ?? 0,
+  }));
 
   // Phase 9: compute the deterministic Workforce Review Index per twin and feed
   // it (with completeness/growth meta) into the trigger engine. Missing data is
@@ -1366,6 +1733,7 @@ Deno.serve(async (req) => {
     requisitions: reqsRes.data ?? [],
     graph: graphRes.data ?? [],
     journeys: journeysRes.data ?? [],
+    applications,
   });
 
   // Canonical stored category names (stable across seed + scan).
@@ -1374,19 +1742,37 @@ Deno.serve(async (req) => {
     INTERNAL_MOBILITY: "mobility",
     ONBOARDING_REPLAN: "onboarding_replan",
     DEVELOPMENT_SUPPORT: "development_support",
+    RECRUITMENT_ASSESSMENT_REVIEW: "recruitment_review",
   };
 
-  // Dedup against already-open recommendations (same twin + category).
-  const open = new Set((openRecsRes.data ?? []).map((r) => `${r.twin_id}|${r.category.toLowerCase()}`));
-  const fresh = candidates.filter((c) => {
-    const dbCat = CATEGORY_DB[c.category] ?? c.category.toLowerCase();
-    return !open.has(`${c.twin_id}|${dbCat}`);
-  });
+  // Phase 11: recurring scans deduplicate by source hash and EXPLAIN updates.
+  // Same (twin, category, hash) -> no-op. Same (twin, category) but a changed
+  // hash -> the old open recommendation is marked stale (re-review required)
+  // and a fresh one is created. Identical recommendations are never re-created.
+  const existingByKey = new Map<string, { id: string; status: string; source_hash: string | null }[]>();
+  for (const r of openRecsRes.data ?? []) {
+    const key = `${r.twin_id ?? "none"}|${String(r.category).toLowerCase()}`;
+    existingByKey.set(key, [...(existingByKey.get(key) ?? []), r]);
+  }
 
   const now = new Date().toISOString();
   const created: RecCandidate[] = [];
-  for (const c of fresh) {
-    // ONE Qwen call per new recommendation — language only, never facts/urgency.
+  let unchanged = 0;
+  let madeStale = 0;
+
+  for (const c of candidates) {
+    const dbCat = CATEGORY_DB[c.category] ?? c.category.toLowerCase();
+    const key = `${c.twin_id ?? "none"}|${dbCat}`;
+    const hash = candidateSourceHash({ category: dbCat, twin_id: c.twin_id, evidence: c.evidence_ledger });
+    const existing = existingByKey.get(key) ?? [];
+
+    const sameHash = existing.filter((r) => r.source_hash === hash);
+    if (sameHash.length > 0) {
+      unchanged++; // already tracked with the same evidence — no duplicate
+      continue;
+    }
+
+    // ONE Qwen call per NEW recommendation — language only, never facts/urgency.
     const parsed = (await callQwen({
       json: true,
       temperature: 0.2,
@@ -1400,31 +1786,66 @@ Deno.serve(async (req) => {
       required_human_signoff_role?: string;
     };
 
-    const { error } = await supabase.from("recommendations").insert({
-      org_id: caller.org_id,
-      twin_id: c.twin_id,
-      category: CATEGORY_DB[c.category] ?? c.category.toLowerCase(),
-      urgency: c.urgency,
-      evidence_ledger: c.evidence_ledger,
-      proposed_action: {
-        ...c.proposed_action,
-        title: parsed.title ?? c.proposed_action.title,
+    const { data: inserted, error } = await supabase
+      .from("recommendations")
+      .insert({
+        org_id: caller.org_id,
+        twin_id: c.twin_id,
+        category: dbCat,
+        urgency: c.urgency,
+        evidence_ledger: c.evidence_ledger,
+        proposed_action: {
+          ...c.proposed_action,
+          title: parsed.title ?? c.proposed_action.title,
+          executive_summary: parsed.executive_summary ?? "",
+          action_type: c.category,
+          target_entity_id: c.twin_id,
+        },
         executive_summary: parsed.executive_summary ?? "",
-        action_type: c.category,
-        target_entity_id: c.twin_id,
-      },
-      executive_summary: parsed.executive_summary ?? "",
-      status: "needs_review",
-      // Sign-off comes from the deterministic engine — the model is not deciding.
-      required_signoff_role: c.required_signoff_role,
-      reviewer_rationale: {},
-      audit_events: [{ actor: caller.email ?? uid, action: "created", note: `Triggered by intelligence scan (${c.category}).`, timestamp: now }],
-    });
+        resource_ref: c.resource_ref ?? null,
+        alternatives: c.alternatives ?? [],
+        intended_outcome: { review_kind: c.category, outcome: "Resolve the review through the approved action tasks; record the outcome without claiming causality for workforce interventions." },
+        source_hash: hash,
+        // The scan is the deterministic suggester: a fresh candidate enters the
+        // lifecycle at "suggested" and moves to "needs_review" via submit.
+        status: "suggested",
+        required_signoff_role: c.required_signoff_role,
+        reviewer_rationale: {},
+        audit_events: [{ actor: caller.email ?? uid, action: "suggested", note: `Suggested by intelligence scan (${c.category}); source hash ${hash}.`, timestamp: now }],
+      })
+      .select("id")
+      .single();
     if (error) return json({ error: "INTERNAL", message: error.message }, 500);
+
+    // Material source change: mark the older open recommendation stale and
+    // point it at the fresh one — re-review required.
+    const changed = existing.filter((r) => r.source_hash !== hash && r.status !== "stale");
+    for (const old of changed) {
+      const { data: staleRes, error: staleErr } = await supabase.rpc("workflow_recommendation_transition", {
+        p_org_id: caller.org_id,
+        p_rec_id: old.id,
+        p_action: "mark_stale",
+        p_actor_twin_id: caller.id,
+        p_actor_role: caller.role,
+        p_reason: `Source changed: a newer scan produced updated evidence for this case (${c.category}). Re-review required.`,
+        p_request_id: crypto.randomUUID(),
+        p_source_version: old.source_hash ?? null,
+        p_payload: { superseded_by: inserted.id },
+      });
+      if (!staleErr && staleRes?.ok) madeStale++;
+    }
+
     created.push(c);
   }
 
-  return json({ ok: true, scanned_candidates: candidates.length, created: created.length, created_ids: created.map((c) => c.category) });
+  return json({
+    ok: true,
+    scanned_candidates: candidates.length,
+    created: created.length,
+    unchanged,
+    made_stale: madeStale,
+    created_ids: created.map((c) => c.category),
+  });
   } catch (err) {
     return json({ error: err instanceof QwenError ? err.code : "INTERNAL", message: err instanceof Error ? err.message : "unknown" });
   }

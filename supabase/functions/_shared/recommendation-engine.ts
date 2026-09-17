@@ -8,7 +8,12 @@
 
 import { computeFit, type GraphSkill } from "./skill-graph-engine.ts";
 
-export type RecCategory = "INTERNAL_MOBILITY" | "RETENTION_INTERVENTION" | "ONBOARDING_REPLAN" | "DEVELOPMENT_SUPPORT";
+export type RecCategory =
+  | "INTERNAL_MOBILITY"
+  | "RETENTION_INTERVENTION"
+  | "ONBOARDING_REPLAN"
+  | "DEVELOPMENT_SUPPORT"
+  | "RECRUITMENT_ASSESSMENT_REVIEW";
 
 export interface EvidenceFact {
   source: string;
@@ -21,7 +26,10 @@ export interface RecCandidate {
   urgency: "low" | "medium" | "high" | "critical";
   evidence_ledger: EvidenceFact[];
   proposed_action: { title: string; description: string; steps: { order: number; action: string }[] };
-  required_signoff_role: "manager" | "hr_executive";
+  required_signoff_role: "manager" | "hr_executive" | "recruiter";
+  // Phase 11: the req the recommendation is about + ranked alternatives.
+  resource_ref?: string;
+  alternatives?: { req_id: string; title: string; fit_score: number; coverage: number }[];
 }
 
 export interface ScanInputs {
@@ -47,6 +55,8 @@ export interface ScanInputs {
   }[];
   graph: GraphSkill[];
   journeys: { twin_id: string; status: string; tasks: { id: string; title: string; status: string; blocked?: { note: string } | null }[] }[];
+  // Phase 11: recruitment recommendations REQUIRE actual application evidence.
+  applications?: { twin_id: string; requisition_id: string; stage: string; application_code: string; unverified_claims?: number }[];
 }
 
 const RATING_ORDER: Record<string, number> = {
@@ -139,16 +149,19 @@ export function scanForRecommendations(inputs: ScanInputs): RecCandidate[] {
     }
 
     // 3) INTERNAL_MOBILITY — elevated index AND strong/stable performance AND
-    //    the Skill Graph shows >=70% adjacent/transferable fit to an OPEN req.
+    //    meaningful target coverage: >=60% of the req's required skills are
+    //    covered by direct/adjacent/transferable paths, >=70% of covered
+    //    skills are reached via adjacent/transferable edges, and at least two
+    //    paths exist. ALL requisitions are evaluated and the best fit is
+    //    selected (with ranked alternatives), not the first match.
     if (index > 65 && (RATING_ORDER[latestRating(twin.performance_history)] ?? 0) >= 4) {
-      // Domain mapping: the scan may carry partial skill claims; the engine
-      // requires full SkillClaim records, so fill defaults explicitly.
       const candidateSkills: import("./skill-graph-engine.ts").SkillClaim[] = (twin.verified_skills ?? []).map((s) => ({
         name: s.name,
         proficiency: s.proficiency,
         evidence_source: s.evidence_source ?? "skill_scan",
         verification_rigor: (s.verification_rigor as "low" | "medium" | "high") ?? "low",
       }));
+      const evaluated: { req: (typeof inputs.requisitions)[number]; fit: import("./skill-graph-engine.ts").FitRecord; soft: number; direct: number; covered: number; covered_ratio: number; soft_share: number; coverage_score: number }[] = [];
       for (const req of inputs.requisitions) {
         const fit = computeFit({
           candidateSkills,
@@ -161,40 +174,91 @@ export function scanForRecommendations(inputs: ScanInputs): RecCandidate[] {
         });
         const soft = fit.classification.adjacent.length + fit.classification.transferable.length;
         const direct = fit.classification.direct.length;
-        // ">=70% adjacent/transferable fit": at least 70% of the COVERED
-        // requirement paths were reached via adjacent/transferable edges, and
-        // at least two such paths exist (a single same-category transfer is
-        // too weak to justify a mobility recommendation).
+        const total = (req.required_skills ?? []).length;
         const covered = direct + soft;
-        const softShare = covered > 0 ? soft / covered : 0;
-        if (softShare >= 0.7 && covered >= 2) {
-          candidates.push({
-            twin_id: twin.id,
-            category: "INTERNAL_MOBILITY",
-            urgency: index > 75 ? "high" : "medium",
-            evidence_ledger: [
-              { source: "WORKFORCE_REVIEW_SIGNAL", fact: `Workforce Review Index ${index}/100 — interpretable review priority, NOT a probability of leaving.` },
-              { source: "PERFORMANCE", fact: `Latest rating: ${latestRating(twin.performance_history)} — strong, stable.` },
-              { source: "SKILL_GRAPH", fact: `${Math.round(fit.score * 100)}% match vs ${req.title}; ${direct} direct, ${soft} adjacent/transferable path(s) across required_skills.` },
-            ],
-            proposed_action: {
-              title: "Manager review for internal mobility",
-              description: `Evaluate ${twin.name} for movement toward ${req.title} using the adjacent/transferable fit.`,
-              steps: [
-                { order: 1, action: "Review the skill-graph fit breakdown." },
-                { order: 2, action: "Discuss scope/growth with the employee." },
-                { order: 3, action: "Decide on a mobility or upskilling path." },
-              ],
-            },
-            required_signoff_role: "manager",
-          });
-          break;
+        const covered_ratio = total > 0 ? covered / total : 0;
+        const soft_share = covered > 0 ? soft / covered : 0;
+        // Meaningful coverage: a majority of the TARGET skills must be
+        // covered — not merely a high soft-share among a few covered skills.
+        if (covered_ratio >= 0.6 && soft_share >= 0.7 && covered >= 2) {
+          evaluated.push({ req, fit, soft, direct, covered, covered_ratio, soft_share, coverage_score: covered_ratio * fit.score });
         }
+      }
+      if (evaluated.length > 0) {
+        evaluated.sort((a, b) => b.coverage_score - a.coverage_score);
+        const best = evaluated[0];
+        const alternatives = evaluated.slice(1, 4).map((e) => ({
+          req_id: e.req.id,
+          title: e.req.title,
+          fit_score: +e.fit.score.toFixed(3),
+          coverage: +e.covered_ratio.toFixed(2),
+        }));
+        candidates.push({
+          twin_id: twin.id,
+          category: "INTERNAL_MOBILITY",
+          urgency: index > 75 ? "high" : "medium",
+          resource_ref: best.req.id,
+          alternatives,
+          evidence_ledger: [
+            { source: "WORKFORCE_REVIEW_SIGNAL", fact: `Workforce Review Index ${index}/100 — interpretable review priority, NOT a probability of leaving.` },
+            { source: "PERFORMANCE", fact: `Latest rating: ${latestRating(twin.performance_history)} — strong, stable.` },
+            { source: "SKILL_GRAPH", fact: `${Math.round(best.fit.score * 100)}% match vs ${best.req.title}; ${best.direct} direct, ${best.soft} adjacent/transferable path(s); ${Math.round(best.covered_ratio * 100)}% of the target skills covered (meaningful coverage).` },
+            ...(alternatives.length > 0 ? [{ source: "ALTERNATIVES", fact: `Alternatives considered: ${alternatives.map((a) => `${a.title} (${Math.round(a.fit_score * 100)}% fit)`).join(", ")}.` }] : []),
+          ],
+          proposed_action: {
+            title: "Manager review for internal mobility",
+            description: `Evaluate ${twin.name} for movement toward ${best.req.title} (best coverage among ${evaluated.length} candidate role(s)).`,
+            steps: [
+              { order: 1, action: "Review the skill-graph fit breakdown and the alternatives considered." },
+              { order: 2, action: "Confirm capacity with the manager (staffing cover)." },
+              { order: 3, action: "Discuss scope/growth with the employee." },
+              { order: 4, action: "Decide on a mobility or upskilling path." },
+            ],
+          },
+          required_signoff_role: "manager",
+        });
       }
     }
   }
 
-  // 3) ONBOARDING_REPLAN — a journey with a blocked task needs a replan.
+  // 4) RECRUITMENT_ASSESSMENT_REVIEW — requires an ACTUAL application record
+  //    (evidence), not just a fit score, and visible assessment gaps
+  //    (unverified skill claims). The action task is owned by the recruiter.
+  const apps = inputs.applications ?? [];
+  const appliedCandidates = new Map<string, (typeof apps)[number]>();
+  for (const a of apps) {
+    if (!appliedCandidates.has(a.twin_id)) appliedCandidates.set(a.twin_id, a);
+  }
+  for (const twin of inputs.twins) {
+    if (twin.role !== "candidate" || !["candidate", "active"].includes(twin.status)) continue;
+    const app = appliedCandidates.get(twin.id);
+    if (!app) continue; // no application record -> no recruitment recommendation
+    const unverified = app.unverified_claims ?? 0;
+    if (unverified > 0) {
+      candidates.push({
+        twin_id: twin.id,
+        category: "RECRUITMENT_ASSESSMENT_REVIEW",
+        urgency: "medium",
+        resource_ref: app.requisition_id,
+        evidence_ledger: [
+          { source: "APPLICATION", fact: `Application ${app.application_code} for requisition at stage "${app.stage}" — actual application evidence on record.` },
+          { source: "ASSESSMENT_GAPS", fact: `${unverified} skill claim(s) remain unverified (self-reported only) — review assessment gaps before advancing the stage.` },
+        ],
+        proposed_action: {
+          title: "Review assessment gaps before advancing",
+          description: `Have the recruiter review ${twin.name}'s assessment gaps and decide whether to collect more evidence or advance the stage.`,
+          steps: [
+            { order: 1, action: "Review the unverified claims and assessment evidence." },
+            { order: 2, action: "Collect a work sample or interview evidence for the gaps." },
+            { order: 3, action: "Update the application stage with a recorded reason." },
+          ],
+        },
+        required_signoff_role: "recruiter",
+      });
+    }
+  }
+
+  // 5) ONBOARDING_REPLAN — a journey with a blocked task needs a replan.
   for (const j of inputs.journeys) {
     const blocked = (j.tasks ?? []).find((t) => t.status === "blocked");
     if (blocked) {

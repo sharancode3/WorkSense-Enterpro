@@ -122,4 +122,92 @@ describe("recommendation trigger engine (deterministic)", () => {
       }
     }
   });
+
+  it("mobility requires MEANINGFUL coverage of the target role, not only soft-share", () => {
+    // 5 required skills, only 2 covered (both soft, via Python): the other 3
+    // sit in categories Python cannot reach, so covered_ratio = 0.4 < 0.6.
+    const input = base();
+    input.twins[0].verified_skills = [{ name: "Python", proficiency: 4 }];
+    input.graph = [
+      { skill: "Python", category: "Data", outgoing_edges: [{ target_skill: "ETL", type: "ADJACENT_TO", weight: 0.7 }, { target_skill: "Data Modeling", type: "ADJACENT_TO", weight: 0.7 }] },
+      { skill: "ETL", category: "Data", outgoing_edges: [] },
+      { skill: "Data Modeling", category: "Data", outgoing_edges: [] },
+      { skill: "Kubernetes", category: "DevOps", outgoing_edges: [] },
+      { skill: "REST APIs", category: "Backend", outgoing_edges: [] },
+      { skill: "Accessibility", category: "Design", outgoing_edges: [] },
+    ];
+    input.requisitions[0].required_skills = [
+      { skill: "Data Modeling", target_proficiency: 3 },
+      { skill: "ETL", target_proficiency: 3 },
+      { skill: "Kubernetes", target_proficiency: 3 },
+      { skill: "REST APIs", target_proficiency: 3 },
+      { skill: "Accessibility", target_proficiency: 3 },
+    ];
+    const recs = scanForRecommendations(input);
+    expect(recs.find((r) => r.category === "INTERNAL_MOBILITY")).toBeUndefined();
+  });
+
+  it("mobility evaluates ALL requisitions, picks the best, and lists alternatives", () => {
+    const input = base();
+    input.twins[0].verified_skills = [{ name: "Python", proficiency: 4 }];
+    input.graph = [
+      { skill: "Python", category: "Data", outgoing_edges: [{ target_skill: "Data Modeling", type: "ADJACENT_TO", weight: 0.7 }, { target_skill: "ETL", type: "ADJACENT_TO", weight: 0.7 }] },
+      { skill: "Data Modeling", category: "Data", outgoing_edges: [] },
+      { skill: "ETL", category: "Data", outgoing_edges: [] },
+      { skill: "Kubernetes", category: "DevOps", outgoing_edges: [] },
+    ];
+    // Both reqs eligible (covered_ratio >= 0.6); req-small has full coverage.
+    input.requisitions = [
+      { id: "req-small", title: "Junior Data Engineer", required_skills: [{ skill: "Data Modeling", target_proficiency: 3 }, { skill: "ETL", target_proficiency: 3 }], future_skills: [], seniority_level: 3 },
+      { id: "req-big", title: "Data Engineer", required_skills: [{ skill: "Data Modeling", target_proficiency: 3 }, { skill: "ETL", target_proficiency: 3 }, { skill: "Kubernetes", target_proficiency: 3 }], future_skills: [], seniority_level: 3 },
+    ];
+    const recs = scanForRecommendations(input);
+    const mobility = recs.find((r) => r.category === "INTERNAL_MOBILITY");
+    expect(mobility).toBeDefined();
+    expect(mobility!.resource_ref).toBe("req-small"); // best coverage picked
+    expect(mobility!.alternatives?.some((a) => a.req_id === "req-big")).toBe(true);
+  });
+
+  it("recruitment recommendations REQUIRE an actual application record", () => {
+    // Candidate with unverified claims but NO application row -> no rec.
+    const noApp = base({
+      twins: [
+        {
+          id: "c1",
+          name: "Keyword Heavy",
+          role: "candidate",
+          status: "active",
+          signals: [],
+          performance_history: [],
+          verified_skills: [{ name: "Go", proficiency: 3 }],
+          seniority_level: 3,
+        },
+      ],
+      applications: [],
+    });
+    expect(scanForRecommendations(noApp).some((r) => r.category === "RECRUITMENT_ASSESSMENT_REVIEW")).toBe(false);
+
+    // Same candidate WITH an application row + unverified claims -> fires.
+    const withApp = base({
+      twins: [
+        {
+          id: "c1",
+          name: "Keyword Heavy",
+          role: "candidate",
+          status: "candidate", // candidates carry status 'candidate', not 'active'
+          signals: [],
+          performance_history: [],
+          verified_skills: [{ name: "Go", proficiency: 3 }],
+          seniority_level: 3,
+        },
+      ],
+      applications: [{ twin_id: "c1", requisition_id: "req-a", stage: "technical_interview", application_code: "WS-1", unverified_claims: 3 }],
+    });
+    const recs = scanForRecommendations(withApp);
+    const rec = recs.find((r) => r.category === "RECRUITMENT_ASSESSMENT_REVIEW");
+    expect(rec).toBeDefined();
+    expect(rec!.twin_id).toBe("c1");
+    expect(rec!.required_signoff_role).toBe("recruiter");
+    expect(rec!.evidence_ledger.some((e) => e.source === "APPLICATION")).toBe(true);
+  });
 });

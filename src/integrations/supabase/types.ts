@@ -3362,37 +3362,82 @@ export type Database = {
     Tables: {
       action_tasks: {
         Row: {
+          completed_at: string | null
           created_at: string
+          created_by_request_id: string | null
+          depends_on: Json
           due_at: string | null
           id: string
+          instructions: string | null
+          last_error: string | null
           org_id: string
           outcome: Json
+          outcome_measure: Json
+          owner_role: string | null
           owner_twin_id: string
           recommendation_id: string | null
+          required_evidence: Json
+          resource_link: string | null
+          retry_count: number
+          started_at: string | null
           status: string
+          task_code: string | null
           title: string
+          updated_at: string
+          verification: Json
+          version: number
         }
         Insert: {
+          completed_at?: string | null
           created_at?: string
+          created_by_request_id?: string | null
+          depends_on?: Json
           due_at?: string | null
           id?: string
+          instructions?: string | null
+          last_error?: string | null
           org_id: string
           outcome?: Json
+          outcome_measure?: Json
+          owner_role?: string | null
           owner_twin_id: string
           recommendation_id?: string | null
+          required_evidence?: Json
+          resource_link?: string | null
+          retry_count?: number
+          started_at?: string | null
           status?: string
+          task_code?: string | null
           title: string
+          updated_at?: string
+          verification?: Json
+          version?: number
         }
         Update: {
+          completed_at?: string | null
           created_at?: string
+          created_by_request_id?: string | null
+          depends_on?: Json
           due_at?: string | null
           id?: string
+          instructions?: string | null
+          last_error?: string | null
           org_id?: string
           outcome?: Json
+          outcome_measure?: Json
+          owner_role?: string | null
           owner_twin_id?: string
           recommendation_id?: string | null
+          required_evidence?: Json
+          resource_link?: string | null
+          retry_count?: number
+          started_at?: string | null
           status?: string
+          task_code?: string | null
           title?: string
+          updated_at?: string
+          verification?: Json
+          version?: number
         }
         Relationships: [
           {
@@ -4616,58 +4661,103 @@ export type Database = {
       }
       recommendations: {
         Row: {
+          alternatives: Json
+          approved_at: string | null
           audit_events: Json
           category: string
           created_at: string
           evidence_ledger: Json
           executive_summary: string
+          expires_at: string | null
           id: string
+          intended_outcome: Json
+          last_reviewed_at: string | null
           org_id: string
+          outcomes: Json
           proposed_action: Json
+          required_approvers: Json
           required_signoff_role: string | null
+          resource_ref: string | null
           reviewer_rationale: Json
+          source_hash: string | null
+          stale: boolean
+          stale_reason: string | null
           status: string
+          superseded_by: string | null
           twin_id: string | null
           updated_at: string
           urgency: string
+          version: number
         }
         Insert: {
+          alternatives?: Json
+          approved_at?: string | null
           audit_events?: Json
           category: string
           created_at?: string
           evidence_ledger?: Json
           executive_summary?: string
+          expires_at?: string | null
           id?: string
+          intended_outcome?: Json
+          last_reviewed_at?: string | null
           org_id: string
+          outcomes?: Json
           proposed_action?: Json
+          required_approvers?: Json
           required_signoff_role?: string | null
+          resource_ref?: string | null
           reviewer_rationale?: Json
+          source_hash?: string | null
+          stale?: boolean
+          stale_reason?: string | null
           status?: string
+          superseded_by?: string | null
           twin_id?: string | null
           updated_at?: string
           urgency?: string
+          version?: number
         }
         Update: {
+          alternatives?: Json
+          approved_at?: string | null
           audit_events?: Json
           category?: string
           created_at?: string
           evidence_ledger?: Json
           executive_summary?: string
+          expires_at?: string | null
           id?: string
+          intended_outcome?: Json
+          last_reviewed_at?: string | null
           org_id?: string
+          outcomes?: Json
           proposed_action?: Json
+          required_approvers?: Json
           required_signoff_role?: string | null
+          resource_ref?: string | null
           reviewer_rationale?: Json
+          source_hash?: string | null
+          stale?: boolean
+          stale_reason?: string | null
           status?: string
+          superseded_by?: string | null
           twin_id?: string | null
           updated_at?: string
           urgency?: string
+          version?: number
         }
         Relationships: [
           {
             foreignKeyName: "recommendations_org_id_fkey"
             columns: ["org_id"]
             referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "recommendations_superseded_by_fkey"
+            columns: ["superseded_by"]
+            referencedRelation: "recommendations"
             referencedColumns: ["id"]
           },
           {
@@ -4910,6 +5000,64 @@ export type Database = {
           },
         ]
       }
+      workflow_events: {
+        Row: {
+          actor_role: string | null
+          actor_twin_id: string | null
+          created_at: string
+          id: string
+          new_status: string | null
+          org_id: string
+          payload: Json
+          prior_status: string | null
+          reason: string | null
+          request_id: string
+          resource: string | null
+          resource_id: string
+          resource_type: string
+          source_version: string | null
+        }
+        Insert: {
+          actor_role?: string | null
+          actor_twin_id?: string | null
+          created_at?: string
+          id?: string
+          new_status?: string | null
+          org_id: string
+          payload?: Json
+          prior_status?: string | null
+          reason?: string | null
+          request_id: string
+          resource?: string | null
+          resource_id: string
+          resource_type: string
+          source_version?: string | null
+        }
+        Update: {
+          actor_role?: string | null
+          actor_twin_id?: string | null
+          created_at?: string
+          id?: string
+          new_status?: string | null
+          org_id?: string
+          payload?: Json
+          prior_status?: string | null
+          reason?: string | null
+          request_id?: string
+          resource?: string | null
+          resource_id?: string
+          resource_type?: string
+          source_version?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "workflow_events_org_id_fkey"
+            columns: ["org_id"]
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       workforce_observations: {
         Row: {
           created_at: string
@@ -5085,6 +5233,34 @@ export type Database = {
       is_team_member: {
         Args: { check_twin_id: string }
         Returns: boolean
+      }
+      workflow_action_task_transition: {
+        Args: {
+          p_action: string
+          p_actor_role: string
+          p_actor_twin_id: string
+          p_evidence: Json
+          p_org_id: string
+          p_outcome: Json
+          p_reason: string
+          p_request_id: string
+          p_task_id: string
+        }
+        Returns: Json
+      }
+      workflow_recommendation_transition: {
+        Args: {
+          p_action: string
+          p_actor_role: string
+          p_actor_twin_id: string
+          p_org_id: string
+          p_payload: Json
+          p_reason: string
+          p_rec_id: string
+          p_request_id: string
+          p_source_version: string
+        }
+        Returns: Json
       }
     }
     Enums: {
