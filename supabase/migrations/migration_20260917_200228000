@@ -1,0 +1,5 @@
+alter table public.job_requisitions
+  add column status text not null default 'open'
+  check (status in ('open', 'on_hold', 'filled', 'closed'));
+
+create index job_requisitions_status_idx on public.job_requisitions(status);

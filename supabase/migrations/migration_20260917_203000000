@@ -1,0 +1,9 @@
+-- Phase 12: requisition lifecycle status.
+-- "Open requisitions" on dashboards must count real status, not row count.
+-- Writes still happen only via service-role functions; RLS select policies
+-- are org-scoped and unchanged.
+alter table public.job_requisitions
+  add column status text not null default 'open'
+  check (status in ('open', 'on_hold', 'filled', 'closed'));
+
+create index job_requisitions_status_idx on public.job_requisitions(status);

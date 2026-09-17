@@ -79,6 +79,9 @@ export default function CandidateStatus() {
           <span className="inline-block rounded-md bg-foreground px-3 py-1 text-xs font-bold uppercase tracking-wider text-white">
             Candidate application status
           </span>
+          <p className="mt-3 inline-flex items-center gap-1.5 rounded-md bg-muted px-2.5 py-1 text-[11px] font-semibold text-muted-foreground">
+            <Lock className="h-3 w-3" /> Demonstration data is fictional — this portal serves the demo application code only.
+          </p>
           <h1 className="mt-4 text-3xl font-extrabold tracking-tight text-foreground">
             Where does your application stand?
           </h1>

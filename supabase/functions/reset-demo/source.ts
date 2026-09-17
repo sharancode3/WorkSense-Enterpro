@@ -638,6 +638,26 @@ async function reseed(supabase, authIds: Record<string, string>) {
   const { error: assertErr } = await supabase.from("skill_assertions").insert([...demoAssertions, ...org2Assertions]);
   if (assertErr) throw new Error(`assertions insert: ${assertErr.message}`);
 
+  // Phase 12: one honest "insufficient evidence" case. A Data-team employee
+  // self-reports GTM Strategy — a Senior Product Manager future skill with no
+  // verified path from their skills — but nothing is verified yet. Keeps the
+  // dashboard heatmap's insufficient_evidence bucket real: claimed-but-
+  // unverified skills must not look like "ready" or "missing".
+  const claimedGtmSkillId = fx.skills.find((s) => s.skill === "GTM Strategy")?.id;
+  const claimedGtmTwinId = fx.employees.find((e) => e.department === "Data")?.id;
+  if (claimedGtmSkillId && claimedGtmTwinId) {
+    const { error: claimErr } = await supabase.from("skill_assertions").insert({
+      org_id: DEMO_ORG_ID,
+      twin_id: claimedGtmTwinId,
+      skill_id: claimedGtmSkillId,
+      claimed_proficiency: 2,
+      proficiency_tier: "FOUNDATIONAL",
+      review_state: "claimed",
+      evidence_ids: [],
+    });
+    if (claimErr) throw new Error(`claimed future skill insert: ${claimErr.message}`);
+  }
+
   // 9) Applications (candidate -> requisition, staged).
   const apps = fx.requisitions.flatMap((r) =>
     (r.applicants ?? []).map((ap) => ({

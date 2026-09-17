@@ -59,11 +59,19 @@ interface ReqRow {
   id: string;
   title: string;
   department: string;
+  status: string;
   seniority_level: number;
   required_skills: { skill: string; target_proficiency: number }[];
   future_skills: { skill: string; target_proficiency: number }[];
   applicants: Applicant[];
 }
+
+const REQ_STATUS_CLASS: Record<string, string> = {
+  open: "bg-primary text-white",
+  on_hold: "bg-accent text-foreground",
+  filled: "bg-secondary text-white",
+  closed: "bg-muted text-foreground",
+};
 
 interface CandidateRow {
   id: string;
@@ -475,8 +483,13 @@ export default function Recruitment() {
                     <Briefcase className="h-4 w-4" />
                     {r.title}
                   </span>
-                  <span className={`text-xs ${selected === r.id ? "text-white/70" : "text-muted-foreground"}`}>
-                    {r.applicants.length} applicant{r.applicants.length === 1 ? "" : "s"}
+                  <span className="flex items-center gap-2">
+                    <span className={`rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${REQ_STATUS_CLASS[r.status] ?? "bg-muted text-foreground"}`}>
+                      {r.status.replace(/_/g, " ")}
+                    </span>
+                    <span className={`text-xs ${selected === r.id ? "text-white/70" : "text-muted-foreground"}`}>
+                      {r.applicants.length} applicant{r.applicants.length === 1 ? "" : "s"}
+                    </span>
                   </span>
                 </button>
               ))}
@@ -503,9 +516,14 @@ export default function Recruitment() {
                         {req.department} · Seniority {req.seniority_level}
                       </p>
                     </div>
-                    <span className="rounded-md bg-primary px-3 py-1.5 text-xs font-bold uppercase tracking-wider text-white">
-                      {req.applicants.length} in pipeline
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className={`rounded-md px-2.5 py-1 text-xs font-bold uppercase tracking-wider ${REQ_STATUS_CLASS[req.status] ?? "bg-muted text-foreground"}`}>
+                        {req.status.replace(/_/g, " ")}
+                      </span>
+                      <span className="rounded-md bg-primary px-3 py-1.5 text-xs font-bold uppercase tracking-wider text-white">
+                        {req.applicants.length} in pipeline
+                      </span>
+                    </div>
                   </div>
                   <div className="mt-4 flex flex-col gap-2">
                     <div className="flex flex-wrap items-center gap-2">

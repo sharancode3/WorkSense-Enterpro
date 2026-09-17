@@ -8,13 +8,10 @@ import {
   ArrowRight,
   Briefcase,
   CheckCircle2,
-  FileSearch,
   GitBranch,
-  LayoutDashboard,
   ListChecks,
   Loader2,
   MessageSquareText,
-  ScrollText,
   ShieldCheck,
   UserCheck,
   Users,
@@ -27,7 +24,7 @@ import { ExecutiveDashboard } from "@/components/executive-dashboard";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { can, ROLE_LABEL } from "@/lib/rbac";
+import { can, ROLE_LABEL, type Role } from "@/lib/rbac";
 import { actionTaskUpdate, type ActionTaskRow, type Twin } from "@/lib/api";
 
 // My Action Tasks: tasks assigned to me from dispatched recommendations
@@ -197,10 +194,12 @@ function StatBlock({
   label,
   value,
   tone,
+  definition,
 }: {
   label: string;
   value: number | string | null;
   tone: "primary" | "secondary" | "accent" | "muted" | "dark";
+  definition?: string;
 }) {
   const cls = {
     primary: "bg-primary text-white",
@@ -215,55 +214,92 @@ function StatBlock({
         {label}
       </span>
       <span className="text-4xl font-extrabold tracking-tight">{value ?? "—"}</span>
+      {definition && (
+        <span className={`text-[11px] leading-snug ${tone === "dark" ? "text-white/60" : "text-foreground/55"}`}>{definition}</span>
+      )}
     </div>
   );
 }
 
-const MODULES = [
-  { icon: LayoutDashboard, title: "Executive Decision Dashboard", desc: "Workforce-wide signals and KPIs." },
-  { icon: FileSearch, title: "Recruitment Intelligence", desc: "Rank candidates against requisitions." },
-  { icon: ListChecks, title: "Adaptive Onboarding", desc: "Personalized DAG journeys per role." },
-  { icon: MessageSquareText, title: "Policy Studio", desc: "Source-backed policy Q&A." },
-  { icon: GitBranch, title: "Skill Intelligence Graph", desc: "Skills vs. current and future needs." },
-  { icon: ScrollText, title: "Audit Trail", desc: "Every decision, every transition." },
+// Phase 12: honest per-role module grid — every card opens a module the role
+// can actually reach (same predicates as the app-shell nav). Nothing locked,
+// nothing shown as "Phase 1+" placeholders.
+interface ModuleDef {
+  title: string;
+  desc: string;
+  icon: typeof Users;
+  to: string;
+  show: (role: Role) => boolean;
+}
+
+const MODULES: ModuleDef[] = [
+  {
+    title: "Workforce review",
+    desc: "Index-driven review cases with evidence-to-action trails.",
+    icon: Users,
+    to: "/workforce",
+    show: (role) => can(role, "view_all_workforce") || can(role, "view_team") || role === "employee",
+  },
+  {
+    title: "Recruitment",
+    desc: "Requisitions, applications, interviews, and decisions.",
+    icon: Briefcase,
+    to: "/recruitment",
+    show: (role) => can(role, "manage_recruitment"),
+  },
+  {
+    title: "Onboarding",
+    desc: "Adaptive journeys, approvals, and completion evidence.",
+    icon: ListChecks,
+    to: "/onboarding",
+    show: (role) => can(role, "view_onboarding"),
+  },
+  {
+    title: "Recommendation hub",
+    desc: "Review, approve, and execute recommended actions.",
+    icon: ShieldCheck,
+    to: "/hub",
+    show: (role) => can(role, "approve_recommendations"),
+  },
+  {
+    title: "Policy studio",
+    desc: "Source-backed policy questions and answers.",
+    icon: MessageSquareText,
+    to: "/policy",
+    show: (role) => can(role, "use_policy_studio"),
+  },
+  {
+    title: "Skill graph",
+    desc: "Skills versus current and future needs.",
+    icon: GitBranch,
+    to: "/graph",
+    show: (role) => can(role, "explore_skill_graph"),
+  },
 ];
 
-function ModuleStubs({ role }: { role: string }) {
+function ModuleGrid({ role }: { role: Role }) {
+  const modules = MODULES.filter((m) => m.show(role));
+  if (modules.length === 0) return null;
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-      {MODULES.map(({ icon: Icon, title, desc }) => {
-        const open = can(role, "explore_skill_graph") && title === "Skill Intelligence Graph";
-        const openRecruitment = can(role, "manage_recruitment") && title === "Recruitment Intelligence";
-        const openOnboarding = can(role, "view_onboarding") && title === "Adaptive Onboarding";
-        const openPolicy = can(role, "use_policy_studio") && title === "Policy Studio";
-        const href = open ? "/graph" : openRecruitment ? "/recruitment" : openOnboarding ? "/onboarding" : openPolicy ? "/policy" : null;
-        const isOpen = open || openRecruitment || openOnboarding || openPolicy;
-        const card = (
-          <div className="group flex h-full flex-col gap-3 rounded-lg bg-muted p-5 transition-all duration-200 hover:scale-[1.02]">
-            <span className="flex h-12 w-12 items-center justify-center rounded-md bg-white text-primary transition-transform duration-200 group-hover:scale-110">
-              <Icon className="h-6 w-6" strokeWidth={2.5} />
-            </span>
-            <div>
-              <h3 className="font-bold text-foreground">{title}</h3>
-              <p className="mt-1 text-sm text-muted-foreground">{desc}</p>
-            </div>
-            <span
-              className={`mt-auto inline-flex w-fit items-center gap-1 rounded-md px-2.5 py-1 text-xs font-bold uppercase tracking-wider ${
-                isOpen ? "bg-primary text-white" : "bg-foreground text-white"
-              }`}
-            >
-              {isOpen ? "Open" : "Phase 1+"}
-            </span>
+      {modules.map(({ icon: Icon, title, desc, to }) => (
+        <Link
+          key={to}
+          to={to}
+          className="group flex h-full flex-col gap-3 rounded-lg bg-muted p-5 transition-all duration-200 hover:scale-[1.02]"
+        >
+          <span className="flex h-12 w-12 items-center justify-center rounded-md bg-white text-primary transition-transform duration-200 group-hover:scale-110">
+            <Icon className="h-6 w-6" strokeWidth={2.5} />
+          </span>
+          <div>
+            <h3 className="font-bold text-foreground">{title}</h3>
+            <p className="mt-1 text-sm text-muted-foreground">{desc}</p>
           </div>
-        );
-        return href ? (
-          <Link key={title} to={href} className="block">
-            {card}
-          </Link>
-        ) : (
-          <div key={title}>{card}</div>
-        );
-      })}
+          <span className="mt-auto inline-flex w-fit items-center gap-1 rounded-md bg-primary px-2.5 py-1 text-xs font-bold uppercase tracking-wider text-white">
+            Open <ArrowRight className="h-3.5 w-3.5 transition-transform duration-200 group-hover:translate-x-0.5" />
+          </span>
+        </Link>
+      ))}
     </div>
   );
 }
@@ -293,13 +329,19 @@ export default function RoleHome() {
     },
   });
 
+  // "Open recommendations" = my non-terminal recommendations (active, awaiting
+  // or inside execution). Not a bare org-wide row count.
+  const ACTIVE_REC_STATUSES = ["suggested", "needs_review", "approved", "execution_pending", "in_progress"];
   const myRecs = useQuery({
     queryKey: ["my-recs", twin?.id ?? "anon"],
     enabled: role === "employee",
     queryFn: async () => {
+      if (!twin) return 0;
       const { count } = await supabase
         .from("recommendations")
-        .select("id", { count: "exact", head: true });
+        .select("id", { count: "exact", head: true })
+        .eq("twin_id", twin.id)
+        .in("status", ACTIVE_REC_STATUSES);
       return count ?? 0;
     },
   });
@@ -316,15 +358,17 @@ export default function RoleHome() {
         id: string;
         title: string;
         department: string;
+        status: string;
         applicants: { twin_id: string; stage: string; match_score: number | null }[];
       }[];
       const candidates = (candidatesRes.data ?? []) as { id: string; name: string }[];
-      const applicants = reqs.flatMap((r) => r.applicants ?? []);
+      const openReqs = reqs.filter((r) => r.status === "open");
+      const applicants = openReqs.flatMap((r) => r.applicants ?? []);
       const finalRound = applicants.filter((a) => a.stage === "final_round").length;
       const scored = applicants.filter((a) => typeof a.match_score === "number");
       const avgScore =
         scored.length > 0 ? scored.reduce((s, a) => s + (a.match_score ?? 0), 0) / scored.length : null;
-      return { reqs, candidates, applicants, finalRound, avgScore };
+      return { reqs, openReqs, candidates, applicants, finalRound, avgScore };
     },
   });
 
@@ -339,9 +383,14 @@ export default function RoleHome() {
       <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6">
         {/* Welcome */}
         <div className="flex flex-col gap-2">
-          <span className="text-xs font-bold uppercase tracking-wider text-primary">
-            {org.data} · {ROLE_LABEL[role]}
-          </span>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs font-bold uppercase tracking-wider text-primary">
+              {org.data} · {ROLE_LABEL[role]}
+            </span>
+            <span className="rounded-md bg-muted px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+              Fictional demo data
+            </span>
+          </div>
           <h1 className="text-3xl font-extrabold tracking-tight text-foreground md:text-4xl">
             Welcome back, {twin.name.split(" ")[0]}.
           </h1>
@@ -360,18 +409,43 @@ export default function RoleHome() {
             <div className="mt-8 grid grid-cols-2 gap-4 lg:grid-cols-4">
               {role === "recruiter" && (
                 <>
-                  <StatBlock label="Open requisitions" value={recruiterData.data?.reqs.length} tone="primary" />
-                  <StatBlock label="Active candidates" value={recruiterData.data?.candidates.length} tone="secondary" />
-                  <StatBlock label="In final round" value={recruiterData.data?.finalRound} tone="accent" />
-                  <StatBlock label="Avg applicant match" value={recruiterData.data?.avgScore !== null && recruiterData.data?.avgScore !== undefined ? `${Math.round(recruiterData.data.avgScore * 100)}%` : null} tone="dark" />
+                  <StatBlock
+                    label="Open requisitions"
+                    value={recruiterData.data?.openReqs.length ?? null}
+                    tone="primary"
+                    definition="Requisitions with status open (on-hold/filled/closed excluded)."
+                  />
+                  <StatBlock label="Active candidates" value={recruiterData.data?.candidates.length} tone="secondary" definition="Candidate twins across the organization." />
+                  <StatBlock label="In final round" value={recruiterData.data?.finalRound} tone="accent" definition="Applicants at final_round on open requisitions." />
+                  <StatBlock
+                    label="Avg applicant match"
+                    value={recruiterData.data?.avgScore !== null && recruiterData.data?.avgScore !== undefined ? `${Math.round(recruiterData.data.avgScore * 100)}%` : null}
+                    tone="dark"
+                    definition="Mean Skill Graph match score across open-requisition applicants."
+                  />
                 </>
               )}
               {role === "employee" && (
                 <>
-                  <StatBlock label="Onboarding tasks done" value={myJourney.data ? `${doneCount}/${tasks.length}` : null} tone="primary" />
-                  <StatBlock label="Open recommendations" value={myRecs.data} tone="secondary" />
-                  <StatBlock label="Verified skills" value={twin.verified_skills.length} tone="accent" />
-                  <StatBlock label="Workforce review index" value={signalValue(twin, "workforce_review_index") !== null ? `${signalValue(twin, "workforce_review_index")}/100` : null} tone="dark" />
+                  <StatBlock
+                    label="Onboarding tasks done"
+                    value={myJourney.data ? `${doneCount}/${tasks.length}` : null}
+                    tone="primary"
+                    definition="Tasks completed in your active journey."
+                  />
+                  <StatBlock
+                    label="Active recommendations"
+                    value={myRecs.data}
+                    tone="secondary"
+                    definition="Your non-terminal recommendations (awaiting or in execution)."
+                  />
+                  <StatBlock label="Verified skills" value={twin.verified_skills.length} tone="accent" definition="Skills with high/medium-rigor evidence on your profile." />
+                  <StatBlock
+                    label="Workforce review index"
+                    value={signalValue(twin, "workforce_review_index") !== null ? `${signalValue(twin, "workforce_review_index")}/100` : null}
+                    tone="dark"
+                    definition="Interpretable decision support — not a probability of leaving."
+                  />
                 </>
               )}
             </div>
@@ -389,11 +463,11 @@ export default function RoleHome() {
                 <div className="rounded-lg bg-white p-6 lg:col-span-2">
                   <h2 className="text-lg font-extrabold text-foreground">Recruitment pipeline</h2>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    Candidates ranked by the Skill Intelligence Graph match score.
+                    Candidates ranked by the Skill Intelligence Graph match score, on open requisitions.
                   </p>
-                  {recruiterData.data && recruiterData.data.reqs.length > 0 ? (
+                  {recruiterData.data && recruiterData.data.openReqs.length > 0 ? (
                     <div className="mt-4 flex flex-col gap-5">
-                      {recruiterData.data.reqs.map((r) => (
+                      {recruiterData.data.openReqs.map((r) => (
                         <div key={r.id}>
                           <div className="flex items-center justify-between">
                             <p className="font-bold text-foreground">{r.title}</p>
@@ -437,7 +511,7 @@ export default function RoleHome() {
                       ))}
                     </div>
                   ) : (
-                    <p className="mt-4 text-sm text-muted-foreground">No requisitions visible.</p>
+                    <p className="mt-4 text-sm text-muted-foreground">No open requisitions.</p>
                   )}
                 </div>
               )}
@@ -510,14 +584,14 @@ export default function RoleHome() {
           </>
         )}
 
-        {/* Module stubs */}
+        {/* Honest per-role module grid — nothing locked, no placeholders */}
         <div className="mt-14">
-          <h2 className="text-xl font-extrabold tracking-tight text-foreground">What's being built next</h2>
+          <h2 className="text-xl font-extrabold tracking-tight text-foreground">Your modules</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            All modules share the same six entities — no disconnected tools.
+            Everything you can open from here — access is enforced at the data layer, not hidden UI.
           </p>
           <div className="mt-6">
-            <ModuleStubs role={role} />
+            <ModuleGrid role={role} />
           </div>
         </div>
       </div>

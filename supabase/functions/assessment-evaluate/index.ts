@@ -650,6 +650,7 @@ export const PEOPLE_OPS_REQUISITION = {
   id: "33333333-3333-3333-3333-333333333303",
   title: "People Operations Partner",
   department: "People Operations",
+  status: "on_hold",
   seniority_level: 3,
   required_skills: [
     { skill: "Policy Management", target_proficiency: 3 },

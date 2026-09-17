@@ -158,9 +158,9 @@ export default function Login() {
           </form>
 
           <p className="mt-5 text-center text-sm text-muted-foreground">
-            Applying for an open position?{" "}
+            Applied for an open role?{" "}
             <Link to={`/candidate-status?code=${DEMO_CANDIDATE_CODE}`} className="font-semibold text-primary transition-opacity hover:opacity-80">
-              Register as Candidate
+              Check your application status
             </Link>
           </p>
 

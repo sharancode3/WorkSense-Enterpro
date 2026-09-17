@@ -214,6 +214,7 @@ export const REQUISITIONS = [
     id: "33333333-3333-3333-3333-333333333301",
     title: "Senior Backend Engineer",
     department: "Platform",
+    status: "open",
     seniority_level: 4,
     required_skills: [
       { skill: "Go", target_proficiency: 4 },
@@ -237,6 +238,7 @@ export const REQUISITIONS = [
     id: "33333333-3333-3333-3333-333333333302",
     title: "Data Analyst",
     department: "Data",
+    status: "open",
     seniority_level: 3,
     required_skills: [
       { skill: "SQL", target_proficiency: 4 },

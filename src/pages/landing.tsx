@@ -33,7 +33,7 @@ export default function Landing() {
         <div className="relative mx-auto max-w-7xl px-4 py-20 sm:px-6 md:py-28">
           <div className="max-w-3xl">
             <span className="inline-block rounded-md bg-foreground px-3 py-1 text-xs font-bold uppercase tracking-wider text-white">
-              AI-driven workforce management
+              Workforce decision intelligence
             </span>
             <h1 className="mt-6 text-4xl font-extrabold leading-[1.05] tracking-tight text-foreground md:text-6xl">
               WorkSense turns fragmented HR data into{" "}

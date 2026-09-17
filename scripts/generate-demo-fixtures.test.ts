@@ -410,6 +410,7 @@ const requisitions = REQUISITIONS.map((r) => {
     id: r.id,
     title: r.title,
     department: r.department,
+    status: r.status ?? "open",
     seniority_level: r.seniority_level,
     required_skills: r.required_skills,
     future_skills: r.future_skills,
@@ -427,11 +428,11 @@ const requisitions = REQUISITIONS.map((r) => {
   return req;
 });
 
-const NEW_REQS: { id: string; title: string; department: string; seniority_level: number; required_skills: RequiredSkill[]; future_skills: RequiredSkill[] }[] = [
-  { id: detUuid("req:mobile"), title: "Senior Frontend Engineer", department: "Design", seniority_level: 4, required_skills: [{ skill: "React", target_proficiency: 4 }, { skill: "TypeScript", target_proficiency: 4 }, { skill: "Design Systems", target_proficiency: 3 }, { skill: "Accessibility", target_proficiency: 2 }], future_skills: [{ skill: "Web Performance", target_proficiency: 3 }] },
-  { id: detUuid("req:ml"), title: "Machine Learning Engineer", department: "Data", seniority_level: 4, required_skills: [{ skill: "Python", target_proficiency: 4 }, { skill: "Statistics", target_proficiency: 3 }, { skill: "Machine Learning fundamentals", target_proficiency: 4 }, { skill: "Data Modeling", target_proficiency: 3 }], future_skills: [{ skill: "Feature Engineering", target_proficiency: 3 }] },
-  { id: detUuid("req:pm"), title: "Senior Product Manager", department: "Product", seniority_level: 4, required_skills: [{ skill: "Product Strategy", target_proficiency: 4 }, { skill: "Roadmapping", target_proficiency: 4 }, { skill: "Stakeholder Communication", target_proficiency: 4 }, { skill: "A/B Experimentation", target_proficiency: 3 }], future_skills: [{ skill: "GTM Strategy", target_proficiency: 3 }] },
-  { id: detUuid("req:design"), title: "Product Designer", department: "Design", seniority_level: 3, required_skills: [{ skill: "Figma", target_proficiency: 4 }, { skill: "UI Design", target_proficiency: 4 }, { skill: "UX Research", target_proficiency: 3 }, { skill: "Wireframing", target_proficiency: 3 }], future_skills: [{ skill: "Usability Testing", target_proficiency: 3 }] },
+const NEW_REQS: { id: string; title: string; department: string; status: string; seniority_level: number; required_skills: RequiredSkill[]; future_skills: RequiredSkill[] }[] = [
+  { id: detUuid("req:mobile"), title: "Senior Frontend Engineer", department: "Design", status: "open", seniority_level: 4, required_skills: [{ skill: "React", target_proficiency: 4 }, { skill: "TypeScript", target_proficiency: 4 }, { skill: "Design Systems", target_proficiency: 3 }, { skill: "Accessibility", target_proficiency: 2 }], future_skills: [{ skill: "Web Performance", target_proficiency: 3 }] },
+  { id: detUuid("req:ml"), title: "Machine Learning Engineer", department: "Data", status: "open", seniority_level: 4, required_skills: [{ skill: "Python", target_proficiency: 4 }, { skill: "Statistics", target_proficiency: 3 }, { skill: "Machine Learning fundamentals", target_proficiency: 4 }, { skill: "Data Modeling", target_proficiency: 3 }], future_skills: [{ skill: "Feature Engineering", target_proficiency: 3 }] },
+  { id: detUuid("req:pm"), title: "Senior Product Manager", department: "Product", status: "open", seniority_level: 4, required_skills: [{ skill: "Product Strategy", target_proficiency: 4 }, { skill: "Roadmapping", target_proficiency: 4 }, { skill: "Stakeholder Communication", target_proficiency: 4 }, { skill: "A/B Experimentation", target_proficiency: 3 }], future_skills: [{ skill: "GTM Strategy", target_proficiency: 3 }] },
+  { id: detUuid("req:design"), title: "Product Designer", department: "Design", status: "on_hold", seniority_level: 3, required_skills: [{ skill: "Figma", target_proficiency: 4 }, { skill: "UI Design", target_proficiency: 4 }, { skill: "UX Research", target_proficiency: 3 }, { skill: "Wireframing", target_proficiency: 3 }], future_skills: [{ skill: "Usability Testing", target_proficiency: 3 }] },
 ];
 for (const r of NEW_REQS) {
   const pool = DEPARTMENTS.map((d, i) => candidates.filter((c) => c.department === d)).flat().filter((c) => !reqById.has(c.id));
@@ -642,6 +643,7 @@ const org2 = {
     id: detUuid("org2:req:1"),
     title: "Backend Engineer (Northstar)",
     department: "Platform",
+    status: "open",
     seniority_level: 3,
     required_skills: [{ skill: "Go", target_proficiency: 3 }, { skill: "REST APIs", target_proficiency: 3 }],
     future_skills: [{ skill: "Kubernetes", target_proficiency: 2 }],

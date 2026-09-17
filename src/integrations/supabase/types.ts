@@ -4035,6 +4035,7 @@ export type Database = {
           required_skills: Json
           rubrics: Json
           seniority_level: number
+          status: string
           title: string
           updated_at: string
         }
@@ -4049,6 +4050,7 @@ export type Database = {
           required_skills?: Json
           rubrics?: Json
           seniority_level?: number
+          status?: string
           title: string
           updated_at?: string
         }
@@ -4063,6 +4065,7 @@ export type Database = {
           required_skills?: Json
           rubrics?: Json
           seniority_level?: number
+          status?: string
           title?: string
           updated_at?: string
         }

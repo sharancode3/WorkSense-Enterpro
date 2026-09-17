@@ -1,10 +1,22 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Briefcase, GitBranch, Layers, ListChecks, LogOut, MessageSquareText, RotateCcw, Settings, ShieldCheck, Users } from "lucide-react";
+import {
+  Briefcase,
+  GitBranch,
+  Layers,
+  ListChecks,
+  LogOut,
+  Menu,
+  MessageSquareText,
+  RotateCcw,
+  Settings,
+  ShieldCheck,
+  Users,
+} from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
-import { can, ROLE_BADGE_CLASS, ROLE_LABEL } from "@/lib/rbac";
+import { can, ROLE_BADGE_CLASS, ROLE_LABEL, type Role } from "@/lib/rbac";
 import { fetchHealth, resetDemo } from "@/lib/api";
 import { BUILD_INFO } from "@/generated/build-info";
 import { Button } from "@/components/ui/button";
@@ -43,9 +55,72 @@ function HealthChip({
   return <span className={`rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${cls}`}>{label}</span>;
 }
 
+// ---- Phase 12: role-coherent navigation -------------------------------------
+// Sections are gated by the same server-enforced actions as every page. A role
+// only ever sees modules it can actually open — no locked placeholders.
+interface NavLinkDef {
+  label: string;
+  to: string;
+  icon: typeof Users;
+  show: (role: Role) => boolean;
+}
+
+interface NavSection {
+  label: string;
+  links: NavLinkDef[];
+}
+
+const NAV_SECTIONS: NavSection[] = [
+  {
+    label: "Overview",
+    links: [
+      { label: "Decision overview", to: "/app", icon: ShieldCheck, show: () => true },
+    ],
+  },
+  {
+    label: "Workforce",
+    links: [
+      {
+        label: "Workforce review",
+        to: "/workforce",
+        icon: Users,
+        show: (role) => can(role, "view_all_workforce") || can(role, "view_team") || role === "employee",
+      },
+      { label: "Skill graph", to: "/graph", icon: GitBranch, show: (role) => can(role, "explore_skill_graph") },
+    ],
+  },
+  {
+    label: "Talent",
+    links: [
+      { label: "Recruitment", to: "/recruitment", icon: Briefcase, show: (role) => can(role, "manage_recruitment") },
+      { label: "Onboarding", to: "/onboarding", icon: ListChecks, show: (role) => can(role, "view_onboarding") },
+    ],
+  },
+  {
+    label: "Actions",
+    links: [
+      { label: "Recommendation hub", to: "/hub", icon: Layers, show: (role) => can(role, "approve_recommendations") },
+    ],
+  },
+  {
+    label: "Governance",
+    links: [
+      { label: "Policy studio", to: "/policy", icon: MessageSquareText, show: (role) => can(role, "use_policy_studio") },
+    ],
+  },
+];
+
+function visibleSections(role: Role): NavSection[] {
+  return NAV_SECTIONS.map((s) => ({
+    ...s,
+    links: s.links.filter((l) => l.show(role)),
+  })).filter((s) => s.links.length > 0);
+}
+
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { role, twin, signOut, user } = useAuth();
   const [resetting, setResetting] = useState(false);
+  const location = useLocation();
 
   // Limited AI-gateway health indicator (4 states): app backend ok (implicit),
   // gateway reachable, model ready, generation failed is surfaced per job.
@@ -70,119 +145,125 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const sections = role ? visibleSections(role) : [];
+
+  const renderSection = (s: NavSection, mobile = false) => (
+    <div key={s.label} className={mobile ? "flex flex-col" : "flex items-center gap-1"}>
+      <span className="px-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/70">{s.label}</span>
+      <div className={mobile ? "flex flex-col" : "flex items-center gap-1"}>
+        {s.links.map((l) => {
+          const active = location.pathname === l.to;
+          return (
+            <Link
+              key={l.to}
+              to={l.to}
+              className={
+                mobile
+                  ? "flex items-center gap-2 rounded-md px-3 py-2 text-sm font-semibold text-foreground transition-colors hover:bg-muted"
+                  : `flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-semibold transition-colors ${
+                      active ? "bg-muted text-foreground" : "text-foreground/80 hover:bg-muted hover:text-foreground"
+                    }`
+              }
+              aria-current={active ? "page" : undefined}
+            >
+              <l.icon className="h-4 w-4 text-primary" />
+              {l.label}
+            </Link>
+          );
+        })}
+      </div>
+    </div>
+  );
+
   return (
     <div className="flex min-h-screen flex-col bg-background">
       <header className="border-b-2 border-border bg-background">
-        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6">
-          <Link to="/" className="flex items-center gap-2">
-            <span className="flex h-9 w-9 items-center justify-center rounded-md bg-primary text-lg font-extrabold text-white">
-              W
-            </span>
-            <span className="text-lg font-bold tracking-tight text-foreground">WorkSense</span>
-          </Link>
-
-          <div className="flex items-center gap-2">
-            {role && can(role, "manage_recruitment") && (
-              <Link
-                to="/recruitment"
-                className="hidden items-center gap-1.5 rounded-md px-3 py-2 text-sm font-semibold text-foreground transition-colors hover:bg-muted md:flex"
-              >
-                <Briefcase className="h-4 w-4 text-secondary" />
-                Recruitment
-              </Link>
-            )}
-            {role && can(role, "approve_recommendations") && (
-              <Link
-                to="/hub"
-                className="hidden items-center gap-1.5 rounded-md px-3 py-2 text-sm font-semibold text-foreground transition-colors hover:bg-muted md:flex"
-              >
-                <Layers className="h-4 w-4 text-secondary" />
-                Recommendation Hub
-              </Link>
-            )}
-            {role && can(role, "use_policy_studio") && (
-              <Link
-                to="/policy"
-                className="hidden items-center gap-1.5 rounded-md px-3 py-2 text-sm font-semibold text-foreground transition-colors hover:bg-muted md:flex"
-              >
-                <MessageSquareText className="h-4 w-4 text-primary" />
-                Policy Studio
-              </Link>
-            )}
-            {role && can(role, "view_onboarding") && (
-              <Link
-                to="/onboarding"
-                className="hidden items-center gap-1.5 rounded-md px-3 py-2 text-sm font-semibold text-foreground transition-colors hover:bg-muted md:flex"
-              >
-                <ListChecks className="h-4 w-4 text-accent" />
-                Onboarding
-              </Link>
-            )}
-            {role && (can(role, "view_all_workforce") || can(role, "view_team") || role === "employee") && (
-              <Link
-                to="/workforce"
-                className="hidden items-center gap-1.5 rounded-md px-3 py-2 text-sm font-semibold text-foreground transition-colors hover:bg-muted md:flex"
-              >
-                <Users className="h-4 w-4 text-primary" />
-                Workforce Review
-              </Link>
-            )}
-            {role && can(role, "explore_skill_graph") && (
-              <Link
-                to="/graph"
-                className="hidden items-center gap-1.5 rounded-md px-3 py-2 text-sm font-semibold text-foreground transition-colors hover:bg-muted md:flex"
-              >
-                <GitBranch className="h-4 w-4 text-primary" />
-                Skill Graph
-              </Link>
-            )}
-            {role && (
-              <span
-                className={`hidden rounded-md px-2.5 py-1 text-xs font-semibold uppercase tracking-wider sm:inline-block ${ROLE_BADGE_CLASS[role]}`}
-              >
-                {ROLE_LABEL[role]}
+        <div className="mx-auto max-w-7xl px-4 sm:px-6">
+          <div className="flex h-16 items-center justify-between">
+            <Link to="/" className="flex items-center gap-2">
+              <span className="flex h-9 w-9 items-center justify-center rounded-md bg-primary text-lg font-extrabold text-white">
+                W
               </span>
-            )}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="secondary" size="sm">
-                  <Settings className="h-4 w-4" />
-                  <span className="hidden sm:inline">{twin?.name ?? "Account"}</span>
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
-                <DropdownMenuLabel>
-                  {twin?.name}
-                  <p className="text-xs font-normal text-muted-foreground">{twin?.email}</p>
-                </DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                {role && can(role, "reset_demo") && (
-                  <>
-                    <DropdownMenuItem
-                      disabled={resetting}
-                      onSelect={(e) => {
-                        e.preventDefault();
-                        void handleReset();
-                      }}
-                    >
-                      <RotateCcw className="mr-2 h-4 w-4" />
-                      Reset Demo Data
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                  </>
-                )}
-                <DropdownMenuItem
-                  onSelect={(e) => {
-                    e.preventDefault();
-                    void signOut();
-                  }}
+              <span className="text-lg font-bold tracking-tight text-foreground">WorkSense</span>
+            </Link>
+
+            <div className="flex items-center gap-2">
+              {role && (
+                <span
+                  className={`hidden rounded-md px-2.5 py-1 text-xs font-semibold uppercase tracking-wider sm:inline-block ${ROLE_BADGE_CLASS[role]}`}
                 >
-                  <LogOut className="mr-2 h-4 w-4" />
-                  Sign out
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+                  {ROLE_LABEL[role]}
+                </span>
+              )}
+              {/* Mobile navigation */}
+              {sections.length > 0 && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="secondary" size="sm" className="md:hidden" aria-label="Open navigation menu">
+                      <Menu className="h-4 w-4" />
+                      <span className="sr-only">Menu</span>
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-64 max-h-[70vh] overflow-y-auto">
+                    <DropdownMenuLabel>Navigate</DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    <div className="flex flex-col gap-3 px-2 pb-2 pt-1">
+                      {sections.map((s) => renderSection(s, true))}
+                    </div>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="secondary" size="sm">
+                    <Settings className="h-4 w-4" />
+                    <span className="hidden sm:inline">{twin?.name ?? "Account"}</span>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-56">
+                  <DropdownMenuLabel>
+                    {twin?.name}
+                    <p className="text-xs font-normal text-muted-foreground">{twin?.email}</p>
+                  </DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  {role && can(role, "reset_demo") && (
+                    <>
+                      <DropdownMenuItem
+                        disabled={resetting}
+                        onSelect={(e) => {
+                          e.preventDefault();
+                          void handleReset();
+                        }}
+                      >
+                        <RotateCcw className="mr-2 h-4 w-4" />
+                        Reset Demo Data
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                    </>
+                  )}
+                  <DropdownMenuItem
+                    onSelect={(e) => {
+                      e.preventDefault();
+                      void signOut();
+                    }}
+                  >
+                    <LogOut className="mr-2 h-4 w-4" />
+                    Sign out
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           </div>
+
+          {/* Role-sectioned desktop nav */}
+          {sections.length > 0 && (
+            <nav
+              aria-label="Primary"
+              className="hidden flex-wrap items-center gap-x-5 gap-y-1 overflow-x-auto border-t border-border py-2 md:flex"
+            >
+              {sections.map((s) => renderSection(s))}
+            </nav>
+          )}
         </div>
       </header>
       <main className="flex-1">{children}</main>

@@ -484,13 +484,51 @@ export const actionTaskUpdate = (taskId: string, action: string, rationale: stri
 
 // ---- Executive Decision Dashboard ----
 
+export interface DashboardFilters {
+  department?: string | null;
+  requisition_id?: string | null;
+  period?: string | null;
+}
+
+export interface HeatmapBucket {
+  skill: string;
+  target_proficiency: number;
+  req_id: string;
+  req_title: string;
+  buckets: {
+    missing: number;
+    below_target: number;
+    adjacent_support: number;
+    insufficient_evidence: number;
+    ready: number;
+  };
+  total: number;
+}
+
 export interface DashboardData {
   ok: true;
   scope: "org" | "team";
   threshold: number;
+  computed_at: string;
+  period: { label: string; start: string | null; end: string | null; filtered: boolean };
+  observation_range: { start: string; end: string } | null;
+  definitions: {
+    headcount: string;
+    open_requisitions: string;
+    active_candidates: string;
+    heatmap: string;
+  };
+  filters: {
+    applied: { department: string | null; requisition_id: string | null; period: string | null };
+    available: {
+      departments: string[];
+      requisitions: { id: string; title: string; status: string }[];
+    };
+  };
   cards: {
     headcount: number;
     open_requisitions: number;
+    requisition_statuses: Record<string, number>;
     active_candidates: number;
     journeys_in_progress: number;
     journeys_on_track: number;
@@ -499,11 +537,12 @@ export interface DashboardData {
     pending_recommendations: number;
   };
   review_cases: ReviewCaseRow[];
-  heatmap: { skill: string; target_proficiency: number; req_id: string; req_title: string; gap_count: number; total: number }[];
+  heatmap: HeatmapBucket[];
   recommendations: { id: string; category: string; urgency: string; title: string; executive_summary: string }[];
 }
 
-export const fetchDashboard = () => invoke<DashboardData>("dashboard", {});
+export const fetchDashboard = (filters?: DashboardFilters) =>
+  invoke<DashboardData>("dashboard", { ...filters });
 
 // ---- Phase 9: Workforce Review Index + Performance Summaries ----
 
