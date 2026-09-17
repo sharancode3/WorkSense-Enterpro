@@ -38,6 +38,14 @@ export interface CandidateStatusResult {
   application_status: string;
   requisition: { title: string; department: string };
   applicant: { name: string; verified_skills: { name: string; proficiency: number }[] };
+  sessions?: {
+    token: string;
+    session_type: string;
+    status: string;
+    expires_at: string;
+    submitted_at: string | null;
+    title: string;
+  }[];
 }
 
 export async function fetchMe(): Promise<MeResult> {
@@ -57,7 +65,7 @@ export async function resetDemo(): Promise<{ ok: true }> {
 }
 
 export class ApiError extends Error {
-  constructor(message: string, public code?: string) {
+  constructor(message: string, public code?: string, public context?: Record<string, unknown>) {
     super(message);
     this.name = "ApiError";
   }
@@ -127,7 +135,10 @@ export interface FitRecordShape {
 
 async function invoke<T>(name: string, body: unknown): Promise<T> {
   const { data, error } = await supabase.functions.invoke<T>(name, { body });
-  if (error) throw new ApiError(error.message || `${name}: failed`, (error as { context?: { error?: string } }).context?.error);
+  if (error) {
+    const ctx = (error as { context?: Record<string, unknown> }).context;
+    throw new ApiError(error.message || `${name}: failed`, (ctx?.error as string) ?? undefined, ctx);
+  }
   return data as T;
 }
 
@@ -437,3 +448,199 @@ export async function listDemoResumes(): Promise<DemoResumeFixture[]> {
   if (!res.ok) throw new Error("Demo resumes unavailable.");
   return (await res.json()) as DemoResumeFixture[];
 }
+
+// ---- Phase 6: applications lifecycle, assessments, candidate sessions ----
+
+export interface StageEventRow {
+  id: string;
+  prior_stage: string;
+  new_stage: string;
+  reason: string | null;
+  at: string;
+  version: number;
+  actor_twin_id: string;
+}
+
+export interface ApplicationRow {
+  id: string;
+  org_id: string;
+  candidate_twin_id: string;
+  requisition_id: string;
+  stage: string;
+  application_code: string;
+  applied_at: string;
+  version: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApplicationStageResult {
+  ok: true;
+  application: { id: string; stage: string; version: number };
+  decision: string;
+  transition: { prior_stage: string; new_stage: string };
+  reason: string;
+  version: number;
+  conversion?: unknown;
+  fits?: { current: number | null; future: number | null };
+  history: StageEventRow[];
+}
+
+export const applicationStage = (
+  applicationId: string,
+  decision: "move_forward" | "reject" | "select",
+  expectedStage: string,
+  expectedVersion: number,
+  reason?: string
+) =>
+  invoke<ApplicationStageResult>("application-stage", {
+    application_id: applicationId,
+    decision,
+    expected_stage: expectedStage,
+    expected_version: expectedVersion,
+    reason,
+  });
+
+export interface SessionQuestion {
+  key: string;
+  prompt: string;
+  hint?: string;
+  max_chars: number;
+}
+
+export interface AssessmentSessionView {
+  id: string;
+  session_type: "work_sample" | "interview";
+  status: string;
+  expires_at: string;
+  time_policy: string;
+  accommodation: Record<string, unknown>;
+  submitted_at: string | null;
+  submission_hash: string | null;
+  invitation_token?: string;
+  answers: Record<string, string>;
+  drafts: Record<string, string>;
+  follow_ups: { key: string; prompt: string; source?: string }[];
+  blueprint: {
+    title: string;
+    instructions: string;
+    questions: SessionQuestion[];
+    test_cases?: { name: string; expected: string }[];
+  };
+  candidate?: { id: string; name: string; email: string };
+  application_code?: string | null;
+  requisition_id?: string | null;
+}
+
+export interface RubricAnchorRow {
+  id: string;
+  blueprint_id: string;
+  competency: string;
+  version: number;
+  observable_behavior: string;
+  evidence_requirements: string[];
+  anchors: Record<string, string>;
+  critical_mistakes: string[];
+  insufficient_evidence_conditions: string[];
+  skill_mapping: { skill: string; anchor_to_proficiency: Record<string, number> };
+}
+
+export interface JudgmentItem {
+  competency: string;
+  judgment: string;
+  evidence_quotes: string[];
+  anchor_ref: string;
+  uncertainty: number;
+  suggested_follow_up: string;
+  note?: string;
+  reason?: string;
+}
+
+export interface AssessmentEvaluation {
+  ok: true;
+  job_id: string;
+  status: string;
+  assessment_id: string;
+  result: {
+    type: string;
+    session_id: string;
+    session_type: string;
+    blueprint_id: string;
+    blueprint_title: string;
+    competency: string;
+    code_execution: { available: boolean; note: string };
+    ai: { judgments: JudgmentItem[]; summary: string; evaluated_at: string; evaluator: string; model: string };
+    reviewed: { determination: string; judgments: JudgmentItem[]; reason: string; by: string; at: string } | null;
+  };
+}
+
+export interface AssessmentReviewResult {
+  ok: true;
+  assessment_id: string;
+  reviewed: { determination: string; reason: string; by: string; at: string };
+  evidence_written: { competency: string; skill: string; assertion_id: string; evidence_id: string; proficiency: number }[];
+  fit: { current: number | null; future: number | null };
+}
+
+export const assessmentSessionFetch = (body: { token?: string; session_id?: string }) =>
+  invoke<{ ok: true; session: AssessmentSessionView; rubrics?: RubricAnchorRow[]; evaluation?: AssessmentEvaluation["result"] | null }>(
+    "assessment-session",
+    { action: "fetch", ...body }
+  );
+
+export const assessmentSessionCreate = (payload: {
+  application_id: string;
+  blueprint_id: string;
+  session_type: "work_sample" | "interview";
+  expires_in_hours?: number;
+}) =>
+  invoke<{ ok: true; session: AssessmentSessionView; invitation_token: string; expires_at: string }>("assessment-session", {
+    action: "create",
+    ...payload,
+  });
+
+export const assessmentSessionDraft = (token: string, drafts: Record<string, string>, accommodation?: Record<string, unknown>) =>
+  invoke<{ ok: true; saved_at: string; status: string }>("assessment-session", {
+    action: "draft",
+    token,
+    drafts,
+    accommodation,
+  });
+
+export const assessmentSessionSubmit = (token: string, answers: Record<string, string>, accommodation?: Record<string, unknown>) =>
+  invoke<{ ok: true; submitted_at: string; submission_hash: string; status: string }>("assessment-session", {
+    action: "submit",
+    token,
+    answers,
+    accommodation,
+  });
+
+export const assessmentSessionResume = (sessionId: string, followUps: { key?: string; prompt: string }[]) =>
+  invoke<{ ok: true; session: AssessmentSessionView; follow_ups_issued: number }>("assessment-session", {
+    action: "resume",
+    session_id: sessionId,
+    follow_ups: followUps,
+  });
+
+export const assessmentBlueprintSeed = (requisitionId: string) =>
+  invoke<{ ok: true; seeded: { id: string; competency: string; rubrics: number }[] }>("assessment-blueprint", {
+    action: "seed",
+    requisition_id: requisitionId,
+  });
+
+export const assessmentBlueprintList = (requisitionId: string) =>
+  invoke<{ ok: true; blueprints: { id: string; requisition_id: string; competency: string; version: number; artifact_spec: { title: string; kind: string; questions: SessionQuestion[] }; test_cases: { name: string; expected: string }[]; rubrics: RubricAnchorRow[] }[] }>(
+    "assessment-blueprint",
+    { action: "list", requisition_id: requisitionId }
+  );
+
+export const assessmentEvaluate = (sessionId: string) =>
+  invoke<AssessmentEvaluation>("assessment-evaluate", { session_id: sessionId });
+
+export const assessmentReview = (
+  assessmentId: string,
+  determination: "confirm" | "override",
+  judgments: { competency: string; judgment: string; evidence_quotes: string[]; reason?: string }[],
+  reason?: string
+) =>
+  invoke<AssessmentReviewResult>("assessment-review", { assessment_id: assessmentId, determination, judgments, reason });

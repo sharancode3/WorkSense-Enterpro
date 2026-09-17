@@ -121,11 +121,36 @@ Bounded repair loop: max 3 attempts per external blocker, then stop + report evi
 
 **Limitations** — OCR intentionally unavailable (honest `ocr_available:false` + manual fallback); 4 MiB cap with base64 transport; extraction latency on the local 4B model can exceed 40s (gateway timeout raised to 100s; one timed-out attempt observed and correctly handled); browser click-through of the review UI pending a logged-in session (API-verified end-to-end).
 
+## 13. Phase 6 — Structured applications, job-relevant assessments, adaptive interview sessions, reviewer-controlled evaluation (status: full vertical verified live; authed click-through of studio pending)
+
+**Data model (migration `20260917_171500000`)** — `applications` gains optimistic-concurrency (`version`, `updated_at`); new RLS-reads-only tables: `application_stage_events` (append-only, actor/prior/new/reason/time/version/audit ref), `assessment_blueprints` (versioned artifact specs + test cases per requisition+competency), `assessment_rubrics` (observable behavior, evidence requirements, 1..5 anchors, critical mistakes, insufficient-evidence conditions, `skill_mapping` for fit provenance), `candidate_sessions` (token-scoped, expiration, autosave drafts, immutable submitted answers, `submission_hash` + duplicate guard, one bounded follow-up round).
+
+**Backend functions (5 new, 2 changed; all bundled + deployed)**
+- `assessment-blueprint` — seed/list/create versioned blueprints+rubrics. Canonical seeds (deterministic, server-owned, no LLM): Backend Engineer (payments idempotency + slow-query diagnosis + API resilience), Data Analyst (messy dataset triage + metric integrity + chart honesty), People Ops (policy scenario + missing-info handling + escalation note, hosted on a new People Operations Partner requisition).
+- `assessment-session` — reviewer `create` (scoped invitation, expiry) / `fetch` (reviewer view vs. public token view — candidate view never leaks rubrics/evaluation) / `resume` (one bounded follow-up round) / candidate `draft` (autosave, refresh keeps drafts) / `submit` (lock + duplicate guard: same hash → 409 DUPLICATE_SUBMISSION, different → 409 LOCKED; expired → 410).
+- `assessment-evaluate` — durable job (`assessment_evaluation`); per-competency judgment: anchor 1..5 + verbatim evidence quotes (validated against the full answer text) + anchor_ref + uncertainty + suggested follow-up; missing answers → `NOT_ASSESSED`, too-short → `INSUFFICIENT_EVIDENCE` (no fabricated scores); prompt forbids emotion/face/accent/personality scoring; answers wrapped as untrusted; **code-execution sandbox explicitly unavailable — never simulated**; one evaluation per session (replaces prior run after a follow-up round).
+- `assessment-review` — human confirm/override with reasons; preserves both AI suggestion and human determination in `assessments.result`; supported anchors (3..5) write `skill_assertions` (`assessment_supported`, medium rigor) + `evidence_items` (`work_sample`/`interview`) via `skill_mapping`, then recompute current+future fit (assertions-first) — verified: Priya current/future fit rose 0.655 → 0.97 with provenance rows.
+- `application-stage` — authorized transitions only (server matrix; `move_forward` along pipeline, `reject` from any open stage, `select` only from final round incl. conversion RPC + fit compute); `expected_stage`/`expected_version` mismatch → 409 `STALE_STATE`; writes `application_stage_events` + syncs legacy `applicants[]` jsonb.
+- `candidate-status` — now also returns open sessions (token/type/status/expiry/title) for candidates.
+
+**Frontend** — public `/candidate/session?token=…` page: instructions, accommodation/support options, time policy, debounced autosave indicator, explicit submit confirmation, submitted state (immutable answers), follow-up round display, honest "no scores shown to candidates". Recruitment Studio: stage now driven by the `applications` table (badge + version), authorized Move/Reject/Select via `application-stage`, transition **History** dialog, **Assessments** panel (session list, blueprint seed/new invitation, evidence-linked AI judgments, per-competency anchor + reason review with confirm/override, fit update, send follow-up round). `candidate-status` lists invites with Start/Continue links.
+
+**Completion gate — verified live (curl + API)**
+- Candidate completes the work sample (draft → submit → hash) and the interview session; duplicate submit → 409; changed-answers resubmit → 409 LOCKED; expired invitation → status expired + 410 on draft/submit.
+- Reviewer evaluates: work sample → 3 anchor judgments (5/4/4) with verbatim quotes + zero code-execution claims; adversarial interview (injection attempt + missing + short answers) → judged on content (injection did not inflate score), `NOT_ASSESSED`, `INSUFFICIENT_EVIDENCE`.
+- Reviewer overrides one judgment with reason and saves → both AI suggestion and human determination preserved; 3 `assessment_supported` assertions + linked evidence; fit recomputed (0.655 → 0.97) with provenance.
+- Adaptive round: submit → reviewer `resume` (bounded 1 round) → candidate answers round 2 (new hash) → second resume blocked (409).
+- Security: org-2 admin → 404 on org-1 session/evaluate/review/stage data; manager (no recruitment role) → 403; candidates never receive evaluation/rubric data.
+
+**Tests** — 118 total (25 new: transition matrix, stale-state conflict, blueprint seed validity, judgment vocabulary, quote/score validation, missing/short defaults). `pnpm check` (lint + tsc app + tsc functions + tests) ✅ · `pnpm build` ✅. 25 backend functions deployed.
+
+**Limitations** — code-execution sandbox not available (stated + never simulated); select-path conversion fit still uses `verified_skills` (legacy cache) unlike the assertions-first review path (pre-existing, documented); authed browser click-through of the Recruitment studio / review panel pending a logged-in session (all flows API-verified); local 4B model latency (~10–45s per evaluation) with job-recovery polling in the UI.
+
 ## 6. Unresolved defects / open requirements (queued for P3+)
 
 1. Fit-score calibration semantics (adjacency when nothing missing; evidence influence; future-role floor).
-2. Resume claims → verified assessment pipeline (work samples, evidence review, contradiction handling).
-3. Interview evaluation maturity: work-sample lifecycle, no missing-score defaults, benchmark.
+2. ~~Resume claims → verified assessment pipeline~~ ✅ Phase 6 (assessment_supported evidence + reviewer confirm/override).
+3. ~~Interview evaluation maturity: work-sample lifecycle, no missing-score defaults~~ ✅ Phase 6 (evidence-linked anchors, NOT_ASSESSED/INSUFFICIENT_EVIDENCE defaults).
 4. Dispatch → assigned work with owners, deadlines, completion evidence, outcomes.
 5. Signal reframing documentation (heuristic ≠ probability) + UI wording audit.
 6. Remove remaining `as any` casts (seed/generator boundaries); reconcile any residual lockfile notes.
@@ -167,8 +192,8 @@ Bounded repair loop: max 3 attempts per external blocker, then stop + report evi
 ## 6. Unresolved defects / open requirements (queued for P1+)
 
 1. Fit-score calibration semantics (adjacency when nothing missing; evidence influence; future-role floor).
-2. Resume claims → verified assessment pipeline (work samples, evidence review, contradiction handling).
-3. Interview evaluation maturity: work-sample lifecycle, no missing-score defaults, benchmark.
+2. ~~Resume claims → verified assessment pipeline~~ ✅ Phase 6 (assessment_supported evidence + reviewer confirm/override).
+3. ~~Interview evaluation maturity: work-sample lifecycle, no missing-score defaults~~ ✅ Phase 6 (evidence-linked anchors, NOT_ASSESSED/INSUFFICIENT_EVIDENCE defaults).
 4. Dispatch → assigned work with owners, deadlines, completion evidence, outcomes.
 5. Signal reframing documentation (heuristic ≠ probability) + UI wording audit.
 6. Remove `as any` casts; reconcile pnpm lockfile drift.

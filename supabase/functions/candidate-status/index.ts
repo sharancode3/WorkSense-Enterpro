@@ -75,7 +75,8 @@ Deno.serve(async (req) => {
     );
   }
 
-  // Public, candidate-safe payload: status, stage, and their own skill summary.
+  // Public, candidate-safe payload: status, stage, their own skill summary, and
+  // any open assessment sessions (token + type + deadline — never evaluation).
   const { data: twin, error: twinErr } = await supabase
     .from("digital_twins")
     .select("id, name, verified_skills")
@@ -87,6 +88,27 @@ Deno.serve(async (req) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
+
+  const { data: sessions } = await supabase
+    .from("candidate_sessions")
+    .select("id, invitation_token, session_type, status, expires_at, blueprint_id, submitted_at")
+    .eq("twin_id", applicant.twin_id)
+    .in("status", ["invited", "in_progress", "submitted"]);
+  const blueprintIds = [...new Set((sessions ?? []).map((s) => s.blueprint_id))];
+  const { data: blueprints } = blueprintIds.length > 0
+    ? await supabase.from("assessment_blueprints").select("id, artifact_spec").in("id", blueprintIds)
+    : { data: [] };
+  const titleById = new Map(
+    (blueprints ?? []).map((b) => [b.id, (b.artifact_spec as { title?: string })?.title ?? b.id])
+  );
+  const sessionList = (sessions ?? []).map((s) => ({
+    token: s.invitation_token,
+    session_type: s.session_type,
+    status: s.status,
+    expires_at: s.expires_at,
+    submitted_at: s.submitted_at ?? null,
+    title: titleById.get(s.blueprint_id) ?? "Assessment",
+  }));
 
   return new Response(
     JSON.stringify({
@@ -100,6 +122,7 @@ Deno.serve(async (req) => {
           proficiency: s.proficiency,
         })),
       },
+      sessions: sessionList,
     }),
     { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
   );

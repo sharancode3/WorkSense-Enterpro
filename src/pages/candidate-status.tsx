@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
-import { ArrowLeft, CheckCircle2, Loader2, Lock, Search } from "lucide-react";
+import { ArrowLeft, CheckCircle2, ClipboardList, ExternalLink, Loader2, Lock, Search } from "lucide-react";
 import { ApiError, fetchCandidateStatus, type CandidateStatusResult } from "@/lib/api";
 import { DEMO_CANDIDATE_CODE } from "@/lib/demo-accounts";
 import { forbiddenIncludes } from "@/lib/security";
@@ -125,6 +125,48 @@ export default function CandidateStatus() {
                   <CheckCircle2 className="h-4 w-4" /> Live
                 </span>
               </div>
+
+              {(view.data.sessions ?? []).length > 0 && (
+                <div className="rounded-lg bg-muted p-6">
+                  <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                    <ClipboardList className="h-4 w-4" /> Your assessment sessions
+                  </p>
+                  <div className="mt-3 flex flex-col gap-2">
+                    {view.data.sessions?.map((s) => (
+                      <div
+                        key={s.token}
+                        className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-white px-4 py-3"
+                      >
+                        <div>
+                          <p className="text-sm font-bold text-foreground">{s.title}</p>
+                          <p className="text-xs capitalize text-muted-foreground">
+                            {s.session_type.replace(/_/g, " ")} ·{" "}
+                            {s.status === "submitted"
+                              ? "Submitted"
+                              : `Open until ${new Date(s.expires_at).toLocaleDateString()}`}
+                          </p>
+                        </div>
+                        {s.status === "submitted" ? (
+                          <span className="rounded-md bg-foreground px-3 py-1.5 text-xs font-bold uppercase tracking-wider text-white">
+                            Submitted
+                          </span>
+                        ) : (
+                          <Button size="sm" asChild>
+                            <Link to={`/candidate/session?token=${encodeURIComponent(s.token)}`}>
+                              {s.status === "in_progress" ? "Continue" : "Start"} session
+                              <ExternalLink className="h-4 w-4" />
+                            </Link>
+                          </Button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  <p className="mt-3 text-xs text-muted-foreground">
+                    Sessions are invitation-only. Your answers are saved automatically; evaluation stays with the
+                    recruitment team.
+                  </p>
+                </div>
+              )}
 
               <div className="rounded-lg bg-muted p-6">
                 <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">

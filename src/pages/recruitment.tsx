@@ -5,7 +5,9 @@ import { toast } from "sonner";
 import {
   ArrowRight,
   Briefcase,
+  ClipboardList,
   FileText,
+  History,
   Loader2,
   Lock,
   MessagesSquare,
@@ -17,6 +19,7 @@ import { useAuth } from "@/contexts/auth-context";
 import { AppShell } from "@/components/app-shell";
 import { FitCard } from "@/components/fit-card";
 import { ResumeReviewFlow } from "@/components/resume-review-flow";
+import { AssessmentReviewPanel } from "@/components/assessment-review-panel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -33,14 +36,17 @@ import {
   type FitRecord,
 } from "@/lib/skill-graph";
 import {
+  ApiError,
+  applicationStage,
   evaluateInterview,
   extractResume,
   fetchModelJob,
   generateInterviewKit,
-  recruiterDecision,
   requisitionCreate,
+  type ApplicationRow,
   type InterviewEvaluation,
   type InterviewKit,
+  type StageEventRow,
 } from "@/lib/api";
 
 interface Applicant {
@@ -144,11 +150,40 @@ export default function Recruitment() {
   const [evalNotes, setEvalNotes] = useState("");
   const [evalBusy, setEvalBusy] = useState(false);
 
+  // Phase 6: application lifecycle + assessments
+  const [historyApp, setHistoryApp] = useState<ApplicationRow | null>(null);
+  const [historyEvents, setHistoryEvents] = useState<StageEventRow[]>([]);
+  const [historyBusy, setHistoryBusy] = useState(false);
+  const [assessApp, setAssessApp] = useState<{ application: ApplicationRow; candidate: CandidateRow } | null>(null);
+
   const reqs = useQuery({
     queryKey: ["recruiter-reqs", user?.id ?? "anon"],
     queryFn: async () => {
       const { data } = await supabase.from("job_requisitions").select("*").order("created_at", { ascending: false });
       return (data ?? []) as ReqRow[];
+    },
+  });
+
+  // Authoritative application rows + transition history for the selected requisition.
+  const apps = useQuery({
+    queryKey: ["recruiter-apps", selected, user?.id ?? "anon"],
+    queryFn: async () => {
+      if (!selected) return { apps: [], events: [] };
+      const { data: rows } = await supabase
+        .from("applications")
+        .select("*")
+        .eq("requisition_id", selected)
+        .order("applied_at");
+      const appRows = (rows ?? []) as ApplicationRow[];
+      const appIds = appRows.map((a) => a.id);
+      const { data: evRows } = appIds.length > 0
+        ? await supabase
+            .from("application_stage_events")
+            .select("id, application_id, prior_stage, new_stage, reason, at, version, actor_twin_id")
+            .in("application_id", appIds)
+            .order("at", { ascending: true })
+        : { data: [] };
+      return { apps: appRows, events: (evRows ?? []) as StageEventRow[] };
     },
   });
 
@@ -166,10 +201,12 @@ export default function Recruitment() {
 
   const candidatesMap = new Map((candidates.data ?? []).map((c) => [c.id, c]));
   const req = reqs.data?.find((r) => r.id === selected) ?? null;
+  const appsByTwin = new Map((apps.data?.apps ?? []).map((a) => [a.candidate_twin_id, a]));
 
   const invalidate = () => {
     void qc.invalidateQueries({ queryKey: ["recruiter-reqs", user?.id ?? "anon"] });
     void qc.invalidateQueries({ queryKey: ["recruiter-candidates", user?.id ?? "anon"] });
+    void qc.invalidateQueries({ queryKey: ["recruiter-apps", selected, user?.id ?? "anon"] });
   };
 
   const handleCreate = async () => {
@@ -208,21 +245,58 @@ export default function Recruitment() {
     }
   };
 
-  const runDecision = async (c: CandidateRow, decision: "move_forward" | "reject" | "select") => {
-    if (!req) return;
+  // Authorized stage transitions via the server matrix (applications is the
+  // source of truth; expected_stage/version guard against stale writes).
+  const runStage = async (c: CandidateRow, decision: "move_forward" | "reject" | "select") => {
+    const app = appsByTwin.get(c.id);
+    if (!app) {
+      toast.error("No application record for this candidate.");
+      return;
+    }
     setBusyAction(`${decision}-${c.id}`);
     try {
-      const res = await recruiterDecision(c.id, req.id, decision, decision === "select" ? "Selected by recruiter." : undefined);
+      const res = await applicationStage(
+        app.id,
+        decision,
+        app.stage,
+        app.version,
+        decision === "select" ? "Selected by recruiter." : undefined
+      );
       toast.success(
         decision === "select"
           ? `${c.name} converted to employee — pre-hire data preserved.`
-          : `${c.name}: ${res.note ?? "Updated."}`
+          : `${c.name}: ${res.reason ?? "Stage updated."}`
       );
       invalidate();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Decision failed");
+      if (err instanceof ApiError && err.code === "STALE_STATE") {
+        toast.error(err.message);
+        invalidate();
+      } else {
+        toast.error(err instanceof Error ? err.message : "Decision failed");
+      }
     } finally {
       setBusyAction(null);
+    }
+  };
+
+  const showHistory = async (c: CandidateRow) => {
+    const app = appsByTwin.get(c.id);
+    if (!app) return;
+    setHistoryApp(app);
+    setHistoryBusy(true);
+    setHistoryEvents([]);
+    try {
+      const { data } = await supabase
+        .from("application_stage_events")
+        .select("id, application_id, prior_stage, new_stage, reason, at, version, actor_twin_id")
+        .eq("application_id", app.id)
+        .order("at", { ascending: true });
+      setHistoryEvents((data ?? []) as StageEventRow[]);
+    } catch {
+      toast.error("Could not load transition history.");
+    } finally {
+      setHistoryBusy(false);
     }
   };
 
@@ -458,6 +532,8 @@ export default function Recruitment() {
                   .map((a) => {
                     const c = candidatesMap.get(a.twin_id);
                     if (!c) return null;
+                    const app = appsByTwin.get(a.twin_id);
+                    const stage = app?.stage ?? a.stage;
                     return (
                       <div key={a.twin_id} className="rounded-lg bg-white p-5">
                         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -465,9 +541,16 @@ export default function Recruitment() {
                             <p className="font-bold text-foreground">{c.name}</p>
                             <p className="text-xs text-muted-foreground">{c.email}</p>
                           </div>
-                          <span className={`rounded-md px-2.5 py-1 text-xs font-bold uppercase tracking-wider ${STAGE_CLASS[a.stage] ?? "bg-muted text-foreground"}`}>
-                            {STAGE_LABEL[a.stage] ?? a.stage.replace(/_/g, " ")}
-                          </span>
+                          <div className="flex items-center gap-2">
+                            {app && (
+                              <span className="rounded-md bg-muted px-2 py-1 text-xs font-semibold text-muted-foreground">
+                                v{app.version}
+                              </span>
+                            )}
+                            <span className={`rounded-md px-2.5 py-1 text-xs font-bold uppercase tracking-wider ${STAGE_CLASS[stage] ?? "bg-muted text-foreground"}`}>
+                              {STAGE_LABEL[stage] ?? stage.replace(/_/g, " ")}
+                            </span>
+                          </div>
                         </div>
 
                         <div className="mt-4 flex flex-wrap gap-2">
@@ -483,24 +566,34 @@ export default function Recruitment() {
                           <Button size="sm" variant="secondary" onClick={() => { setEvalTwin(c); setEvalNotes(""); setEvalRes(null); }}>
                             <MessagesSquare className="h-4 w-4" /> Evaluate
                           </Button>
+                          {app && (
+                            <>
+                              <Button size="sm" variant="secondary" onClick={() => void showHistory(c)}>
+                                <History className="h-4 w-4" /> History
+                              </Button>
+                              <Button size="sm" variant="secondary" onClick={() => app && setAssessApp({ application: app, candidate: c })}>
+                                <ClipboardList className="h-4 w-4" /> Assessments
+                              </Button>
+                            </>
+                          )}
                         </div>
 
-                        {a.stage !== "final_round" && a.stage !== "selected" && (
+                        {app && stage !== "final_round" && stage !== "selected" && stage !== "rejected" && (
                           <div className="mt-3 flex flex-wrap gap-2">
-                            <Button size="sm" onClick={() => void runDecision(c, "move_forward")} disabled={busyAction === `move_forward-${c.id}`}>
+                            <Button size="sm" onClick={() => void runStage(c, "move_forward")} disabled={busyAction === `move_forward-${c.id}`}>
                               Move forward <ArrowRight className="h-4 w-4" />
                             </Button>
-                            <Button size="sm" variant="outline" onClick={() => void runDecision(c, "reject")} disabled={busyAction === `reject-${c.id}`}>
+                            <Button size="sm" variant="outline" onClick={() => void runStage(c, "reject")} disabled={busyAction === `reject-${c.id}`}>
                               Reject
                             </Button>
                           </div>
                         )}
-                        {(a.stage === "final_round") && (
+                        {app && stage === "final_round" && (
                           <div className="mt-3 flex flex-wrap gap-2">
-                            <Button size="sm" onClick={() => void runDecision(c, "select")} disabled={busyAction === `select-${c.id}`}>
+                            <Button size="sm" onClick={() => void runStage(c, "select")} disabled={busyAction === `select-${c.id}`}>
                               Select — convert to employee
                             </Button>
-                            <Button size="sm" variant="outline" onClick={() => void runDecision(c, "reject")} disabled={busyAction === `reject-${c.id}`}>
+                            <Button size="sm" variant="outline" onClick={() => void runStage(c, "reject")} disabled={busyAction === `reject-${c.id}`}>
                               Reject
                             </Button>
                           </div>
@@ -657,6 +750,52 @@ export default function Recruitment() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Stage transition history */}
+      <Dialog open={!!historyApp} onOpenChange={(o) => !o && setHistoryApp(null)}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Application history · {historyApp?.application_code}</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col gap-2">
+            {historyBusy && (
+              <div className="flex items-center gap-2 rounded-lg bg-muted p-4 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" /> Loading…
+              </div>
+            )}
+            {!historyBusy && historyEvents.length === 0 && (
+              <p className="rounded-lg bg-muted p-4 text-sm text-muted-foreground">
+                No transitions yet — the application is at{" "}
+                <b className="text-foreground">{historyApp?.stage.replace(/_/g, " ")}</b> (v{historyApp?.version}).
+              </p>
+            )}
+            {historyEvents.map((e) => (
+              <div key={e.id} className="rounded-lg bg-muted p-4">
+                <p className="text-sm font-bold text-foreground">
+                  {e.prior_stage.replace(/_/g, " ")} → {e.new_stage.replace(/_/g, " ")}
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {new Date(e.at).toLocaleString()} · v{e.version}
+                </p>
+                {e.reason && <p className="mt-1 text-sm text-muted-foreground">{e.reason}</p>}
+              </div>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Assessment sessions + reviewer evaluation */}
+      {assessApp && (
+        <AssessmentReviewPanel
+          open={!!assessApp}
+          onOpenChange={(o) => !o && setAssessApp(null)}
+          application={assessApp.application}
+          candidate={{ id: assessApp.candidate.id, name: assessApp.candidate.name, email: assessApp.candidate.email }}
+          reqId={req?.id ?? ""}
+          reqTitle={req?.title ?? ""}
+          onChanged={invalidate}
+        />
+      )}
     </AppShell>
   );
 }

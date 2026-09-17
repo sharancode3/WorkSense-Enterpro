@@ -3415,6 +3415,64 @@ export type Database = {
           },
         ]
       }
+      application_stage_events: {
+        Row: {
+          actor_twin_id: string
+          application_id: string
+          at: string
+          audit_ref: string | null
+          id: string
+          new_stage: string
+          org_id: string
+          prior_stage: string
+          reason: string | null
+          version: number
+        }
+        Insert: {
+          actor_twin_id: string
+          application_id: string
+          at?: string
+          audit_ref?: string | null
+          id?: string
+          new_stage: string
+          org_id: string
+          prior_stage: string
+          reason?: string | null
+          version: number
+        }
+        Update: {
+          actor_twin_id?: string
+          application_id?: string
+          at?: string
+          audit_ref?: string | null
+          id?: string
+          new_stage?: string
+          org_id?: string
+          prior_stage?: string
+          reason?: string | null
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "application_stage_events_actor_twin_id_fkey"
+            columns: ["actor_twin_id"]
+            referencedRelation: "digital_twins"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "application_stage_events_application_id_fkey"
+            columns: ["application_id"]
+            referencedRelation: "applications"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "application_stage_events_org_id_fkey"
+            columns: ["org_id"]
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       applications: {
         Row: {
           application_code: string
@@ -3425,6 +3483,8 @@ export type Database = {
           org_id: string
           requisition_id: string
           stage: string
+          updated_at: string
+          version: number
         }
         Insert: {
           application_code: string
@@ -3435,6 +3495,8 @@ export type Database = {
           org_id: string
           requisition_id: string
           stage?: string
+          updated_at?: string
+          version?: number
         }
         Update: {
           application_code?: string
@@ -3445,6 +3507,8 @@ export type Database = {
           org_id?: string
           requisition_id?: string
           stage?: string
+          updated_at?: string
+          version?: number
         }
         Relationships: [
           {
@@ -3463,6 +3527,122 @@ export type Database = {
             foreignKeyName: "applications_requisition_id_fkey"
             columns: ["requisition_id"]
             referencedRelation: "job_requisitions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      assessment_blueprints: {
+        Row: {
+          artifact_spec: Json
+          competency: string
+          created_at: string
+          created_by: string | null
+          id: string
+          org_id: string
+          prompt_adaptation_allowed: boolean
+          requisition_id: string
+          test_cases: Json
+          version: number
+        }
+        Insert: {
+          artifact_spec?: Json
+          competency: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          org_id: string
+          prompt_adaptation_allowed?: boolean
+          requisition_id: string
+          test_cases?: Json
+          version?: number
+        }
+        Update: {
+          artifact_spec?: Json
+          competency?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          org_id?: string
+          prompt_adaptation_allowed?: boolean
+          requisition_id?: string
+          test_cases?: Json
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "assessment_blueprints_created_by_fkey"
+            columns: ["created_by"]
+            referencedRelation: "digital_twins"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "assessment_blueprints_org_id_fkey"
+            columns: ["org_id"]
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "assessment_blueprints_requisition_id_fkey"
+            columns: ["requisition_id"]
+            referencedRelation: "job_requisitions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      assessment_rubrics: {
+        Row: {
+          anchors: Json
+          blueprint_id: string
+          competency: string
+          created_at: string
+          critical_mistakes: Json
+          evidence_requirements: Json
+          id: string
+          insufficient_evidence_conditions: Json
+          observable_behavior: string
+          org_id: string
+          skill_mapping: Json
+          version: number
+        }
+        Insert: {
+          anchors?: Json
+          blueprint_id: string
+          competency: string
+          created_at?: string
+          critical_mistakes?: Json
+          evidence_requirements?: Json
+          id?: string
+          insufficient_evidence_conditions?: Json
+          observable_behavior: string
+          org_id: string
+          skill_mapping?: Json
+          version?: number
+        }
+        Update: {
+          anchors?: Json
+          blueprint_id?: string
+          competency?: string
+          created_at?: string
+          critical_mistakes?: Json
+          evidence_requirements?: Json
+          id?: string
+          insufficient_evidence_conditions?: Json
+          observable_behavior?: string
+          org_id?: string
+          skill_mapping?: Json
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "assessment_rubrics_blueprint_id_fkey"
+            columns: ["blueprint_id"]
+            referencedRelation: "assessment_blueprints"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "assessment_rubrics_org_id_fkey"
+            columns: ["org_id"]
+            referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
         ]
@@ -3522,6 +3702,103 @@ export type Database = {
           },
           {
             foreignKeyName: "assessments_twin_id_fkey"
+            columns: ["twin_id"]
+            referencedRelation: "digital_twins"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      candidate_sessions: {
+        Row: {
+          accommodation: Json
+          answers: Json
+          application_id: string
+          blueprint_id: string
+          created_at: string
+          drafts: Json
+          expires_at: string
+          follow_ups: Json
+          id: string
+          invitation_token: string
+          org_id: string
+          rubric_id: string | null
+          session_type: string
+          status: string
+          submission_hash: string | null
+          submitted_at: string | null
+          time_policy: string | null
+          twin_id: string
+          updated_at: string
+        }
+        Insert: {
+          accommodation?: Json
+          answers?: Json
+          application_id: string
+          blueprint_id: string
+          created_at?: string
+          drafts?: Json
+          expires_at: string
+          follow_ups?: Json
+          id?: string
+          invitation_token: string
+          org_id: string
+          rubric_id?: string | null
+          session_type: string
+          status?: string
+          submission_hash?: string | null
+          submitted_at?: string | null
+          time_policy?: string | null
+          twin_id: string
+          updated_at?: string
+        }
+        Update: {
+          accommodation?: Json
+          answers?: Json
+          application_id?: string
+          blueprint_id?: string
+          created_at?: string
+          drafts?: Json
+          expires_at?: string
+          follow_ups?: Json
+          id?: string
+          invitation_token?: string
+          org_id?: string
+          rubric_id?: string | null
+          session_type?: string
+          status?: string
+          submission_hash?: string | null
+          submitted_at?: string | null
+          time_policy?: string | null
+          twin_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "candidate_sessions_application_id_fkey"
+            columns: ["application_id"]
+            referencedRelation: "applications"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "candidate_sessions_blueprint_id_fkey"
+            columns: ["blueprint_id"]
+            referencedRelation: "assessment_blueprints"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "candidate_sessions_org_id_fkey"
+            columns: ["org_id"]
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "candidate_sessions_rubric_id_fkey"
+            columns: ["rubric_id"]
+            referencedRelation: "assessment_rubrics"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "candidate_sessions_twin_id_fkey"
             columns: ["twin_id"]
             referencedRelation: "digital_twins"
             referencedColumns: ["id"]

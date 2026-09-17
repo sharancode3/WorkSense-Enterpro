@@ -762,6 +762,38 @@ export function validateRecommendationExplanation(d: unknown): ValidationResult 
   return fail(errors);
 }
 
+// 8) Assessment Evaluation (Phase 6) — per-competency judgment block emitted by
+// the model. Semantic checks (quotes exist, score bounds vs rubric anchors) run
+// in assessment.ts validateJudgmentItem, which has the rubric + answers context.
+const ASSESSMENT_JUDGMENTS = ["1", "2", "3", "4", "5", "NOT_ASSESSED", "INSUFFICIENT_EVIDENCE"];
+
+export function validateAssessmentJudgment(d: unknown): ValidationResult {
+  const errors: string[] = [];
+  if (!isObj(d)) return { ok: false, errors: ["response is not an object"] };
+  if (!isArr(d.judgments)) errors.push("judgments must be an array");
+  else {
+    for (const raw of d.judgments) {
+      const j = isObj(raw) ? raw : null;
+      if (!j) { errors.push("judgment item not an object"); continue; }
+      if (!isStr(j.competency) || j.competency.trim().length === 0) errors.push("judgment competency missing");
+      if (!isStr(j.judgment) || !ASSESSMENT_JUDGMENTS.includes(j.judgment)) {
+        errors.push(`judgment must be one of ${ASSESSMENT_JUDGMENTS.join("|")}`);
+      }
+      if (!isArr(j.evidence_quotes)) errors.push("judgment evidence_quotes must be an array");
+      else if (j.evidence_quotes.some((q) => !isStr(q))) errors.push("evidence_quotes entries must be strings");
+      if (j.anchor_ref !== undefined && j.anchor_ref !== null && !isStr(j.anchor_ref)) errors.push("anchor_ref must be a string");
+      if (j.uncertainty !== undefined && (!isNum(j.uncertainty) || j.uncertainty < 0 || j.uncertainty > 1)) {
+        errors.push("uncertainty must be a number 0..1");
+      }
+      if (j.suggested_follow_up !== undefined && j.suggested_follow_up !== null && !isStr(j.suggested_follow_up)) {
+        errors.push("suggested_follow_up must be a string");
+      }
+    }
+  }
+  if (!isStr(d.summary) || d.summary.trim().length === 0) errors.push("summary missing");
+  return fail(errors);
+}
+
 // 7) Rich Resume Review (Phase 4) — the full traceable extraction schema.
 export function validateResumeReview(d: unknown): ValidationResult {
   const errors: string[] = [];

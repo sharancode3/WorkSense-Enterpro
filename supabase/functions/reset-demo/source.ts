@@ -12,6 +12,7 @@ import {
 } from "../_shared/seed-data.ts";
 import { SEED_FITS } from "../_shared/generated-seed-fits.ts";
 import { DEMO_FIXTURES } from "../_shared/generated-demo-fixtures.ts";
+import { ASSESSMENT_SEEDS, PEOPLE_OPS_REQUISITION } from "../_shared/assessment.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -99,8 +100,12 @@ async function tearDownDemo(supabase, authIds: Record<string, string>) {
   for (const orgId of orgs) {
     await supabase.from("action_tasks").delete().eq("org_id", orgId);
     await supabase.from("workforce_observations").delete().eq("org_id", orgId);
+    await supabase.from("candidate_sessions").delete().eq("org_id", orgId);
+    await supabase.from("application_stage_events").delete().eq("org_id", orgId);
     await supabase.from("assessments").delete().eq("org_id", orgId);
     await supabase.from("applications").delete().eq("org_id", orgId);
+    await supabase.from("assessment_rubrics").delete().eq("org_id", orgId);
+    await supabase.from("assessment_blueprints").delete().eq("org_id", orgId);
     await supabase.from("skill_assertions").delete().eq("org_id", orgId);
     await supabase.from("evidence_items").delete().eq("org_id", orgId);
     await supabase.from("policy_documents").delete().eq("org_id", orgId);
@@ -208,6 +213,45 @@ async function reseed(supabase, authIds: Record<string, string>) {
     .from("job_requisitions")
     .insert({ ...fx.org2.requisition, org_id: SECOND_ORG_ID });
   if (org2ReqErr) throw new Error(`org2 req insert: ${org2ReqErr.message}`);
+  // People Operations Partner requisition hosts the Phase 6 People Ops blueprint.
+  const { error: poReqErr } = await supabase
+    .from("job_requisitions")
+    .insert({ ...PEOPLE_OPS_REQUISITION, org_id: DEMO_ORG_ID });
+  if (poReqErr) throw new Error(`people-ops req insert: ${poReqErr.message}`);
+
+  // 4b) Assessment blueprints + rubrics (deterministic canonical seeds).
+  const { error: bpErr } = await supabase.from("assessment_blueprints").insert(
+    ASSESSMENT_SEEDS.map((s) => ({
+      id: s.id,
+      org_id: DEMO_ORG_ID,
+      requisition_id: s.requisition_id,
+      competency: s.competency,
+      version: s.version,
+      artifact_spec: { title: s.title, kind: s.kind, instructions: s.instructions, time_policy: s.time_policy, questions: s.questions },
+      test_cases: s.test_cases,
+      prompt_adaptation_allowed: s.prompt_adaptation_allowed,
+      created_by: null,
+    }))
+  );
+  if (bpErr) throw new Error(`blueprints insert: ${bpErr.message}`);
+  const { error: rbErr } = await supabase.from("assessment_rubrics").insert(
+    ASSESSMENT_SEEDS.flatMap((s) =>
+      s.rubrics.map((r) => ({
+        id: r.id,
+        org_id: DEMO_ORG_ID,
+        blueprint_id: s.id,
+        competency: r.competency,
+        version: r.version,
+        observable_behavior: r.observable_behavior,
+        evidence_requirements: r.evidence_requirements,
+        anchors: r.anchors,
+        critical_mistakes: r.critical_mistakes,
+        insufficient_evidence_conditions: r.insufficient_evidence_conditions,
+        skill_mapping: r.skill_mapping,
+      }))
+    )
+  );
+  if (rbErr) throw new Error(`rubrics insert: ${rbErr.message}`);
 
   // 5) Policy documents (12 versioned).
   const { error: polErr } = await supabase.from("policy_documents").insert(
@@ -347,6 +391,57 @@ async function reseed(supabase, authIds: Record<string, string>) {
     if (appsErr) throw new Error(`applications insert: ${appsErr.message}`);
   }
 
+  // 9b) Candidate sessions (Phase 6): Priya has an open work-sample and an
+  // interview session on the Senior Backend Engineer blueprint — this is the
+  // demo path the completion gate exercises end-to-end.
+  const priyaId = "22222222-2222-2222-2222-222222222205";
+  const backendBlueprint = ASSESSMENT_SEEDS.find((s) => s.id === "66666666-6666-6666-6666-666666666601");
+  const { data: priyaApp } = await supabase
+    .from("applications")
+    .select("id")
+    .eq("candidate_twin_id", priyaId)
+    .eq("requisition_id", backendBlueprint?.requisition_id ?? "")
+    .maybeSingle();
+  if (!backendBlueprint || !priyaApp) throw new Error("sessions seed: backend blueprint or Priya application missing");
+  const expiresAt = new Date(new Date(fx.clock).getTime() + 30 * 86400000).toISOString();
+  const { error: sessErr } = await supabase.from("candidate_sessions").insert([
+    {
+      id: "77777777-7777-7777-7777-777777777701",
+      org_id: DEMO_ORG_ID,
+      application_id: priyaApp.id,
+      twin_id: priyaId,
+      blueprint_id: backendBlueprint.id,
+      rubric_id: null,
+      session_type: "work_sample",
+      invitation_token: "ws-demo-priya-work-2026",
+      status: "invited",
+      expires_at: expiresAt,
+      time_policy: backendBlueprint.time_policy,
+      accommodation: {},
+      answers: {},
+      drafts: {},
+      follow_ups: [],
+    },
+    {
+      id: "77777777-7777-7777-7777-777777777702",
+      org_id: DEMO_ORG_ID,
+      application_id: priyaApp.id,
+      twin_id: priyaId,
+      blueprint_id: backendBlueprint.id,
+      rubric_id: null,
+      session_type: "interview",
+      invitation_token: "ws-demo-priya-interview-2026",
+      status: "invited",
+      expires_at: expiresAt,
+      time_policy: backendBlueprint.time_policy,
+      accommodation: {},
+      answers: {},
+      drafts: {},
+      follow_ups: [],
+    },
+  ]);
+  if (sessErr) throw new Error(`sessions insert: ${sessErr.message}`);
+
   // 10) Workforce observations (12 months, explicit missingness).
   const monthEnd = (period: string) => {
     const [y, m] = period.split("-").map(Number);
@@ -440,10 +535,13 @@ Deno.serve(async (req) => {
         organizations: 2,
         digital_twins: fx.employees.length + fx.candidates.length + 1 + fx.org2.employees.length,
         skill_graph: fx.skills.length + fx.org2.skills.length,
-        job_requisitions: fx.requisitions.length + 1,
+        job_requisitions: fx.requisitions.length + 2,
         policy_documents: fx.policies.length,
         onboarding_journeys: 1 + fx.journeys.length,
         recommendations: RECOMMENDATIONS.length,
+        assessment_blueprints: ASSESSMENT_SEEDS.length,
+        assessment_rubrics: ASSESSMENT_SEEDS.reduce((n, s) => n + s.rubrics.length, 0),
+        candidate_sessions: 2,
         evidence_items: fx.employees.reduce((n, e) => n + (e.assertions ?? []).length, 0) + fx.candidates.reduce((n, c) => n + (c.assertions ?? []).length, 0) + fx.org2.employees.reduce((n, e) => n + (e.assertions ?? []).length, 0),
         skill_assertions: fx.employees.reduce((n, e) => n + (e.assertions ?? []).length, 0) + fx.candidates.reduce((n, c) => n + (c.assertions ?? []).length, 0) + fx.org2.employees.reduce((n, e) => n + (e.assertions ?? []).length, 0),
         applications: fx.requisitions.reduce((n, r) => n + (r.applicants ?? []).length, 0),

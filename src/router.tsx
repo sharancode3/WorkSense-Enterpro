@@ -1,6 +1,7 @@
 import Landing from "./pages/landing";
 import Login from "./pages/login";
 import CandidateStatus from "./pages/candidate-status";
+import CandidateSession from "./pages/candidate-session";
 import RoleHome from "./pages/role-home";
 import SkillGraph from "./pages/skill-graph";
 import Recruitment from "./pages/recruitment";
@@ -25,6 +26,11 @@ export const routers = [
     path: "/candidate-status",
     name: "candidate-status",
     element: <CandidateStatus />,
+  },
+  {
+    path: "/candidate/session",
+    name: "candidate-session",
+    element: <CandidateSession />,
   },
   {
     path: "/app",
