@@ -25,7 +25,8 @@ const onboarding = stripAllImports(read("supabase/functions/_shared/onboarding-e
 const onboardingV2 = stripAllImports(read("supabase/functions/_shared/onboarding-v2.ts"));
 const qwen = stripAllImports(read("supabase/functions/_shared/qwen.ts"));
 const policy = stripAllImports(read("supabase/functions/_shared/policy-retrieval.ts"));
-const signal = stripAllImports(read("supabase/functions/_shared/workforce-signal-engine.ts"));
+const reviewIndex = stripAllImports(read("supabase/functions/_shared/workforce-review-index.ts"));
+const performance = stripAllImports(read("supabase/functions/_shared/performance-intelligence.ts"));
 const recEngine = stripAllImports(read("supabase/functions/_shared/recommendation-engine.ts"));
 const jobs = stripAllImports(read("supabase/functions/_shared/jobs.ts"));
 const validate = stripAllImports(read("supabase/functions/_shared/validate.ts"));
@@ -41,11 +42,11 @@ const pcontext = stripAllImports(read("supabase/functions/_shared/policy-context
 const leave = stripAllImports(read("supabase/functions/_shared/leave-calc.ts"));
 const policyseed = stripAllImports(read("supabase/functions/_shared/policy-seed.ts"));
 
-const SHARED = { engine, onboarding, onboardingV2, qwen, policy, signal, recEngine, jobs, validate, evidence, resume, generated, journey, fixtures, seed, stageEngine, assessment, pcontext, leave, policyseed };
+const SHARED = { engine, onboarding, onboardingV2, qwen, policy, reviewIndex, performance, recEngine, jobs, validate, evidence, resume, generated, journey, fixtures, seed, stageEngine, assessment, pcontext, leave, policyseed };
 
 // Function -> shared dependencies (in import order) it needs inlined.
 const FNS = {
-  "reset-demo": ["generated", "journey", "seed", "fixtures", "assessment", "policyseed", "onboardingV2"],
+  "reset-demo": ["generated", "journey", "seed", "fixtures", "assessment", "policyseed", "onboardingV2", "reviewIndex"],
   "skill-match": ["engine", "evidence"],
   "extract-resume": ["engine", "qwen", "jobs", "validate", "evidence"],
   "rubric": ["qwen", "validate"],
@@ -58,11 +59,13 @@ const FNS = {
   "onboarding-task": ["onboardingV2"],
   "policy-qa": ["qwen", "policy", "validate", "pcontext", "leave", "policyseed"],
   "escalate": [],
-  "workforce-signal": ["signal"],
+  "workforce-signal": ["reviewIndex"],
+  "workforce-review-index": ["reviewIndex"],
+  "performance-summary": ["performance", "qwen"],
   "performance-synthesis": ["qwen", "validate"],
-  "recommendation-scan": ["engine", "recEngine", "qwen", "validate"],
+  "recommendation-scan": ["engine", "recEngine", "reviewIndex", "qwen", "validate"],
   "recommendation-decision": [],
-  "dashboard": ["engine"],
+  "dashboard": ["engine", "reviewIndex"],
   "model-job": ["jobs"],
   "health": ["qwen"],
   "resume-import": ["qwen", "jobs", "validate", "resume"],

@@ -137,10 +137,10 @@ export function ExecutiveDashboard() {
           sub={d.cards.journeys_in_progress > 0 ? `${d.cards.journeys_on_track} on track · ${d.cards.journeys_blocked} blocked` : undefined}
         />
         <StatCard
-          label={`At-risk employees`}
-          value={d.cards.at_risk_employees}
-          tone={d.cards.at_risk_employees > 0 ? "danger" : "muted"}
-          sub={`signal > ${d.threshold}/100`}
+          label="Review priority cases"
+          value={d.cards.review_priority_cases}
+          tone={d.cards.review_priority_cases > 0 ? "danger" : "muted"}
+          sub={`index ≥ ${d.threshold}/100`}
         />
         <StatCard label="Pending recommendations" value={d.cards.pending_recommendations} tone="accent" />
       </div>

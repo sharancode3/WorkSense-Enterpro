@@ -278,12 +278,12 @@ export const RECOMMENDATIONS = [
     category: "workforce_review",
     urgency: "high",
     evidence_ledger: [
-      { source: "WORKFORCE_REVIEW_SIGNAL", fact: "Signal 72/100 — multiple workforce indicators warrant HR review (decision support, not a prediction)." },
+      { source: "WORKFORCE_REVIEW_SIGNAL", fact: "Workforce Review Index 77/100 (review priority) — interpretable decision support, NOT a probability of leaving." },
       { source: "ENGAGEMENT_SURVEY", fact: "Survey 3.1 / 5 (declining over 2 cycles)." },
       { source: "ATTENDANCE", fact: "Recent unapproved absence pattern above own baseline." },
       { source: "PERFORMANCE", fact: "Latest rating: Exceeds Expectations — strong, stable delivery across 4 cycles." },
     ],
-    executive_summary: "Samira combines strong, consistent delivery with a Workforce Review Signal of 72/100 driven by declining engagement, an above-baseline absence pattern and 40 months without a band change. The evidence supports a manager-led retention conversation and a concrete growth or mobility option.",
+    executive_summary: "Samira combines strong, consistent delivery with an elevated Workforce Review Index (77/100, review priority) driven by tenure in band, an above-baseline absence pattern and delivery load; engagement observations trend downward. The index is decision support, not a probability of leaving. The evidence supports a manager-led review conversation and a concrete growth or mobility option.",
     proposed_action: {
       title: "Manager review for retention intervention",
       description: "Open a manager-led check-in with Samira within the week. Focus on engagement drivers and growth path.",
@@ -408,7 +408,7 @@ export const TWINS: TwinSeed[] = [
       { cycle: "2026-H1", rating: "Exceeds Expectations", goals_met: 90, feedback: [{ sentiment: "positive", text: "Led org-wide retention initiative." }], summary: "Led org-wide retention initiative." },
     ],
     signals: [
-      { type: "workforce_review_signal", value: 26, computed_at: "2026-09-10T09:00:00Z", factors: { tenure: 0.833, attendance: 0, delivery: 0.1, growth: 0 } },
+      { type: "workforce_review_index", value: 33, priority: "low", computed_at: "2026-09-10T09:00:00Z", factors: { career: { score: 0.833, weight: 0.3, definition: "Time in band vs 36-month horizon.", source_period: "twin profile", note: null }, attendance: { score: 0.167, weight: 0.3, definition: "Deviation from own absence baseline.", source_period: "HRIS snapshot", note: null }, delivery: { score: 0.1, weight: 0.3, definition: "Missed / total milestones.", source_period: "recent window", note: null }, engagement: { score: 0, weight: 0.1, definition: "Observation-window trend.", source_period: null, note: "No engagement observations." } } },
     ],
     audit_events: [],
   },
@@ -437,7 +437,7 @@ export const TWINS: TwinSeed[] = [
       { cycle: "2025-H2", rating: "Exceeds Expectations", goals_met: 92, feedback: [{ sentiment: "positive", text: "Shipped platform reliability program." }], summary: "Shipped platform reliability program." },
     ],
     signals: [
-      { type: "workforce_review_signal", value: 17, computed_at: "2026-09-10T09:00:00Z", factors: { tenure: 0.5, attendance: 0, delivery: 0.125, growth: 0 } },
+      { type: "workforce_review_index", value: 19, priority: "low", computed_at: "2026-09-10T09:00:00Z", factors: { career: { score: 0.5, weight: 0.3, definition: "Time in band vs 36-month horizon.", source_period: "twin profile", note: null }, attendance: { score: 0, weight: 0.3, definition: "Deviation from own absence baseline.", source_period: "HRIS snapshot", note: "At or below baseline." }, delivery: { score: 0.125, weight: 0.3, definition: "Missed / total milestones.", source_period: "recent window", note: null }, engagement: { score: 0, weight: 0.1, definition: "Observation-window trend.", source_period: null, note: "No engagement observations." } } },
     ],
     audit_events: [],
   },
@@ -468,7 +468,7 @@ export const TWINS: TwinSeed[] = [
       { cycle: "2026-H1", rating: "On Track", goals_met: 80, feedback: [{ sentiment: "positive", text: "New hire, first sprint shipped on schedule." }, { sentiment: "neutral", text: "Still ramping on platform specifics." }], summary: "New hire, first sprint shipped on schedule." },
     ],
     signals: [
-      { type: "workforce_review_signal", value: 2, computed_at: "2026-09-10T09:00:00Z", factors: { tenure: 0.056, attendance: 0, delivery: 0, growth: 0 } },
+      { type: "workforce_review_index", value: 2, priority: "low", computed_at: "2026-09-10T09:00:00Z", factors: { career: { score: 0.056, weight: 0.3, definition: "Time in band vs 36-month horizon.", source_period: "twin profile", note: null }, attendance: { score: 0, weight: 0.3, definition: "Deviation from own absence baseline.", source_period: "HRIS snapshot", note: "At or below baseline." }, delivery: { score: 0, weight: 0.3, definition: "Missed / total milestones.", source_period: "recent window", note: "No delivery observations." }, engagement: { score: 0, weight: 0.1, definition: "Observation-window trend.", source_period: null, note: "No engagement observations." } } },
     ],
     audit_events: [
       { actor: "system", action: "created", note: "Onboarding journey initiated", timestamp: "2026-07-20T09:00:00Z" },
@@ -503,7 +503,7 @@ export const TWINS: TwinSeed[] = [
       { cycle: "2026-H1", rating: "Exceeds Expectations", goals_met: 88, feedback: [{ sentiment: "positive", text: "Top-quartile delivery again." }, { sentiment: "negative", text: "Engagement concerns noted; seeks more scope and leadership exposure." }], summary: "Top-quartile delivery again; engagement concerns noted." },
     ],
     signals: [
-      { type: "workforce_review_signal", value: 72, computed_at: "2026-09-10T09:00:00Z", factors: { tenure: 1, attendance: 1, delivery: 0.556, growth: 1 } },
+      { type: "workforce_review_index", value: 77, priority: "review", computed_at: "2026-09-10T09:00:00Z", factors: { career: { score: 1, weight: 0.3, definition: "Time in band vs 36-month horizon.", source_period: "twin profile", note: "40 months in band — career conversation warranted." }, attendance: { score: 1, weight: 0.3, definition: "Deviation from own absence baseline.", source_period: "HRIS snapshot", note: "Recent absence rate well above own baseline." }, delivery: { score: 0.556, weight: 0.3, definition: "Missed / total milestones.", source_period: "recent window", note: "High miss share — review workload." }, engagement: { score: 0.04, weight: 0.1, definition: "Observation-window trend.", source_period: "2025-10 → 2026-09", note: "Engagement observations trend downward." } } },
       { type: "seeks_growth", value: true, last_measured: "2026-08-25T09:00:00Z" },
       { type: "engagement_survey", value: "3.1 / 5", trend: "declining over 2 cycles", last_measured: "2026-08-25T09:00:00Z" },
     ],
@@ -536,7 +536,7 @@ export const TWINS: TwinSeed[] = [
       { cycle: "2026-H1", rating: "Exceeds Expectations", goals_met: 91, feedback: [{ sentiment: "positive", text: "Partnered with Platform and Data orgs on retention." }], summary: "Partnered with Platform and Data orgs on retention." },
     ],
     signals: [
-      { type: "workforce_review_signal", value: 18, computed_at: "2026-09-10T09:00:00Z", factors: { tenure: 0.333, attendance: 0.333, delivery: 0.111, growth: 0 } },
+      { type: "workforce_review_index", value: 23, priority: "low", computed_at: "2026-09-10T09:00:00Z", factors: { career: { score: 0.333, weight: 0.3, definition: "Time in band vs 36-month horizon.", source_period: "twin profile", note: null }, attendance: { score: 0.333, weight: 0.3, definition: "Deviation from own absence baseline.", source_period: "HRIS snapshot", note: null }, delivery: { score: 0.111, weight: 0.3, definition: "Missed / total milestones.", source_period: "recent window", note: null }, engagement: { score: 0, weight: 0.1, definition: "Observation-window trend.", source_period: null, note: "No engagement observations." } } },
     ],
     audit_events: [],
   },
@@ -565,7 +565,7 @@ export const TWINS: TwinSeed[] = [
       { cycle: "2026-H1", rating: "Exceeds Expectations", goals_met: 94, feedback: [{ sentiment: "positive", text: "Filled 12 roles; cut time-to-hire by 20%." }], summary: "Filled 12 roles; cut time-to-hire by 20%." },
     ],
     signals: [
-      { type: "workforce_review_signal", value: 16, computed_at: "2026-09-10T09:00:00Z", factors: { tenure: 0.278, attendance: 0.2, delivery: 0.182, growth: 0 } },
+      { type: "workforce_review_index", value: 20, priority: "low", computed_at: "2026-09-10T09:00:00Z", factors: { career: { score: 0.278, weight: 0.3, definition: "Time in band vs 36-month horizon.", source_period: "twin profile", note: null }, attendance: { score: 0.2, weight: 0.3, definition: "Deviation from own absence baseline.", source_period: "HRIS snapshot", note: null }, delivery: { score: 0.182, weight: 0.3, definition: "Missed / total milestones.", source_period: "recent window", note: null }, engagement: { score: 0, weight: 0.1, definition: "Observation-window trend.", source_period: null, note: "No engagement observations." } } },
     ],
     audit_events: [],
   },

@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
 import { scanForRecommendations, type RecCandidate } from "../_shared/recommendation-engine.ts";
+import { computeReviewIndex } from "../_shared/workforce-review-index.ts";
 import { callQwen, QwenError } from "../_shared/qwen.ts";
 
 const corsHeaders = {
@@ -38,16 +39,50 @@ Deno.serve(async (req) => {
   }
 
   // Load the org's data sources.
-  const [twinsRes, reqsRes, graphRes, journeysRes, openRecsRes] = await Promise.all([
-    supabase.from("digital_twins").select("id, name, role, status, signals, performance_history, verified_skills, seniority_level, job_title").eq("org_id", caller.org_id),
+  const [twinsRes, reqsRes, graphRes, journeysRes, openRecsRes, obsRes] = await Promise.all([
+    supabase.from("digital_twins").select("id, name, role, status, signals, performance_history, verified_skills, seniority_level, job_title, attendance, delivery, promotion_lag_months").eq("org_id", caller.org_id),
     supabase.from("job_requisitions").select("id, title, required_skills, future_skills, seniority_level").eq("org_id", caller.org_id),
     supabase.from("skill_graph").select("skill, category, outgoing_edges").eq("org_id", caller.org_id),
     supabase.from("onboarding_journeys").select("twin_id, status, tasks").eq("org_id", caller.org_id),
     supabase.from("recommendations").select("twin_id, category, status").eq("org_id", caller.org_id).in("status", ["needs_review", "approved", "dispatched"]),
+    supabase.from("workforce_observations").select("twin_id, metric, period_start, value, missing").eq("org_id", caller.org_id),
   ]);
 
+  // Phase 9: compute the deterministic Workforce Review Index per twin and feed
+  // it (with completeness/growth meta) into the trigger engine. Missing data is
+  // visible and never escalates a case; seeking growth never adds risk.
+  const obsByTwin = new Map<string, { metric: string; period: string; value: number | null; missing: boolean }[]>();
+  for (const o of obsRes.data ?? []) {
+    const row = { metric: o.metric, period: String(o.period_start).slice(0, 7), value: typeof o.value === "number" ? o.value : null, missing: o.missing === true };
+    obsByTwin.set(o.twin_id, [...(obsByTwin.get(o.twin_id) ?? []), row]);
+  }
+  const twinsWithIndex = (twinsRes.data ?? []).map((t) => {
+    const signals = (t.signals ?? []) as { type?: string; value?: unknown }[];
+    const seeks = signals.some((s) => s.type === "seeks_growth" && s.value === true);
+    const r = computeReviewIndex({
+      twin_id: t.id,
+      promotion_lag_months: t.promotion_lag_months ?? 0,
+      attendance: (t.attendance ?? {}) as { baseline?: number; recent?: number },
+      delivery: (t.delivery ?? {}) as { missed?: number; total?: number },
+      observations: obsByTwin.get(t.id) ?? [],
+      seeks_growth: seeks,
+    });
+    return {
+      id: t.id,
+      name: t.name,
+      role: t.role,
+      status: t.status,
+      signals: [...signals, { type: "workforce_review_index", value: r.index, priority: r.priority, computed_at: new Date().toISOString(), factors: r.factors }],
+      performance_history: (t.performance_history ?? []) as { cycle: string; rating: string; goals_met?: number }[],
+      verified_skills: (t.verified_skills ?? []) as { name: string; proficiency: number; evidence_source?: string; verification_rigor?: string }[],
+      seniority_level: t.seniority_level,
+      job_title: t.job_title,
+      review_meta: { data_completeness: r.data_completeness, priority: r.priority, seeking_growth: seeks },
+    };
+  });
+
   const candidates = scanForRecommendations({
-    twins: twinsRes.data ?? [],
+    twins: twinsWithIndex,
     requisitions: reqsRes.data ?? [],
     graph: graphRes.data ?? [],
     journeys: journeysRes.data ?? [],
@@ -58,6 +93,7 @@ Deno.serve(async (req) => {
     RETENTION_INTERVENTION: "workforce_review",
     INTERNAL_MOBILITY: "mobility",
     ONBOARDING_REPLAN: "onboarding_replan",
+    DEVELOPMENT_SUPPORT: "development_support",
   };
 
   // Dedup against already-open recommendations (same twin + category).
@@ -92,12 +128,12 @@ Deno.serve(async (req) => {
       evidence_ledger: c.evidence_ledger,
       proposed_action: {
         ...c.proposed_action,
-        title: typed.title ?? c.proposed_action.title,
-        executive_summary: typed.executive_summary ?? "",
+        title: parsed.title ?? c.proposed_action.title,
+        executive_summary: parsed.executive_summary ?? "",
         action_type: c.category,
         target_entity_id: c.twin_id,
       },
-      executive_summary: typed.executive_summary ?? "",
+      executive_summary: parsed.executive_summary ?? "",
       status: "needs_review",
       // Sign-off comes from the deterministic engine — the model is not deciding.
       required_signoff_role: c.required_signoff_role,

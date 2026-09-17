@@ -16,6 +16,9 @@ Bounded repair loop: max 3 attempts per external blocker, then stop + report evi
 | PHASE-2 | Qwen gateway: config, capability handling, validated generation, durable jobs, UI, observability | ✅ **Gate passed** (constrained flow documented) | See §10 |
 | PHASE-3 | Evidence model + demo fixtures (assertion wiring, lineage UI, fixture generator) | ✅ **Complete** (incl. compact mode, action tasks, policy-qa → policy_documents) | See §11 |
 | PHASE-4 | File-based resume ingestion with traceable extraction | 🚧 In progress (full vertical + gate **verified**; OCR intentionally unavailable; authed browser click-through of the review UI pending) | See §12 |
+| PHASE-6 | Structured applications, job-relevant assessments, adaptive interview sessions, reviewer-controlled evaluation | ✅ **Complete** (evidence-linked anchors, no missing-score defaults, fit provenance) | See §13 |
+| PHASE-7 | Contextual policy reasoning with validated citations (date windows, supersession, applicability, escalation) | ✅ **Complete** (145 tests; live gate verified) | See §14 |
+| PHASE-8 | Adaptive onboarding with ownership, dependencies, versioned approvals, genuine completion evidence | ✅ **Complete** (185 tests; live gate verified) | See §15 |
 
 ## 9. Phase 1 — Foundation (completion gate)
 
@@ -168,6 +171,31 @@ Bounded repair loop: max 3 attempts per external blocker, then stop + report evi
 **Tests** — 145 total (17 new: leave engine math, policy-context authorization/mention resolution, date window, supersession, applicability, strict per-section citations, exclusive-token disambiguation, expired-hit detection). `pnpm check` ✅ · `pnpm build` ✅. 3 functions changed + deployed (policy-qa rewritten as contextual reasoner, escalate → dedicated workflow, reset-demo seeds Phase 7 data). 25 functions deployed total.
 
 **Limitations** — dense/hybrid retrieval not implemented (no embedding model/storage available; documented honestly); BM25 relevance is lexical-only, so semantically-paraphrased questions may abstain (honest); authed browser click-through of the Policy Studio pending a logged-in session (all flows API-verified); local 4B model occasionally needs the one repair attempt for citation/schema errors (then downgrades or abstains as specified).
+
+## 15. Phase 8 — Adaptive onboarding with ownership, dependencies, versioned approvals, genuine completion evidence (status: full vertical verified live)
+
+**Data model (migration `20260917_181712000`)** — role check widened with `it_security` (IT service-owner persona, **no** broad HR powers). New RLS-reads-only, org-scoped tables: `onboarding_plans` (versioned plan bound to `plan_hash`, dual approvals `manager_approval`/`hr_approval` stored ON the row, status draft→pending_approval→approved→completed→superseded, readiness estimate, carryover mapping), `onboarding_tasks` (task DEFINITION columns — type learning|verification|provisioning|policy|access|onboarding_admin, `owner_role` employee|manager|hr|it_security, deps, duration, `why_evidence` reason+source, `evidence_requirements` — separated from EXECUTION columns — state, blockers[], waiver, completion_record, adaptation), and `onboarding_task_events` (execution audit log deduped by `(plan, task_code, action, attempt_hash)`).
+
+**Deterministic engine (`_shared/onboarding-v2.ts`, 39 unit tests)** — plan hash (canonical defs), DAG validation (cycle/missing-dep), Kahn topological schedule + cascade dates, blocked set with **multiple simultaneous blockers** (resolving one keeps others), critical path, honest readiness estimate ("estimated readiness… not a guarantee"), strict owner authorization matrix (`canActOnTask` — employee owns own tasks, manager owns direct-reports' manager tasks, HR owns hr tasks, **HR has no access to service-owner tasks, employee cannot claim IT provisioning**), pure `validateCompletion` gate (plan approved, actor authorized, not done/waived/failed/blocked, prerequisites satisfied, evidence per requirements), waiver rules (non-waivable → HR Exec + policy basis citation only), adaptation (learning→verification replacement; failed verification reopens gap + revises plan, reason+source preserved), carryover on regeneration (completed work preserved with explicit mapping only when the definition is unchanged).
+
+**Planning** — built from the **approved role relationship**: the employee's `applications` row with stage `selected` → requisition → role skills (never a title substring); confirmed skill gaps from verified skills; mandatory policy tasks (POL-SEC etc.) + provisioning/access/payroll; learning task per required-skill gap + one verification task on the first gap + future-skill upskilling + survey.
+
+**Functions** — `onboarding-plan` (build/regenerate with version+hash; regeneration supersedes the old row so approvals never carry — no retained approved state), `onboarding-approve` (authorization checked first — employee can never approve own journey, manager only direct reports, HR Exec org-wide — then **hash binding**; both approvals → approved), `onboarding-task` (complete/block/resolve/waive/adapt/fail with all server-side checks, evidence, attempt-hash dedup for double submission, full task-state sync after every recompute). All 4 (incl. reset-demo) deployed.
+
+**Demo seed** — Alex Chen: approved application (WS-ALEX-2026 → Senior Backend Engineer), plan v1 approved by Jordan+Dana with `security_training` done (evidence), **access_sso blocked by an IT-reported blocker**, it_provisioning/payroll ready, downstream cascaded. Live flow verified: IT reports a second blocker (multiple) → IT completes it_provisioning with evidence → resolves blocker #1 (blocker #2 stays) → resolves #2 → access_sso ready → IT completes access_sso with MFA evidence → manager completes team_intro → Alex completes learn_go with PR evidence → verify_go with assessment evidence → readiness 8.3%→25%→33.3%→41.7%→50%, blockers 9→0. All negative gates curl-verified (unauthorized completion, unmet prerequisite, blocked, double submission, self-approval FORBIDDEN, HR-partner approval FORBIDDEN, hash mismatch, invalid waiver, non-waivable waiver policy basis required, missing evidence). Adapt → verify_postgresql (plan v3 pending, approvals invalidated); fail verify_go → learn_go_reopen (plan v4 pending).
+
+**Tests** — 185 total (39 onboarding-v2 + regression: blocked task with empty derived reasons rejected; rbac it_security matrix). `pnpm check` ✅ · `pnpm build` ✅. 4 functions deployed.
+
+**Limitations** — authed browser click-through pending a logged-in session (all flows API-verified); dashboard journey counts still read the legacy `onboarding_journeys` table (compat; Phase 8 drives its own UI); 8-bit hash is binding-in-practice but not cryptographic.
+
+## 16. Unresolved defects / open requirements (queued)
+
+1. Fit-score calibration semantics (adjacency when nothing missing; evidence influence; future-role floor).
+2. Dispatch → assigned work with owners, deadlines, completion evidence, outcomes (partially adjacent to Phase 8; action_tasks table exists).
+3. Signal reframing documentation (heuristic ≠ probability) + UI wording audit — addressed by Phase 9.
+4. Remove remaining `as any` casts (seed/generator boundaries); reconcile any residual lockfile notes.
+5. Flagship workflow: HIRE / MOVE / UPSKILL / COMBINE comparison → evidence-backed recommendation → human approval → tasks → readiness/outcome tracking.
+6. `me` edge case: unauthenticated invoke without an apikey header returns a gateway-level response (not the function's `UNAUTHENTICATED`) — low risk, document only.
 
 ## 6. Unresolved defects / open requirements (queued for P3+)
 

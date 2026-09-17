@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
 import { computeFit, type GraphSkill } from "../_shared/skill-graph-engine.ts";
+import { computeReviewIndex } from "../_shared/workforce-review-index.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -10,7 +11,9 @@ const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
 const URGENCY_RANK: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
-export const REVIEW_THRESHOLD = 65;
+// Review-priority threshold: index >= 60 is a high-priority review case.
+// The index is decision support, never a probability of leaving.
+export const REVIEW_THRESHOLD = 60;
 
 async function isTeamMember(supabase, rootTwinId: string, checkTwinId: string): Promise<boolean> {
   const { data } = await supabase.from("digital_twins").select("id, manager_id");
@@ -58,7 +61,7 @@ Deno.serve(async (req) => {
   // Load all org twins, then resolve the scoped set.
   const { data: allTwins } = await supabase
     .from("digital_twins")
-    .select("id, name, role, status, org_id, signals, seniority_level, verified_skills, manager_id")
+    .select("id, name, role, status, org_id, signals, seniority_level, verified_skills, manager_id, attendance, delivery, promotion_lag_months")
     .eq("org_id", caller.org_id);
 
   let scoped = (allTwins ?? []).filter((t) => t.status === "active" && ["employee", "manager"].includes(t.role));
@@ -71,14 +74,47 @@ Deno.serve(async (req) => {
   }
   const scopedIds = new Set(scoped.map((t) => t.id));
 
-  const signalValue = (signals: { type?: string; value?: unknown }[]) => {
-    const s = signals?.find((x) => x.type === "workforce_review_signal");
-    return typeof s?.value === "number" ? s.value : 0;
+  // Longitudinal observations for the scoped set (period-scoped, explicit gaps).
+  const { data: obsRows } = await supabase
+    .from("workforce_observations")
+    .select("twin_id, metric, period_start, value, missing")
+    .eq("org_id", caller.org_id)
+    .in("twin_id", [...scopedIds]);
+  const obsByTwin = new Map<string, { metric: string; period: string; value: number | null; missing: boolean }[]>();
+  for (const o of obsRows ?? []) {
+    const period = String(o.period_start).slice(0, 7);
+    const row = { metric: o.metric, period, value: typeof o.value === "number" ? o.value : null, missing: o.missing === true };
+    obsByTwin.set(o.twin_id, [...(obsByTwin.get(o.twin_id) ?? []), row]);
+  }
+
+  const reviewIndex = (t: { signals?: { type?: string }[]; attendance?: unknown; delivery?: unknown; promotion_lag_months?: number; id: string }) => {
+    const signals = (t.signals ?? []) as { type?: string; value?: unknown }[];
+    const seeks = signals.some((s) => s.type === "seeks_growth" && s.value === true);
+    const r = computeReviewIndex({
+      twin_id: t.id,
+      promotion_lag_months: t.promotion_lag_months ?? 0,
+      attendance: (t.attendance ?? {}) as { baseline?: number; recent?: number },
+      delivery: (t.delivery ?? {}) as { missed?: number; total?: number },
+      observations: obsByTwin.get(t.id) ?? [],
+      seeks_growth: seeks,
+    });
+    return r;
   };
+  const scopedWithIndex = scoped.map((t) => ({ twin: t, index: reviewIndex(t) }));
+  const reviewCases = scopedWithIndex
+    .map((x) => ({
+      twin_id: x.twin.id,
+      name: x.twin.name,
+      index: x.index.index,
+      priority: x.index.priority,
+      completeness: x.index.data_completeness,
+      seeking_growth: x.index.seeking_growth,
+    }))
+    .sort((a, b) => b.index - a.index);
 
   // Cards — every number from real records; 0 / "No data" when absent.
   const headcount = scoped.length;
-  const atRisk = scoped.filter((t) => signalValue(t.signals) > REVIEW_THRESHOLD).length;
+  const reviewPriorityCases = reviewCases.filter((c) => c.index >= REVIEW_THRESHOLD || c.priority === "review" || c.priority === "high").length;
 
   const [reqsRes, recsRes, journeysRes] = await Promise.all([
     supabase.from("job_requisitions").select("id, title, applicants, future_skills, required_skills, seniority_level").eq("org_id", caller.org_id),
@@ -151,6 +187,7 @@ Deno.serve(async (req) => {
     ok: true,
     scope,
     threshold: REVIEW_THRESHOLD,
+    review_cases: reviewCases,
     cards: {
       headcount,
       open_requisitions: openRequisitions,
@@ -158,7 +195,7 @@ Deno.serve(async (req) => {
       journeys_in_progress: journeys.length,
       journeys_on_track: journeys.length - journeysBlocked,
       journeys_blocked: journeysBlocked,
-      at_risk_employees: atRisk,
+      review_priority_cases: reviewPriorityCases,
       pending_recommendations: pendingRecs.length,
     },
     heatmap,

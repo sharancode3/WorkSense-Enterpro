@@ -69,6 +69,7 @@ Deno.serve(async (req) => {
   }
   if (!allowed) return json({ error: "FORBIDDEN" }, 403);
 
+  // Longitudinal observations for this twin (period-scoped, explicit missing).
   const { data: obsRows } = await supabase
     .from("workforce_observations")
     .select("metric, period_start, value, missing")
@@ -97,6 +98,53 @@ Deno.serve(async (req) => {
   const hash = reviewSourceHash(input);
   const now = new Date().toISOString();
 
+  const periodStart = observations.length > 0 ? `${observations[0].period}-01` : `${now.slice(0, 7)}-01`;
+  const periodEnd = observations.length > 0 ? `${observations[observations.length - 1].period}-28` : now.slice(0, 10);
+
+  // Upsert the stored case (longitudinal review record).
+  const caseRow = {
+    org_id: caller.org_id,
+    twin_id: twinId,
+    period_start: periodStart,
+    period_end: periodEnd,
+    index: result.index,
+    priority: result.priority,
+    factors: result.factors,
+    trend: result.trend,
+    data_completeness: result.data_completeness,
+    missing_data: result.missing_data,
+    fact_finding: result.recommended_fact_finding,
+    seeking_growth: result.seeking_growth,
+    sensitivity: result.sensitivity,
+    limitations: result.limitations,
+    priority_gate: result.priority_gate,
+    source_version_hash: hash,
+    computed_at: now,
+  };
+  const { data: existing } = await supabase
+    .from("workforce_review_cases")
+    .select("id, source_version_hash")
+    .eq("org_id", caller.org_id)
+    .eq("twin_id", twinId)
+    .order("period_start", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (existing && existing.source_version_hash === hash && !body.force) {
+    // Data unchanged since the last computation — return the stored result.
+    return json({ ok: true, cached: true, ...result, case: caseRow, label: "Workforce Review Index — decision support, not a probability." });
+  }
+  if (existing) {
+    const { error: upErr } = await supabase
+      .from("workforce_review_cases")
+      .update({ ...caseRow, updated_at: now })
+      .eq("id", existing.id);
+    if (upErr) return json({ error: "INTERNAL", message: upErr.message }, 500);
+  } else {
+    const { error: insErr } = await supabase.from("workforce_review_cases").insert(caseRow);
+    if (insErr) return json({ error: "INTERNAL", message: insErr.message }, 500);
+  }
+
+  // Reflect the index on the twin's signals (replaces the legacy risk label).
   const nextSignals = signals
     .filter((s) => s.type !== "workforce_review_signal" && s.type !== "workforce_review_index")
     .concat([
@@ -105,7 +153,6 @@ Deno.serve(async (req) => {
         value: result.index,
         priority: result.priority,
         data_completeness: result.data_completeness,
-        source_version_hash: hash,
         computed_at: now,
         factors: result.factors,
         label: "Workforce Review Index — interpretable decision support, NOT a probability of leaving.",
@@ -118,18 +165,16 @@ Deno.serve(async (req) => {
       signals: nextSignals,
       audit_events: [
         ...(twin.audit_events ?? []),
-        { actor: caller.id, action: "workforce_review_index_computed", note: `Workforce Review Index recomputed to ${result.index}/100 (${result.priority}).`, timestamp: now },
+        { actor: caller.id, action: "workforce_review_index_computed", note: `Workforce Review Index computed: ${result.index}/100 (${result.priority}).`, timestamp: now },
       ],
     })
     .eq("id", twinId);
 
   return json({
     ok: true,
-    index: result.index,
-    priority: result.priority,
-    factors: result.factors,
-    trend: result.trend,
-    data_completeness: result.data_completeness,
+    cached: false,
+    ...result,
+    case: caseRow,
     label: "Workforce Review Index — decision support, not a probability.",
   });
 });

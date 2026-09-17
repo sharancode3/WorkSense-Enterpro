@@ -14,6 +14,7 @@ import { SEED_FITS } from "../_shared/generated-seed-fits.ts";
 import { DEMO_FIXTURES } from "../_shared/generated-demo-fixtures.ts";
 import { ASSESSMENT_SEEDS, PEOPLE_OPS_REQUISITION } from "../_shared/assessment.ts";
 import { POLICY_ADDITIONS, TWIN_CONTEXT_OVERRIDES } from "../_shared/policy-seed.ts";
+import { computeReviewIndex, reviewSourceHash } from "../_shared/workforce-review-index.ts";
 import {
   buildPlanDefs,
   deriveStates,
@@ -108,6 +109,8 @@ async function tearDownDemo(supabase, authIds: Record<string, string>) {
   for (const orgId of orgs) {
     await supabase.from("action_tasks").delete().eq("org_id", orgId);
     await supabase.from("workforce_observations").delete().eq("org_id", orgId);
+    await supabase.from("performance_summaries").delete().eq("org_id", orgId);
+    await supabase.from("workforce_review_cases").delete().eq("org_id", orgId);
     await supabase.from("candidate_sessions").delete().eq("org_id", orgId);
     await supabase.from("application_stage_events").delete().eq("org_id", orgId);
     await supabase.from("policy_escalations").delete().eq("org_id", orgId);
@@ -707,6 +710,51 @@ async function reseed(supabase, authIds: Record<string, string>) {
   const { error: obsErr } = await supabase.from("workforce_observations").insert(obs);
   if (obsErr) throw new Error(`observations insert: ${obsErr.message}`);
 
+  // 10b) Workforce Review Cases (deterministic index, seeded from the same
+  // engine used by the workforce-review-index function — consistent by
+  // construction). The index is decision support, never a probability.
+  const cases = fx.employees
+    .filter((p) => p.role === "employee" || p.role === "manager")
+    .map((p) => {
+      const pObs = fx.observations
+        .filter((o) => o.twin_id === p.id)
+        .map((o) => ({ metric: o.metric, period: o.period, value: o.value, missing: o.missing }));
+      const input = {
+        twin_id: p.id,
+        promotion_lag_months: p.promotion_lag_months ?? 0,
+        attendance: p.attendance ?? {},
+        delivery: p.delivery ?? {},
+        observations: pObs,
+        seeks_growth: p.seeks_growth === true,
+      };
+      const r = computeReviewIndex(input);
+      const firstPeriod = pObs.length > 0 ? pObs[0].period : "2025-10";
+      const lastPeriod = pObs.length > 0 ? pObs[pObs.length - 1].period : "2026-09";
+      return {
+        org_id: DEMO_ORG_ID,
+        twin_id: p.id,
+        period_start: `${firstPeriod}-01`,
+        period_end: `${lastPeriod}-28`,
+        index: r.index,
+        priority: r.priority,
+        factors: r.factors,
+        trend: r.trend,
+        data_completeness: r.data_completeness,
+        missing_data: r.missing_data,
+        fact_finding: r.recommended_fact_finding,
+        seeking_growth: r.seeking_growth,
+        sensitivity: r.sensitivity,
+        limitations: r.limitations,
+        priority_gate: r.priority_gate,
+        source_version_hash: reviewSourceHash(input),
+        computed_at: fx.clock,
+      };
+    });
+  if (cases.length > 0) {
+    const { error: casesErr } = await supabase.from("workforce_review_cases").insert(cases);
+    if (casesErr) throw new Error(`review cases insert: ${casesErr.message}`);
+  }
+
   // 11) Assessments (from preserved interview rubrics).
   const assessments = fx.candidates.flatMap((c) =>
     (c.interview_rubrics ?? []).map((rb) => ({
@@ -793,6 +841,7 @@ Deno.serve(async (req) => {
         skill_assertions: fx.employees.reduce((n, e) => n + (e.assertions ?? []).length, 0) + fx.candidates.reduce((n, c) => n + (c.assertions ?? []).length, 0) + fx.org2.employees.reduce((n, e) => n + (e.assertions ?? []).length, 0),
         applications: fx.requisitions.reduce((n, r) => n + (r.applicants ?? []).length, 0),
         workforce_observations: fx.observations.length,
+        workforce_review_cases: fx.employees.filter((p) => p.role === "employee" || p.role === "manager").length,
       },
     });
   } catch (err) {

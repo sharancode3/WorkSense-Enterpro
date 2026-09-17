@@ -1,0 +1,3 @@
+update public.digital_twins
+set performance_history = performance_history || jsonb_build_array(jsonb_build_object('cycle','2026-H2','rating','Needs Improvement','goals_met',55,'feedback', jsonb_build_array(jsonb_build_object('sentiment','negative','text','Missed two milestone deadlines under a heavy cross-team workload.')), 'summary','Delivery slipped under load.'))
+where id = '22222222-2222-2222-2222-222222222204';

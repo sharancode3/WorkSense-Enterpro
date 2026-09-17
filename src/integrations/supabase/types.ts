@@ -4407,6 +4407,88 @@ export type Database = {
         }
         Relationships: []
       }
+      performance_summaries: {
+        Row: {
+          contradictions: Json
+          evidence_summary: Json
+          feedback_stats: Json
+          from_cache: boolean
+          generated_at: string
+          goal_stats: Json
+          id: string
+          inferred_themes: Json
+          model_note: string
+          narrative: string
+          org_id: string
+          period: string
+          reviewed_at: string | null
+          reviewed_by: string | null
+          source_facts: Json
+          source_version_hash: string
+          sparse_evidence: Json
+          twin_id: string
+        }
+        Insert: {
+          contradictions?: Json
+          evidence_summary?: Json
+          feedback_stats?: Json
+          from_cache?: boolean
+          generated_at?: string
+          goal_stats?: Json
+          id?: string
+          inferred_themes?: Json
+          model_note?: string
+          narrative?: string
+          org_id: string
+          period: string
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          source_facts?: Json
+          source_version_hash: string
+          sparse_evidence?: Json
+          twin_id: string
+        }
+        Update: {
+          contradictions?: Json
+          evidence_summary?: Json
+          feedback_stats?: Json
+          from_cache?: boolean
+          generated_at?: string
+          goal_stats?: Json
+          id?: string
+          inferred_themes?: Json
+          model_note?: string
+          narrative?: string
+          org_id?: string
+          period?: string
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          source_facts?: Json
+          source_version_hash?: string
+          sparse_evidence?: Json
+          twin_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "performance_summaries_org_id_fkey"
+            columns: ["org_id"]
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "performance_summaries_reviewed_by_fkey"
+            columns: ["reviewed_by"]
+            referencedRelation: "digital_twins"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "performance_summaries_twin_id_fkey"
+            columns: ["twin_id"]
+            referencedRelation: "digital_twins"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       policy_documents: {
         Row: {
           applicable_locations: Json
@@ -4871,6 +4953,88 @@ export type Database = {
           },
           {
             foreignKeyName: "workforce_observations_twin_id_fkey"
+            columns: ["twin_id"]
+            referencedRelation: "digital_twins"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      workforce_review_cases: {
+        Row: {
+          computed_at: string
+          created_at: string
+          data_completeness: number
+          fact_finding: Json
+          factors: Json
+          id: string
+          index: number
+          limitations: Json
+          missing_data: Json
+          org_id: string
+          period_end: string
+          period_start: string
+          priority: string
+          priority_gate: Json
+          seeking_growth: boolean
+          sensitivity: Json
+          source_version_hash: string
+          trend: Json
+          twin_id: string
+          updated_at: string
+        }
+        Insert: {
+          computed_at?: string
+          created_at?: string
+          data_completeness?: number
+          fact_finding?: Json
+          factors?: Json
+          id?: string
+          index: number
+          limitations?: Json
+          missing_data?: Json
+          org_id: string
+          period_end: string
+          period_start: string
+          priority: string
+          priority_gate?: Json
+          seeking_growth?: boolean
+          sensitivity?: Json
+          source_version_hash: string
+          trend?: Json
+          twin_id: string
+          updated_at?: string
+        }
+        Update: {
+          computed_at?: string
+          created_at?: string
+          data_completeness?: number
+          fact_finding?: Json
+          factors?: Json
+          id?: string
+          index?: number
+          limitations?: Json
+          missing_data?: Json
+          org_id?: string
+          period_end?: string
+          period_start?: string
+          priority?: string
+          priority_gate?: Json
+          seeking_growth?: boolean
+          sensitivity?: Json
+          source_version_hash?: string
+          trend?: Json
+          twin_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "workforce_review_cases_org_id_fkey"
+            columns: ["org_id"]
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "workforce_review_cases_twin_id_fkey"
             columns: ["twin_id"]
             referencedRelation: "digital_twins"
             referencedColumns: ["id"]

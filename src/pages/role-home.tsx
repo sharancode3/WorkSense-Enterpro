@@ -213,7 +213,7 @@ export default function RoleHome() {
                   <StatBlock label="Onboarding tasks done" value={myJourney.data ? `${doneCount}/${tasks.length}` : null} tone="primary" />
                   <StatBlock label="Open recommendations" value={myRecs.data} tone="secondary" />
                   <StatBlock label="Verified skills" value={twin.verified_skills.length} tone="accent" />
-                  <StatBlock label="Workforce Review Signal" value={signalValue(twin, "workforce_review_signal") !== null ? `${signalValue(twin, "workforce_review_signal")}/100` : null} tone="dark" />
+                  <StatBlock label="Workforce review index" value={signalValue(twin, "workforce_review_index") !== null ? `${signalValue(twin, "workforce_review_index")}/100` : null} tone="dark" />
                 </>
               )}
             </div>
@@ -336,8 +336,8 @@ export default function RoleHome() {
                 <div className="flex items-center gap-3 rounded-lg bg-muted p-6">
                   <Users className="h-8 w-8 text-primary" strokeWidth={2.5} />
                   <p className="text-sm leading-relaxed text-foreground">
-                    The Workforce Review Signal is decision support — "multiple workforce indicators
-                    warrant HR review" — never a prediction about anyone's intent.
+                    The Workforce Review Index is interpretable decision support (0–100) — it flags
+                    when a review conversation is warranted, never a probability of leaving.
                   </p>
                 </div>
               </div>

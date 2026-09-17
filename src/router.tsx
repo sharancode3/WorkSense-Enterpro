@@ -8,6 +8,7 @@ import Recruitment from "./pages/recruitment";
 import Onboarding from "./pages/onboarding";
 import PolicyStudio from "./pages/policy-studio";
 import RecommendationHub from "./pages/recommendation-hub";
+import WorkforceReview from "./pages/workforce-review";
 import NotFound from "./pages/NotFound";
 import { ProtectedRoute } from "./components/protected-route";
 
@@ -83,6 +84,15 @@ export const routers = [
     element: (
       <ProtectedRoute>
         <RecommendationHub />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: "/workforce",
+    name: "workforce-review",
+    element: (
+      <ProtectedRoute>
+        <WorkforceReview />
       </ProtectedRoute>
     ),
   },

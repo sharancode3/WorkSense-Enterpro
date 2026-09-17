@@ -17,7 +17,7 @@ import {
   type RequiredSkill,
   type SkillClaim,
 } from "../supabase/functions/_shared/skill-graph-engine.ts";
-import { computeWorkforceSignal } from "../supabase/functions/_shared/workforce-signal-engine.ts";
+import { computeReviewIndex } from "../supabase/functions/_shared/workforce-review-index.ts";
 import { schedulePlan, type TaskInput, type ScheduledTask } from "../supabase/functions/_shared/onboarding-engine.ts";
 import { DEMO_ORG_ID, POLICIES, REQUISITIONS, SKILLS, TWINS } from "../supabase/functions/_shared/seed-data.ts";
 
@@ -158,14 +158,6 @@ interface AssertionSeed {
 function personasAsEmployees(): PersonSeed[] {
   const staff = TWINS.filter((t) => t.role !== "candidate");
   return staff.map((t) => {
-    // Signals are recomputed by the current engine so seeded claims never
-    // contradict the deterministic workforce-signal formula (Samira keeps 72).
-    const sig = computeWorkforceSignal({
-      promotion_lag_months: t.promotion_lag_months,
-      attendance: t.attendance,
-      delivery: t.delivery,
-      seeks_growth: t.email === "sam@worksense.demo",
-    });
     return {
       id: t.id,
       name: t.name,
@@ -180,7 +172,9 @@ function personasAsEmployees(): PersonSeed[] {
       seeks_growth: t.email === "sam@worksense.demo",
       attendance: t.attendance,
       delivery: t.delivery,
-      signals: [{ type: "workforce_review_signal", value: sig.risk_score, computed_at: CLOCK, factors: sig.factors }],
+      // Signals are computed once (Phase 9) AFTER observations exist, so the
+      // Workforce Review Index can use the longitudinal observation history.
+      signals: [],
       performance_history: t.performance_history ?? [],
       interview_rubrics: t.interview_rubrics ?? [],
       audit_events: t.audit_events ?? [],
@@ -303,8 +297,6 @@ for (const dept of DEPARTMENTS) {
     audit_events: [],
     assertions: newAssertions(dept, 5),
   };
-  const sig = computeWorkforceSignal({ promotion_lag_months: m.promotion_lag_months, attendance: m.attendance, delivery: m.delivery, seeks_growth: false });
-  m.signals = [{ type: "workforce_review_signal", value: sig.risk_score, computed_at: CLOCK, factors: sig.factors }];
   managersByDept[dept] = m.id;
   employees.push(m);
 }
@@ -339,10 +331,19 @@ for (let i = 0; i < 49; i++) {
     audit_events: [],
     assertions: newAssertions(dept, ri(4, 6)),
   };
-  const sig = computeWorkforceSignal({ promotion_lag_months: lag, attendance, delivery: { missed, total }, seeks_growth: false });
-  e.signals = [{ type: "workforce_review_signal", value: sig.risk_score, computed_at: CLOCK, factors: sig.factors }];
   employees.push(e);
 }
+
+// Healthy growth persona (Phase 9): reports development interest with a LOW
+// review index — the longitudinal case proves growth interest is a development
+// conversation, never a risk flag. emp:8 sits inside the observed set.
+const growthEmp = employees.find((e) => e.id === detUuid("emp:8"))!;
+growthEmp.seeks_growth = true;
+growthEmp.promotion_lag_months = 6;
+growthEmp.tenure_months = 24;
+growthEmp.attendance = { baseline: 0.3, recent: 0.3 };
+growthEmp.delivery = { missed: 0, total: 8 };
+growthEmp.signals.push({ type: "seeks_growth", value: true, last_measured: "2026-08-25T09:00:00Z" });
 
 // ~24 candidates: 3 preserved + 21 generated across 6 requisitions.
 for (let i = 0; i < 21; i++) {
@@ -512,8 +513,35 @@ for (let i = 0; i < 4; i++) {
   const ic = employees.find((e) => e.id === detUuid(`emp:${i}`))!;
   ic.tenure_months = NEW_HIRE_TENURES[i];
   ic.promotion_lag_months = 0;
-  const sig = computeWorkforceSignal({ promotion_lag_months: 0, attendance: ic.attendance, delivery: ic.delivery, seeks_growth: false });
-  ic.signals = [{ type: "workforce_review_signal", value: sig.risk_score, computed_at: CLOCK, factors: sig.factors }];
+}
+
+// Workforce Review Index for every employee, computed AFTER all snapshots and
+// observations exist (the engagement factor uses the longitudinal history).
+// Growth interest is reported separately and never contributes to the index.
+for (const emp of employees) {
+  const pObs = observations.filter((o) => o.twin_id === emp.id);
+  const sig = computeReviewIndex({
+    twin_id: emp.id,
+    promotion_lag_months: emp.promotion_lag_months,
+    attendance: emp.attendance,
+    delivery: emp.delivery,
+    observations: pObs,
+    seeks_growth: emp.seeks_growth,
+  });
+  emp.signals = emp.signals.filter((s) => (s as { type?: string }).type !== "workforce_review_signal" && (s as { type?: string }).type !== "workforce_review_index");
+  emp.signals.push({
+    type: "workforce_review_index",
+    value: sig.index,
+    priority: sig.priority,
+    data_completeness: sig.data_completeness,
+    computed_at: CLOCK,
+    factors: sig.factors,
+  });
+  // Development interest is a self-reported signal on the twin (separate from
+  // the index — it never contributes to risk). Growth personas keep it visible.
+  if (emp.seeks_growth) {
+    emp.signals.push({ type: "seeks_growth", value: true, last_measured: "2026-08-25T09:00:00Z" });
+  }
 }
 const newHires = [0, 1, 2, 3].map((i) => employees.find((e) => e.id === detUuid(`emp:${i}`))!);
 const journeys = [
@@ -549,8 +577,8 @@ const scenarios: Scenario[] = [
   { id: "s03", label: "Adjacent-skill candidate needs a work sample", description: "Maya Kapoor matches the Data Analyst role through adjacent skills; a work sample is the right next step before final round.", twin_id: P_C3, req_id: REQ_DATA, policy_doc_code: null },
   { id: "s04", label: "Internal move with a capacity constraint", description: "A Platform engineer is ready to move to the ML req but is carrying a heavy delivery load; the move needs staffing cover.", twin_id: detUuid("emp:0"), req_id: detUuid("req:ml"), policy_doc_code: null },
   { id: "s05", label: "Upskilling route over external hire", description: "A Data analyst's future-fit exceeds current-fit for a req; recommend the L&D route (POL-LND) over hiring.", twin_id: detUuid("emp:6"), req_id: REQ_DATA, policy_doc_code: "POL-LND" },
-  { id: "s06", label: "Workforce review: multiple signals, missing observations", description: "Samira Patel has a 72/100 signal (tenure, attendance, growth) and engagement observations are partly missing; supports a retention conversation.", twin_id: P_EMP2, req_id: null, policy_doc_code: null },
-  { id: "s07", label: "Healthy employee seeking development (NOT attrition)", description: "Dana Whitmore has a low signal and strong delivery; the case is about development, not retention risk.", twin_id: P_HR, req_id: null, policy_doc_code: null },
+  { id: "s06", label: "Workforce review: multiple signals, missing observations", description: "Samira Patel has an elevated Workforce Review Index driven by tenure, attendance and delivery load; engagement observations are partly missing. The index is decision support, NOT a probability of leaving — it supports a retention conversation, not a verdict.", twin_id: P_EMP2, req_id: null, policy_doc_code: null },
+  { id: "s07", label: "Healthy employee seeking development (NOT attrition)", description: "An employee reports development interest with a low review index and strong delivery; the case is about development support, not retention risk.", twin_id: detUuid("emp:8"), req_id: null, policy_doc_code: null },
   { id: "s08", label: "New-hire access task blocking technical work", description: "A recent hire is blocked on First Sprint Contribution pending production credentials (access task).", twin_id: journeys[2].twin_id, req_id: null, policy_doc_code: null },
   { id: "s09", label: "Policy exception requiring HR review", description: "A full-remote request outside the Remote Work Policy baseline requires written manager + People Ops approval (POL-RMT v2).", twin_id: detUuid("emp:12"), req_id: null, policy_doc_code: "POL-RMT" },
   { id: "s10", label: "Insufficient evidence — abstention case", description: "A candidate with sparse, unverified claims returns a low-confidence match; recommend collecting evidence before any decision.", twin_id: candidates[5].id, req_id: REQ_BACKEND, policy_doc_code: null },
@@ -712,12 +740,21 @@ function validate() {
     }
   }
 
-  // computed claims: generated employee signals equal the engine output
+  // computed claims: generated employee review indices equal the engine output
   for (const e of f.employees) {
-    const sig = e.signals[0] as { value?: number } | undefined;
+    const sig = e.signals.find((s) => (s as { type?: string }).type === "workforce_review_index") as { value?: number; priority?: string } | undefined;
     if (!sig) continue;
-    const engine = computeWorkforceSignal({ promotion_lag_months: e.promotion_lag_months, attendance: e.attendance, delivery: e.delivery, seeks_growth: e.seeks_growth });
-    expect(sig.value).toBe(engine.risk_score);
+    const pObs = f.observations.filter((o) => o.twin_id === e.id);
+    const engine = computeReviewIndex({
+      twin_id: e.id,
+      promotion_lag_months: e.promotion_lag_months,
+      attendance: e.attendance,
+      delivery: e.delivery,
+      observations: pObs,
+      seeks_growth: e.seeks_growth,
+    });
+    expect(sig.value).toBe(engine.index);
+    expect(sig.priority).toBe(engine.priority);
   }
 }
 

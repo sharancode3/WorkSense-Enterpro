@@ -13,6 +13,7 @@ const ROLE_TONE: Record<string, CardTone> = {
   manager: "secondary",
   recruiter: "accent",
   employee: "muted",
+  it_security: "secondary",
 };
 
 /**

@@ -44,8 +44,9 @@ const URGENCY_CLS: Record<string, string> = {
 };
 
 const CATEGORY_LABEL: Record<string, string> = {
-  workforce_review: "Workforce Review · Retention Intervention",
+  workforce_review: "Workforce Review · Review Conversation",
   mobility: "Internal Mobility",
+  development_support: "Development Support",
   recruitment: "Recruitment",
   onboarding_replan: "Onboarding Replan",
   policy: "Policy Question Escalation",
@@ -290,8 +291,9 @@ export default function RecommendationHub() {
             Evidence. Reasoning. <span className="text-primary">A human decides.</span>
           </h1>
           <p className="max-w-2xl text-muted-foreground">
-            The intelligence scan cross-references workforce signals, the skill graph, performance and
-            onboarding state. The model writes the plain-English reasoning; the facts, urgency and state
+            The intelligence scan cross-references the Workforce Review Index (with data completeness), the
+            skill graph, performance and onboarding state. Missing data and development interest are never
+            treated as risk. The model writes the plain-English reasoning; the facts, urgency and state
             machine are deterministic — and every state change needs your typed rationale.
           </p>
         </div>

@@ -421,14 +421,101 @@ export interface DashboardData {
     journeys_in_progress: number;
     journeys_on_track: number;
     journeys_blocked: number;
-    at_risk_employees: number;
+    review_priority_cases: number;
     pending_recommendations: number;
   };
+  review_cases: ReviewCaseRow[];
   heatmap: { skill: string; target_proficiency: number; req_id: string; req_title: string; gap_count: number; total: number }[];
   recommendations: { id: string; category: string; urgency: string; title: string; executive_summary: string }[];
 }
 
 export const fetchDashboard = () => invoke<DashboardData>("dashboard", {});
+
+// ---- Phase 9: Workforce Review Index + Performance Summaries ----
+
+export interface ReviewFactor {
+  score: number;
+  weight: number;
+  definition: string;
+  source_period: string | null;
+  note: string | null;
+}
+
+export interface ReviewTrend {
+  metric: string;
+  direction: "up" | "down" | "flat" | "insufficient";
+  delta: number | null;
+  first: number | null;
+  last: number | null;
+  periods: string[];
+}
+
+export interface WorkforceReviewResult {
+  ok: true;
+  cached?: boolean;
+  index: number;
+  priority: "low" | "medium" | "high" | "review";
+  factors: Record<"career" | "attendance" | "delivery" | "engagement", ReviewFactor>;
+  trend: ReviewTrend[];
+  data_completeness: number;
+  missing_data: { metric: string; periods: string[] }[];
+  seeking_growth: boolean;
+  priority_gate?: { tier_capped: boolean; reason: string | null };
+  recommended_fact_finding: string[];
+  sensitivity: { individual_absence: boolean; individual_engagement: boolean };
+  limitations: string[];
+  label: string;
+}
+
+export const fetchWorkforceReview = (twinId: string, force = false) =>
+  invoke<WorkforceReviewResult>("workforce-review-index", { twin_id: twinId, force });
+
+export interface PerfSourceFact {
+  ref: string;
+  source: string;
+  fact: string;
+}
+
+export interface PerfContradiction {
+  title: string;
+  evidence: string[];
+}
+
+export interface PerformanceSummaryResult {
+  ok: true;
+  cached?: boolean;
+  period: string;
+  facts: {
+    source_facts: PerfSourceFact[];
+    goal_stats: { cycles: number; avg: number | null; min: number | null; max: number | null; note: string };
+    feedback_stats: { total: number; positive: number; negative: number; mixed: number; neutral: number; by_cycle: { cycle: string; positive: number; negative: number }[]; note: string };
+    evidence_summary: { source_type: string; count: number }[];
+    contradictions: PerfContradiction[];
+    sparse_evidence: { flags: string[] };
+    inferred_themes: { theme: string; basis: string[]; confidence_note: string }[];
+    source_version_hash: string;
+  };
+  summary: {
+    narrative: string;
+    source_facts: PerfSourceFact[];
+    inferred_themes: { theme: string; basis: string[]; inference?: boolean }[];
+    contradictions: PerfContradiction[];
+    sparse_evidence: { flags: string[] };
+    model_note: string;
+  };
+}
+
+export const fetchPerformanceSummary = (twinId: string, force = false) =>
+  invoke<PerformanceSummaryResult>("performance-summary", { twin_id: twinId, force });
+
+export interface ReviewCaseRow {
+  twin_id: string;
+  name: string;
+  index: number;
+  priority: string;
+  completeness: number;
+  seeking_growth: boolean;
+}
 
 // ---- Model gateway observability ----
 
