@@ -13,6 +13,7 @@ import {
   RotateCcw,
   Settings,
   ShieldCheck,
+  TrendingUp,
   Users,
 } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
@@ -86,6 +87,12 @@ const NAV_SECTIONS: NavSection[] = [
         icon: Users,
         show: (role) => can(role, "view_all_workforce") || can(role, "view_team") || role === "employee",
       },
+      {
+        label: "Staffing planner",
+        to: "/staffing",
+        icon: TrendingUp,
+        show: (role) => can(role, "view_all_workforce") || can(role, "view_team"),
+      },
       { label: "Skill graph", to: "/graph", icon: GitBranch, show: (role) => can(role, "explore_skill_graph") },
     ],
   },
@@ -146,6 +153,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   };
 
   const sections = role ? visibleSections(role) : [];
+  const aiState = health.data
+    ? health.data.model_ready
+      ? "AI gateway: ready"
+      : "AI gateway: model unavailable"
+    : health.isError
+      ? "AI gateway: unreachable"
+      : "AI gateway: checking…";
 
   const renderSection = (s: NavSection, mobile = false) => (
     <div key={s.label} className={mobile ? "flex flex-col" : "flex items-center gap-1"}>
@@ -177,6 +191,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
+      {/* Phase 14: unmistakable demo-mode indicator + live build/health */}
+      <div className="border-b border-border bg-foreground text-white">
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-4 gap-y-1 px-4 py-1.5 text-[11px] font-semibold sm:px-6">
+          <span className="flex items-center gap-1.5">
+            <span className="rounded bg-destructive px-1.5 py-0.5 text-[9px] font-extrabold uppercase tracking-wider text-white">Demo mode</span>
+            All data is fictional · seeded for this demonstration
+          </span>
+          <span className="flex items-center gap-1.5 text-white/70">
+            <span className={`h-1.5 w-1.5 rounded-full ${health.data?.model_ready ? "bg-secondary" : health.isError ? "bg-destructive" : "bg-muted"}`} />
+            {aiState}
+          </span>
+          <span className="ml-auto hidden text-white/50 sm:inline">build {BUILD_INFO.commit.slice(0, 7)} · schema {BUILD_INFO.schemaVersion}</span>
+        </div>
+      </div>
+
       <header className="border-b-2 border-border bg-background">
         <div className="mx-auto max-w-7xl px-4 sm:px-6">
           <div className="flex h-16 items-center justify-between">

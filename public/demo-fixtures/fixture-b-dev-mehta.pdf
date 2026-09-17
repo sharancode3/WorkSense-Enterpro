@@ -1,0 +1,43 @@
+%PDF-1.4
+% WorkSense fictional demo fixture
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+5 0 obj
+<< /Length 1376 >>
+stream
+BT /F1 10 Tf 20 772 Td (Dev Mehta) Tj ET
+BT /F1 10 Tf 20 759 Td (dev.mehta@example.com) Tj ET
+BT /F1 10 Tf 20 746 Td (Software Developer) Tj ET
+BT /F1 10 Tf 20 720 Td (Summary) Tj ET
+BT /F1 10 Tf 20 707 Td (Interested in backend engineering and cloud technologies.) Tj ET
+BT /F1 10 Tf 20 681 Td (Skills) Tj ET
+BT /F1 10 Tf 20 668 Td (Go, PostgreSQL, Docker, Kubernetes, Kafka, Redis, AWS,) Tj ET
+BT /F1 10 Tf 20 655 Td (microservices, distributed systems, REST APIs.) Tj ET
+BT /F1 10 Tf 20 629 Td (Experience) Tj ET
+BT /F1 10 Tf 20 603 Td (Demo Learning Studio - Junior Developer) Tj ET
+BT /F1 10 Tf 20 590 Td (July 2024 - December 2025) Tj ET
+BT /F1 10 Tf 20 577 Td (Maintained a small Python reporting script.) Tj ET
+BT /F1 10 Tf 20 564 Td (Updated documentation and fixed validation issues in an internal tool.) Tj ET
+BT /F1 10 Tf 20 538 Td (Projects) Tj ET
+BT /F1 10 Tf 20 512 Td (Task Tracker) Tj ET
+BT /F1 10 Tf 20 499 Td (Built a small application using a tutorial.) Tj ET
+BT /F1 10 Tf 20 486 Td (The resume does not specify which listed infrastructure technologies) Tj ET
+BT /F1 10 Tf 20 473 Td (were implemented independently.) Tj ET
+BT /F1 10 Tf 20 447 Td (Additional Notes) Tj ET
+BT /F1 10 Tf 20 434 Td (Completed introductory online videos on containers and messaging systems.) Tj ET
+BT /F1 10 Tf 20 421 Td (No production ownership or certification claimed.) Tj ET
+endstream
+endobj
+trailer
+<< /Size 6 /Root 1 0 R >>
+%%EOF

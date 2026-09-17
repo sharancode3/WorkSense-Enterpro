@@ -69,6 +69,7 @@ const FNS = {
   "action-task-update": ["workflow"],
   "recommendation-scan": ["engine", "recEngine", "reviewIndex", "workflow", "qwen", "validate"],
   "dashboard": ["engine", "reviewIndex"],
+  "staffing-comparison": ["engine"],
   "model-job": ["jobs"],
   "health": ["qwen"],
   "resume-import": ["qwen", "jobs", "validate", "resume"],

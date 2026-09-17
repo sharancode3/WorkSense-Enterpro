@@ -1,0 +1,34 @@
+%PDF-1.4
+% WorkSense fictional demo fixture
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+5 0 obj
+<< /Length 754 >>
+stream
+BT /F1 10 Tf 20 772 Td (Omar Haddad) Tj ET
+BT /F1 10 Tf 20 759 Td (omar.haddad@example.com) Tj ET
+BT /F1 10 Tf 20 746 Td (Software Engineer) Tj ET
+BT /F1 10 Tf 20 720 Td (Experience) Tj ET
+BT /F1 10 Tf 20 707 Td (Worked as a software engineer on several teams.) Tj ET
+BT /F1 10 Tf 20 694 Td (Built web services and maintained legacy applications.) Tj ET
+BT /F1 10 Tf 20 681 Td (Some experience with databases and container tools.) Tj ET
+BT /F1 10 Tf 20 655 Td (Skills) Tj ET
+BT /F1 10 Tf 20 642 Td (Java, PostgreSQL, Docker, REST APIs.) Tj ET
+BT /F1 10 Tf 20 616 Td (Note) Tj ET
+BT /F1 10 Tf 20 603 Td (This resume contains no job dates or duration. Any inferred tenure) Tj ET
+BT /F1 10 Tf 20 590 Td (would be an assumption, not an extracted fact.) Tj ET
+endstream
+endobj
+trailer
+<< /Size 6 /Root 1 0 R >>
+%%EOF

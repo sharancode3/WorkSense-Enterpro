@@ -1,0 +1,28 @@
+Dev Mehta
+dev.mehta@example.com
+Software Developer
+
+Summary
+Interested in backend engineering and cloud technologies.
+
+Skills
+Go, PostgreSQL, Docker, Kubernetes, Kafka, Redis, AWS,
+microservices, distributed systems, REST APIs.
+
+Experience
+
+Demo Learning Studio - Junior Developer
+July 2024 - December 2025
+Maintained a small Python reporting script.
+Updated documentation and fixed validation issues in an internal tool.
+
+Projects
+
+Task Tracker
+Built a small application using a tutorial.
+The resume does not specify which listed infrastructure technologies
+were implemented independently.
+
+Additional Notes
+Completed introductory online videos on containers and messaging systems.
+No production ownership or certification claimed.

@@ -1,0 +1,37 @@
+{
+  "_provenance": "previously-generated-demo-artifact",
+  "_label": "Previously generated demo artifact. Not live inference.",
+  "_generated_at": "2026-09-17T21:28:15.204Z",
+  "_model": "qwen3:4b-instruct-2507-q4_K_M",
+  "label": "Resume extraction demo: extraction-fixture-a",
+  "fixture": "fixture-a-priya-nair.pdf",
+  "full_name": "Priya Nair",
+  "years_experience": 4,
+  "extracted_skills": [
+    {
+      "name": "Go",
+      "proficiency": 4,
+      "verification_rigor": "low",
+      "evidence": "Built Go services for an internal order-processing platform."
+    },
+    {
+      "name": "PostgreSQL",
+      "proficiency": 4,
+      "verification_rigor": "low",
+      "evidence": "Implemented PostgreSQL transactions and an idempotency-key table to prevent duplicate order creation during client retries."
+    },
+    {
+      "name": "Docker",
+      "proficiency": 3,
+      "verification_rigor": "low",
+      "evidence": "Containerized services using Docker and maintained local development and staging configurations."
+    },
+    {
+      "name": "Kubernetes",
+      "proficiency": 1,
+      "verification_rigor": "low",
+      "evidence": "Completed a personal three-month Kubernetes learning project. Used Deployments, Services, and basic health probes."
+    }
+  ],
+  "live_poll_ms": 115
+}

@@ -9,6 +9,7 @@ import Onboarding from "./pages/onboarding";
 import PolicyStudio from "./pages/policy-studio";
 import RecommendationHub from "./pages/recommendation-hub";
 import WorkforceReview from "./pages/workforce-review";
+import StaffingPlanner from "./pages/staffing";
 import NotFound from "./pages/NotFound";
 import { ProtectedRoute } from "./components/protected-route";
 
@@ -93,6 +94,15 @@ export const routers = [
     element: (
       <ProtectedRoute>
         <WorkforceReview />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: "/staffing",
+    name: "staffing-planner",
+    element: (
+      <ProtectedRoute>
+        <StaffingPlanner />
       </ProtectedRoute>
     ),
   },

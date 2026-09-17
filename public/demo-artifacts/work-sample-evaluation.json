@@ -1,0 +1,60 @@
+{
+  "_provenance": "previously-generated-demo-artifact",
+  "_label": "Previously generated demo artifact. Not live inference.",
+  "_generated_at": "2026-09-17T21:30:03.599Z",
+  "_model": "qwen3:4b-instruct-2507-q4_K_M",
+  "label": "Work-sample assessment demo (Payments service design)",
+  "session_id": "77777777-7777-7777-7777-777777777701",
+  "result": {
+    "type": "assessment_judgment",
+    "session_id": "77777777-7777-7777-7777-777777777701",
+    "session_type": "work_sample",
+    "blueprint_id": "66666666-6666-6666-6666-666666666601",
+    "blueprint_title": "Payments service design & implementation notes",
+    "competency": "Backend Engineering",
+    "code_execution": {
+      "available": false,
+      "note": "Code-execution sandboxes are not available in this deployment, so submitted artifacts were reviewed as written work only — no tests were executed and none were simulated."
+    },
+    "ai": {
+      "judgments": [
+        {
+          "competency": "API resilience",
+          "judgment": "NOT_ASSESSED",
+          "evidence_quotes": [],
+          "anchor_ref": "",
+          "uncertainty": 1,
+          "suggested_follow_up": "",
+          "note": "No answer was provided for this question."
+        },
+        {
+          "competency": "Event-driven design",
+          "judgment": "NOT_ASSESSED",
+          "evidence_quotes": [],
+          "anchor_ref": "",
+          "uncertainty": 1,
+          "suggested_follow_up": "",
+          "note": "No answer was provided for this question."
+        },
+        {
+          "competency": "Database performance",
+          "judgment": "3",
+          "evidence_quotes": [
+            "use a unique request key per order attempt, store it with a UNIQUE constraint",
+            "return the existing order on conflict",
+            "add an idempotency-key table keyed on (client_id, request_id)"
+          ],
+          "anchor_ref": "3",
+          "uncertainty": 0,
+          "suggested_follow_up": "Could you describe how you would verify that the idempotency key prevents duplicate processing in a real-world scenario, such as with a test case that simulates multiple webhook deliveries?"
+        }
+      ],
+      "summary": "The candidate proposes a concrete idempotency mechanism using a unique request key with a UNIQUE constraint and a table keyed on (client_id, request_id), which aligns with a plausible schema change. They mention transactional handling and write-behind, but do not reference any diagnostic tool like EXPLAIN ANALYZE or a query plan analysis. While the solution is specific and structured, there is no explicit mention of verification against real or representative data. This meets the threshold for level 3: naming a plausible index and sketching verification, though it falls short of full plan-driven diagnosis or regression testing.",
+      "evaluated_at": "2026-09-17T21:30:03.568Z",
+      "evaluator": "chris@worksense.demo",
+      "model": "qwen3:4b-instruct-2507-q4_K_M"
+    },
+    "reviewed": null
+  },
+  "live_ms": 17579
+}

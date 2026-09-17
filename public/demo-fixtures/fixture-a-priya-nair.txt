@@ -1,0 +1,34 @@
+Priya Nair
+priya.nair@example.com
+Backend Engineer
+
+Experience
+
+Northstar Demo Systems - Backend Engineer
+January 2022 - December 2025
+Built Go services for an internal order-processing platform.
+Implemented PostgreSQL transactions and an idempotency-key table
+to prevent duplicate order creation during client retries.
+Containerized services using Docker and maintained local development
+and staging configurations.
+Investigated slow reporting queries using EXPLAIN ANALYZE and added
+indexes after reviewing query plans.
+
+Projects
+
+Reliable Order API
+Implemented request validation, idempotency, integration tests,
+and structured error responses in Go and PostgreSQL.
+
+Deployment Practice Lab
+Completed a personal three-month Kubernetes learning project.
+Used Deployments, Services, and basic health probes.
+No production Kubernetes ownership claimed.
+
+Skills Claimed
+Go - approximately four years
+PostgreSQL - approximately three years
+Docker - approximately two years
+Kubernetes - beginner project exposure
+
+Certifications: None claimed.

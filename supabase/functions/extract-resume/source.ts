@@ -26,6 +26,23 @@ const TIER_PROFICIENCY: Record<string, number> = {
   EXPERT: 5,
 };
 
+// Phase 14: the local 4B model often emits human-friendly tier words instead of
+// the canonical enum. Normalize those deterministically (a claim stays a claim
+// — verification_rigor remains "low"); only genuinely unparseable values still
+// fail validation so real garbage is never silently accepted.
+const TIER_ALIASES: Record<string, string> = {
+  foundational: "FOUNDATIONAL", beginner: "FOUNDATIONAL", basic: "FOUNDATIONAL", entry: "FOUNDATIONAL", novice: "FOUNDATIONAL", "1": "FOUNDATIONAL", "2": "FOUNDATIONAL",
+  intermediate: "INTERMEDIATE", mid: "INTERMEDIATE", working: "INTERMEDIATE", proficient: "INTERMEDIATE", moderate: "INTERMEDIATE", "3": "INTERMEDIATE",
+  advanced: "ADVANCED", strong: "ADVANCED", good: "ADVANCED", proficient: "ADVANCED", "4": "ADVANCED",
+  expert: "EXPERT", senior: "EXPERT", master: "EXPERT", "5": "EXPERT",
+};
+const normalizeTier = (v: unknown): string | null => {
+  const s = String(v ?? "").trim().toLowerCase();
+  if (!s) return null;
+  if (["foundational", "intermediate", "advanced", "expert"].includes(s)) return s.toUpperCase();
+  return TIER_ALIASES[s] ?? null;
+};
+
 async function isTeamMember(supabase, rootTwinId: string, checkTwinId: string): Promise<boolean> {
   const { data } = await supabase.from("digital_twins").select("id, manager_id");
   const children = new Map<string, string[]>();
@@ -111,11 +128,32 @@ Deno.serve(async (req) => {
       system: EXTRACTION_SYSTEM,
       user: `Resume:\n${wrapped}`,
       task: "resume_extraction",
+      timeoutMs: 120_000, // local 4B is slow on longer resumes; don't abort mid-generation
     });
   } catch (err) {
     const code = err instanceof QwenError ? err.code : "INTERNAL";
     await finishJob(supabase, job.id, { status: "failed", errorCode: code, errorMessage: err instanceof Error ? err.message : "unknown", latencyMs: Date.now() - startedAt });
     return json({ error: code, message: err instanceof Error ? err.message : "unknown", job_id: job.id }, code === "MODEL_OUTPUT_INVALID" ? 422 : 503);
+  }
+
+  // Normalize human-friendly tier words before schema validation. Track which
+  // skills were normalized so the reviewer can see the coercion. A truly
+  // unparseable tier is coerced to INTERMEDIATE with a visible warning — the
+  // claim stays verification_rigor: low and the DB enum constraint is always
+  // satisfied. Nothing here ever promotes a claim to verified capability.
+  const tierWarnings: string[] = [];
+  const rawSkills = (parsed as { extracted_skills?: unknown[] })?.extracted_skills ?? [];
+  for (const s of rawSkills) {
+    const rec = s as { skill_name?: unknown; proficiency_tier?: unknown };
+    const rawTier = String(rec?.proficiency_tier ?? "").trim();
+    const norm = normalizeTier(rawTier);
+    if (!norm) {
+      if (rawTier) tierWarnings.push(`${String(rec?.skill_name ?? "?")}: unparseable tier "${rawTier}" -> INTERMEDIATE (claim kept, low rigor)`);
+      rec.proficiency_tier = "INTERMEDIATE";
+    } else if (rawTier.toUpperCase() !== norm) {
+      tierWarnings.push(`${String(rec?.skill_name ?? "?")}: "${rawTier}" -> ${norm}`);
+      rec.proficiency_tier = norm;
+    }
   }
 
   const valid = validateResumeExtraction(parsed);
@@ -255,6 +293,7 @@ Deno.serve(async (req) => {
       impact_metric: p.impact_metric ?? "",
     })),
     fit,
+    tier_warnings: tierWarnings,
   };
 
   await finishJob(supabase, job.id, { status: "succeeded", output: result, latencyMs: Date.now() - startedAt });

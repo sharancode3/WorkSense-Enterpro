@@ -544,6 +544,39 @@ export interface DashboardData {
 export const fetchDashboard = (filters?: DashboardFilters) =>
   invoke<DashboardData>("dashboard", { ...filters });
 
+// ---- Phase 14: Staffing planner (Hire / Move / Upskill / Hybrid) ----
+
+export interface StaffingOption {
+  id: "hire" | "move" | "upskill" | "hybrid";
+  label: string;
+  coverage_pct: number;
+  time_to_ready_days: number;
+  cost_usd: number;
+  source: string;
+  constraints: string[];
+  note: string;
+}
+
+export interface StaffingComparison {
+  ok: true;
+  computed_at: string;
+  scenario: {
+    req_id: string;
+    req_title: string;
+    department: string;
+    deadline_days: number;
+    target_date_note: string;
+    demand: { skill: string; target_proficiency: number }[];
+    future_skills: { skill: string; target_proficiency: number }[];
+    allocation_note: string;
+  };
+  options: StaffingOption[];
+  planning_note: string;
+}
+
+export const fetchStaffingComparison = (requisitionTitle?: string) =>
+  invoke<StaffingComparison>("staffing-comparison", { requisition_title: requisitionTitle });
+
 // ---- Phase 9: Workforce Review Index + Performance Summaries ----
 
 export interface ReviewFactor {

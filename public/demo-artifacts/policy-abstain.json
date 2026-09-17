@@ -1,0 +1,14 @@
+{
+  "_provenance": "previously-generated-demo-artifact",
+  "_label": "Previously generated demo artifact. Not live inference.",
+  "_generated_at": "2026-09-17T21:27:51.784Z",
+  "_model": "qwen3:4b-instruct-2507-q4_K_M",
+  "label": "Policy demo: policy-abstain",
+  "question": "Can an employee apply for an internal role while on a performance improvement plan?",
+  "status": "insufficient_evidence",
+  "abstained": false,
+  "answer": "",
+  "citations": [],
+  "note": "The model could not produce a schema-valid grounded answer; the question was not answered.",
+  "live_ms": 13919
+}

@@ -1,0 +1,9 @@
+{
+  "_provenance": "previously-generated-demo-artifact",
+  "_label": "Previously generated demo artifact. Not live inference.",
+  "_generated_at": "2026-09-17T21:29:46.020Z",
+  "_model": "qwen3:4b-instruct-2507-q4_K_M",
+  "label": "Resume extraction demo: extraction-fixture-b (unavailable)",
+  "available": false,
+  "reason": "{\"error\":\"MODEL_OUTPUT_INVALID\",\"message\":\"Model output failed schema validation.\",\"details\":[\"skill_name missing/too long\"],\"job_id\":\"17a173b1-fd95-48a1-9d1d-27868c738155\"}"
+}

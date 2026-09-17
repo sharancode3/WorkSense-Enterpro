@@ -275,6 +275,13 @@ const MODULES: ModuleDef[] = [
     to: "/graph",
     show: (role) => can(role, "explore_skill_graph"),
   },
+  {
+    title: "Staffing planner",
+    desc: "Hire / Move / Upskill / Hybrid with honest estimates.",
+    icon: Users,
+    to: "/staffing",
+    show: (role) => can(role, "view_all_workforce") || can(role, "view_team"),
+  },
 ];
 
 function ModuleGrid({ role }: { role: Role }) {

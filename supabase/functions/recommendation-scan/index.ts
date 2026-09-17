@@ -1289,6 +1289,7 @@ export async function callQwen(params: {
   maxTokens?: number;
   temperature?: number;
   task?: string;
+  timeoutMs?: number;
 }): Promise<unknown> {
   const task = params.task ?? "generic";
   const started = Date.now();
@@ -1320,7 +1321,8 @@ export async function callQwen(params: {
 
   const attempt = async (repairHint: boolean): Promise<unknown> => {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), QWEN_TIMEOUT_MS);
+    const timeoutMs = params.timeoutMs ?? QWEN_TIMEOUT_MS;
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
     let res: Response;
     try {
       res = await fetch(`${QWEN_BASE_URL}/chat/completions`, {
@@ -1331,7 +1333,7 @@ export async function callQwen(params: {
       });
     } catch (err) {
       const timedOut = err instanceof Error && err.name === "AbortError";
-      throw new QwenError("MODEL_UNAVAILABLE", timedOut ? `qwen: request timed out after ${QWEN_TIMEOUT_MS}ms` : `qwen: network error (is the endpoint reachable?): ${err instanceof Error ? err.message : String(err)}`);
+      throw new QwenError("MODEL_UNAVAILABLE", timedOut ? `qwen: request timed out after ${timeoutMs}ms` : `qwen: network error (is the endpoint reachable?): ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       clearTimeout(timer);
     }
