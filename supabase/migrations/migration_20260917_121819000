@@ -1,0 +1,59 @@
+-- Phase 2: Recruitment & Interview Studio schema
+
+alter table public.digital_twins add column resume_text text;
+alter table public.job_requisitions add column rubrics jsonb not null default '[]'::jsonb;
+
+-- Atomic candidate -> employee conversion (single transaction, security definer).
+-- Preserves verified_skills / interview_rubrics / computed_fits / audit_events.
+create or replace function public.convert_candidate_to_employee(p_twin_id uuid, p_req_id uuid)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  v_req public.job_requisitions%rowtype;
+  v_twin public.digital_twins%rowtype;
+  v_updated_applicants jsonb;
+  v_req_audit jsonb;
+  v_twin_audit jsonb;
+begin
+  select * into v_twin from public.digital_twins where id = p_twin_id for update;
+  if not found then raise exception 'twin_not_found'; end if;
+  select * into v_req from public.job_requisitions where id = p_req_id for update;
+  if v_req.id is null then raise exception 'req_not_found'; end if;
+
+  v_updated_applicants := (
+    select jsonb_agg(
+      case when a ->> 'twin_id' = p_twin_id::text
+           then jsonb_set(a, '{stage}', '"selected"')
+           else a
+      end
+    )
+    from jsonb_array_elements(v_req.applicants) a
+  );
+  if v_updated_applicants is null then v_updated_applicants := '[]'::jsonb; end if;
+
+  v_req_audit := v_req.audit_events || jsonb_build_object(
+    'actor', 'system', 'action', 'candidate_selected',
+    'note', 'Candidate ' || v_twin.name || ' selected and converted to employee',
+    'timestamp', now()
+  );
+  v_twin_audit := v_twin.audit_events || jsonb_build_object(
+    'actor', 'system', 'action', 'converted_to_employee',
+    'note', 'DigitalTwin converted from candidate to employee for ' || v_req.title,
+    'timestamp', now()
+  );
+
+  update public.digital_twins
+     set role = 'employee', status = 'active',
+         department = v_req.department,
+         job_title = v_req.title,
+         seniority_level = v_req.seniority_level,
+         audit_events = v_twin_audit
+   where id = p_twin_id;
+
+  update public.job_requisitions
+     set applicants = v_updated_applicants,
+         audit_events = v_req_audit
+   where id = p_req_id;
+
+  return jsonb_build_object('twin_id', p_twin_id, 'req_id', p_req_id, 'status', 'converted');
+end
+$$;

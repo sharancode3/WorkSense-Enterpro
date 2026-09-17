@@ -3,6 +3,7 @@ import Login from "./pages/login";
 import CandidateStatus from "./pages/candidate-status";
 import RoleHome from "./pages/role-home";
 import SkillGraph from "./pages/skill-graph";
+import Recruitment from "./pages/recruitment";
 import NotFound from "./pages/NotFound";
 import { ProtectedRoute } from "./components/protected-route";
 
@@ -37,6 +38,15 @@ export const routers = [
     element: (
       <ProtectedRoute>
         <SkillGraph />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: "/recruitment",
+    name: "recruitment",
+    element: (
+      <ProtectedRoute>
+        <Recruitment />
       </ProtectedRoute>
     ),
   },

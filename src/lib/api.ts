@@ -77,3 +77,80 @@ export async function fetchCandidateStatus(
   if (!data?.ok) throw new ApiError("candidate-status: unexpected response");
   return data;
 }
+
+export interface ExtractResumeResult {
+  ok: true;
+  skills: { name: string; proficiency: number; evidence_source: string; verification_rigor: string; evidence?: string }[];
+  experience: { title: string; years: number; highlights: string[] }[];
+  projects: { name: string; description: string; technologies: string[] }[];
+  summary: string;
+  years_experience: number;
+  fit: FitRecordShape | null;
+}
+
+export interface RubricCompetency {
+  competency: string;
+  question: string;
+  levels: { tier: string; criteria: string[] }[];
+}
+
+export interface InterviewKit {
+  type: string;
+  req_id: string;
+  req_title: string;
+  candidate_name: string;
+  score: number;
+  focus_items: string[];
+  probes: { skill: string; questions: string[] }[];
+  competencies: RubricCompetency[];
+  created_at: string;
+}
+
+export interface InterviewEvaluation {
+  type: string;
+  req_id: string;
+  req_title: string;
+  candidate_name: string;
+  evaluations: { competency: string; tier: string; score: number; evidence: string; strengths: string[]; concerns: string[] }[];
+  overall_recommendation: string;
+  summary: string;
+  evaluated_at: string;
+  evaluator: string;
+}
+
+export interface FitRecordShape {
+  score: number;
+  computed_at: string;
+}
+
+async function invoke<T>(name: string, body: unknown): Promise<T> {
+  const { data, error } = await supabase.functions.invoke<T>(name, { body });
+  if (error) throw new ApiError(error.message || `${name}: failed`, (error as { context?: { error?: string } }).context?.error);
+  return data as T;
+}
+
+export const extractResume = (twinId: string, resumeText: string, reqId?: string) =>
+  invoke<ExtractResumeResult>("extract-resume", { twin_id: twinId, resume_text: resumeText, req_id: reqId });
+
+export const generateRubrics = (reqId: string) =>
+  invoke<{ ok: true; rubrics: RubricCompetency[] }>("rubric", { req_id: reqId });
+
+export const generateInterviewKit = (twinId: string, reqId: string) =>
+  invoke<{ ok: true; kit: InterviewKit }>("interview-kit", { twin_id: twinId, req_id: reqId });
+
+export const evaluateInterview = (twinId: string, reqId: string, notes: string) =>
+  invoke<{ ok: true; evaluation: InterviewEvaluation }>("evaluate-interview", { twin_id: twinId, req_id: reqId, notes });
+
+export const recruiterDecision = (twinId: string, reqId: string, decision: "move_forward" | "reject" | "select", note?: string) =>
+  invoke<{ ok: true; decision: string; applicant?: { twin_id: string; stage: string }; converted?: unknown; note?: string }>(
+    "recruiter-decision",
+    { twin_id: twinId, req_id: reqId, decision, note }
+  );
+
+export const requisitionCreate = (payload: {
+  title: string;
+  department: string;
+  seniority_level: number;
+  required_skills: { skill: string; target_proficiency: number }[];
+  future_skills: { skill: string; target_proficiency: number }[];
+}) => invoke<{ ok: true; requisition: unknown }>("requisition", { action: "create", ...payload });

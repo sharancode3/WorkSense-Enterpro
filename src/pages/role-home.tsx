@@ -74,6 +74,9 @@ function ModuleStubs({ role }: { role: string }) {
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
       {MODULES.map(({ icon: Icon, title, desc }) => {
         const open = can(role, "explore_skill_graph") && title === "Skill Intelligence Graph";
+        const openRecruitment = can(role, "manage_recruitment") && title === "Recruitment Intelligence";
+        const href = open ? "/graph" : openRecruitment ? "/recruitment" : null;
+        const isOpen = open || openRecruitment;
         const card = (
           <div className="group flex h-full flex-col gap-3 rounded-lg bg-muted p-5 transition-all duration-200 hover:scale-[1.02]">
             <span className="flex h-12 w-12 items-center justify-center rounded-md bg-white text-primary transition-transform duration-200 group-hover:scale-110">
@@ -85,15 +88,15 @@ function ModuleStubs({ role }: { role: string }) {
             </div>
             <span
               className={`mt-auto inline-flex w-fit items-center gap-1 rounded-md px-2.5 py-1 text-xs font-bold uppercase tracking-wider ${
-                open ? "bg-primary text-white" : "bg-foreground text-white"
+                isOpen ? "bg-primary text-white" : "bg-foreground text-white"
               }`}
             >
-              {open ? "Open explorer" : "Phase 1+"}
+              {isOpen ? "Open" : "Phase 1+"}
             </span>
           </div>
         );
-        return open ? (
-          <Link key={title} to="/graph" className="block">
+        return href ? (
+          <Link key={title} to={href} className="block">
             {card}
           </Link>
         ) : (

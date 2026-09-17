@@ -3375,6 +3375,7 @@ export type Database = {
           name: string
           org_id: string | null
           performance_history: Json
+          resume_text: string | null
           role: string
           seniority_level: number
           signals: Json
@@ -3397,6 +3398,7 @@ export type Database = {
           name: string
           org_id?: string | null
           performance_history?: Json
+          resume_text?: string | null
           role: string
           seniority_level?: number
           signals?: Json
@@ -3419,6 +3421,7 @@ export type Database = {
           name?: string
           org_id?: string | null
           performance_history?: Json
+          resume_text?: string | null
           role?: string
           seniority_level?: number
           signals?: Json
@@ -3452,6 +3455,7 @@ export type Database = {
           id: string
           org_id: string
           required_skills: Json
+          rubrics: Json
           seniority_level: number
           title: string
           updated_at: string
@@ -3465,6 +3469,7 @@ export type Database = {
           id?: string
           org_id: string
           required_skills?: Json
+          rubrics?: Json
           seniority_level?: number
           title: string
           updated_at?: string
@@ -3478,6 +3483,7 @@ export type Database = {
           id?: string
           org_id?: string
           required_skills?: Json
+          rubrics?: Json
           seniority_level?: number
           title?: string
           updated_at?: string
@@ -3655,6 +3661,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      convert_candidate_to_employee: {
+        Args: { p_req_id: string; p_twin_id: string }
+        Returns: Json
+      }
       current_twin: {
         Args: Record<PropertyKey, never>
         Returns: {
@@ -3671,6 +3681,7 @@ export type Database = {
           name: string
           org_id: string | null
           performance_history: Json
+          resume_text: string | null
           role: string
           seniority_level: number
           signals: Json

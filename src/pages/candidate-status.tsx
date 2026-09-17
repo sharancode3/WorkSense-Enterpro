@@ -19,6 +19,16 @@ const STAGE_BADGE: Record<string, string> = {
   final_round: "bg-secondary text-white",
   technical_interview: "bg-primary text-white",
   screening: "bg-accent text-foreground",
+  selected: "bg-foreground text-white",
+  rejected: "bg-destructive text-white",
+};
+
+const STAGE_LABEL: Record<string, string> = {
+  screening: "Under Review",
+  technical_interview: "Interview Scheduled",
+  final_round: "Decision Pending",
+  selected: "Offer Extended",
+  rejected: "Not moving forward",
 };
 
 export default function CandidateStatus() {
@@ -101,7 +111,7 @@ export default function CandidateStatus() {
                 <div>
                   <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Application status</p>
                   <p className="mt-1 text-2xl font-extrabold capitalize text-foreground">
-                    {view.data.application_status.replace(/_/g, " ")}
+                    {STAGE_LABEL[view.data.application_status] ?? view.data.application_status.replace(/_/g, " ")}
                   </p>
                   <p className="mt-1 text-sm text-muted-foreground">
                     {view.data.requisition.title} · {view.data.requisition.department}
