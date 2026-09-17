@@ -243,3 +243,35 @@ export const policyAsk = (question: string) =>
 
 export const escalatePolicy = (question: string, status: string, bestScore: number) =>
   invoke<{ ok: true; recommendation_id: string }>("escalate", { question, status, best_score: bestScore });
+
+// ---- Recommendation & Action Hub ----
+
+export interface RecommendationRow {
+  id: string;
+  twin_id: string | null;
+  category: string;
+  urgency: string;
+  status: "needs_review" | "approved" | "rejected" | "dispatched" | "completed";
+  evidence_ledger: { source: string; fact: string }[];
+  proposed_action: {
+    title: string;
+    description: string;
+    steps: { order: number; action: string }[];
+    executive_summary?: string;
+    recommended_action?: string;
+  };
+  executive_summary: string;
+  required_signoff_role: string | null;
+  reviewer_rationale: { last?: string; by?: string; at?: string } | Record<string, never>;
+  audit_events: { actor: string; action: string; rationale?: string; before?: string; after?: string; note?: string; timestamp: string }[];
+  created_at: string;
+}
+
+export const recommendationScan = () =>
+  invoke<{ ok: true; scanned_candidates: number; created: number; created_ids: string[] }>("recommendation-scan", {});
+
+export const recommendationDecision = (recId: string, decision: string, rationale: string) =>
+  invoke<{ ok: true; status: string; effect?: string | null; rationale: string }>(
+    "recommendation-decision",
+    { rec_id: recId, decision, rationale }
+  );

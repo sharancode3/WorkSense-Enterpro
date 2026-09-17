@@ -272,13 +272,14 @@ export const RECOMMENDATIONS = [
     category: "workforce_review",
     urgency: "high",
     evidence_ledger: [
-      { type: "workforce_review_signal", value: 68, note: "Multiple workforce indicators warrant HR review — decision support, not a prediction." },
-      { type: "engagement_survey", value: "3.1 / 5", note: "Declining across two consecutive cycles." },
-      { type: "attendance", value: "pattern change vs own baseline", note: "Recent unapproved absences above personal baseline." },
-      { type: "performance", value: "Exceeds Expectations", note: "Last review cycle; strong history of delivery." },
+      { source: "WORKFORCE_REVIEW_SIGNAL", fact: "Signal 68/100 — multiple workforce indicators warrant HR review (decision support, not a prediction)." },
+      { source: "ENGAGEMENT_SURVEY", fact: "Survey 3.1 / 5 (declining over 2 cycles)." },
+      { source: "ATTENDANCE", fact: "Recent unapproved absence pattern above own baseline." },
+      { source: "PERFORMANCE", fact: "Latest rating: Exceeds Expectations — strong, stable delivery across 4 cycles." },
     ],
+    executive_summary: "Samira combines strong, consistent delivery with a Workforce Review Signal of 68/100 driven by declining engagement, an above-baseline absence pattern and 40 months without a band change. The evidence supports a manager-led retention conversation and a concrete growth or mobility option.",
     proposed_action: {
-      title: "Schedule a structured retention conversation",
+      title: "Manager review for retention intervention",
       description: "Open a manager-led check-in with Samira within the week. Focus on engagement drivers and growth path.",
       steps: [
         { order: 1, action: "Book a 1:1 focused on engagement, not performance." },
@@ -290,7 +291,7 @@ export const RECOMMENDATIONS = [
     status: "needs_review",
     required_signoff_role: "manager",
     reviewer_rationale: {},
-    audit_events: [{ actor: "system", action: "created", note: "Auto-generated from workforce signals", timestamp: "2026-09-10T09:00:00Z" }],
+    audit_events: [{ actor: "system", action: "created", note: "Triggered by intelligence scan (RETENTION_INTERVENTION).", timestamp: "2026-09-10T09:00:00Z" }],
   },
   {
     id: "44444444-4444-4444-4444-444444444402",
@@ -299,9 +300,11 @@ export const RECOMMENDATIONS = [
     category: "mobility",
     urgency: "low",
     evidence_ledger: [
-      { type: "skill_match", value: 0.392, note: "Current-fit vs Senior Backend Engineer; adjacent path toward Containerization." },
-      { type: "skill_graph", value: "Docker → Containerization → Kubernetes", note: "Clear upskilling ladder in current team." },
+      { source: "SKILL_GRAPH", fact: "78% current fit vs Senior Backend Engineer; Docker → Containerization → Kubernetes adjacent ladder." },
+      { source: "PERFORMANCE", fact: "Latest rating: On Track — 80% goals met in first cycle." },
+      { source: "ONBOARDING_PROGRESS", fact: "3/6 onboarding tasks complete; first contribution in progress." },
     ],
+    executive_summary: "Alex is mid-onboarding but already shows a clear adjacent path toward Containerization and Kubernetes within the current team. The skill graph supports early exposure to Kubernetes work as a low-urgency growth step.",
     proposed_action: {
       title: "Expose Alex to Kubernetes work",
       description: "Assign a Kubernetes-adjacent task in the next sprint to build the adjacent-skill bridge.",
@@ -314,7 +317,7 @@ export const RECOMMENDATIONS = [
     status: "needs_review",
     required_signoff_role: "manager",
     reviewer_rationale: {},
-    audit_events: [{ actor: "system", action: "created", note: "Generated from skill graph adjacency", timestamp: "2026-09-08T09:00:00Z" }],
+    audit_events: [{ actor: "system", action: "created", note: "Triggered by intelligence scan (INTERNAL_MOBILITY).", timestamp: "2026-09-08T09:00:00Z" }],
   },
   {
     id: "44444444-4444-4444-4444-444444444403",
@@ -323,9 +326,11 @@ export const RECOMMENDATIONS = [
     category: "recruitment",
     urgency: "medium",
     evidence_ledger: [
-      { type: "interview_rubric", value: 0.87, note: "Final-round average score." },
-      { type: "skill_match", value: 0.655, note: "Direct skills cover core requirements; REST APIs is an adjacent growth area." },
+      { source: "INTERVIEW_RUBRIC", fact: "Final-round average score 0.87; technical round 0.87, final round 0.88." },
+      { source: "SKILL_MATCH", fact: "0.655 deterministic match vs Senior Backend Engineer; direct Go/PostgreSQL/Docker, REST APIs adjacent." },
+      { source: "PIPELINE_STAGE", fact: "Final round reached; best backend-engineer fit in the pipeline." },
     ],
+    executive_summary: "Priya cleared the final round with the strongest backend-engineer skill match in the pipeline and top rubric scores. The evidence supports moving to an offer stage.",
     proposed_action: {
       title: "Advance candidate to offer stage",
       description: "Priya cleared final round with strong rubric scores and the best backend-engineer skill match in the pipeline. Recommend moving to offer.",
@@ -338,7 +343,7 @@ export const RECOMMENDATIONS = [
     status: "needs_review",
     required_signoff_role: "hr_executive",
     reviewer_rationale: {},
-    audit_events: [{ actor: "system", action: "created", note: "Generated from recruitment pipeline", timestamp: "2026-09-13T09:00:00Z" }],
+    audit_events: [{ actor: "system", action: "created", note: "Triggered by intelligence scan (RECRUITMENT).", timestamp: "2026-09-13T09:00:00Z" }],
   },
 ];
 

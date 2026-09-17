@@ -3585,6 +3585,7 @@ export type Database = {
           category: string
           created_at: string
           evidence_ledger: Json
+          executive_summary: string
           id: string
           org_id: string
           proposed_action: Json
@@ -3600,6 +3601,7 @@ export type Database = {
           category: string
           created_at?: string
           evidence_ledger?: Json
+          executive_summary?: string
           id?: string
           org_id: string
           proposed_action?: Json
@@ -3615,6 +3617,7 @@ export type Database = {
           category?: string
           created_at?: string
           evidence_ledger?: Json
+          executive_summary?: string
           id?: string
           org_id?: string
           proposed_action?: Json

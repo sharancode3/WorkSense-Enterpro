@@ -6,6 +6,7 @@ import SkillGraph from "./pages/skill-graph";
 import Recruitment from "./pages/recruitment";
 import Onboarding from "./pages/onboarding";
 import PolicyStudio from "./pages/policy-studio";
+import RecommendationHub from "./pages/recommendation-hub";
 import NotFound from "./pages/NotFound";
 import { ProtectedRoute } from "./components/protected-route";
 
@@ -67,6 +68,15 @@ export const routers = [
     element: (
       <ProtectedRoute>
         <PolicyStudio />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: "/hub",
+    name: "recommendation-hub",
+    element: (
+      <ProtectedRoute>
+        <RecommendationHub />
       </ProtectedRoute>
     ),
   },

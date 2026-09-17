@@ -293,8 +293,8 @@ export default function RoleHome() {
             <div className="rounded-lg bg-white p-6 lg:col-span-2">
               <div className="flex items-center justify-between">
                 <h2 className="text-lg font-extrabold text-foreground">Recommendations awaiting review</h2>
-                <Link to="/app" className="flex items-center gap-1 text-sm font-semibold text-primary">
-                  Hub in Phase 1 <ArrowRight className="h-4 w-4" />
+                <Link to="/hub" className="flex items-center gap-1 text-sm font-semibold text-primary">
+                  Open Recommendation Hub <ArrowRight className="h-4 w-4" />
                 </Link>
               </div>
               {hrRecs.data && hrRecs.data.length > 0 ? (
@@ -386,7 +386,12 @@ export default function RoleHome() {
 
           {role === "manager" && (
             <div className="rounded-lg bg-white p-6 lg:col-span-2">
-              <h2 className="text-lg font-extrabold text-foreground">Team — workforce review signals</h2>
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-extrabold text-foreground">Team — workforce review signals</h2>
+                <Link to="/hub" className="flex items-center gap-1 text-sm font-semibold text-primary">
+                  Recommendation Hub <ArrowRight className="h-4 w-4" />
+                </Link>
+              </div>
               <p className="mt-1 text-sm text-muted-foreground">
                 A 0–100 decision-support indicator. Multiple indicators warrant HR review — never a prediction.
               </p>
