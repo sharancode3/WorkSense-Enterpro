@@ -272,9 +272,9 @@ export const RECOMMENDATIONS = [
     category: "workforce_review",
     urgency: "high",
     evidence_ledger: [
-      { type: "workforce_review_signal", value: 78, note: "Multiple workforce indicators warrant HR review — decision support, not a prediction." },
+      { type: "workforce_review_signal", value: 68, note: "Multiple workforce indicators warrant HR review — decision support, not a prediction." },
       { type: "engagement_survey", value: "3.1 / 5", note: "Declining across two consecutive cycles." },
-      { type: "attendance", value: "below baseline", note: "4 consecutive weeks below personal baseline." },
+      { type: "attendance", value: "pattern change vs own baseline", note: "Recent unapproved absences above personal baseline." },
       { type: "performance", value: "Exceeds Expectations", note: "Last review cycle; strong history of delivery." },
     ],
     proposed_action: {
@@ -354,9 +354,18 @@ interface TwinSeed {
   manager_id: string | null;
   tenure_months: number;
   seniority_level: number;
+  promotion_lag_months: number;
+  attendance: { baseline: number; recent: number };
+  delivery: { missed: number; total: number };
   verified_skills: { name: string; proficiency: number; evidence_source: string; verification_rigor: "low" | "medium" | "high" }[];
   interview_rubrics: unknown[];
-  performance_history: unknown[];
+  performance_history: {
+    cycle: string;
+    rating: string;
+    goals_met?: number;
+    feedback?: { sentiment: "positive" | "negative" | "neutral"; text: string }[];
+    summary: string;
+  }[];
   signals: unknown[];
   audit_events: unknown[];
 }
@@ -374,6 +383,9 @@ export const TWINS: TwinSeed[] = [
     manager_id: null,
     tenure_months: 84,
     seniority_level: 5,
+    promotion_lag_months: 30,
+    attendance: { baseline: 0.3, recent: 0.35 },
+    delivery: { missed: 1, total: 10 },
     verified_skills: [
       { name: "Leadership", proficiency: 5, evidence_source: "performance_review", verification_rigor: "high" },
       { name: "Stakeholder Management", proficiency: 4, evidence_source: "performance_review", verification_rigor: "high" },
@@ -381,10 +393,12 @@ export const TWINS: TwinSeed[] = [
     ],
     interview_rubrics: [],
     performance_history: [
-      { cycle: "2025-H2", rating: "Exceeds Expectations", summary: "Built the People Ops analytics function from scratch." },
-      { cycle: "2026-H1", rating: "Exceeds Expectations", summary: "Led org-wide retention initiative." },
+      { cycle: "2025-H2", rating: "Exceeds Expectations", goals_met: 95, feedback: [{ sentiment: "positive", text: "Built the People Ops analytics function from scratch." }], summary: "Built the People Ops analytics function from scratch." },
+      { cycle: "2026-H1", rating: "Exceeds Expectations", goals_met: 90, feedback: [{ sentiment: "positive", text: "Led org-wide retention initiative." }], summary: "Led org-wide retention initiative." },
     ],
-    signals: [],
+    signals: [
+      { type: "workforce_review_signal", value: 26, computed_at: "2026-09-10T09:00:00Z", factors: { tenure: 0.833, attendance: 0, delivery: 0.1, growth: 0 } },
+    ],
     audit_events: [],
   },
   {
@@ -399,6 +413,9 @@ export const TWINS: TwinSeed[] = [
     manager_id: "22222222-2222-2222-2222-222222222201",
     tenure_months: 48,
     seniority_level: 4,
+    promotion_lag_months: 18,
+    attendance: { baseline: 0.4, recent: 0.3 },
+    delivery: { missed: 1, total: 8 },
     verified_skills: [
       { name: "Leadership", proficiency: 4, evidence_source: "performance_review", verification_rigor: "high" },
       { name: "Go", proficiency: 4, evidence_source: "certification", verification_rigor: "medium" },
@@ -406,9 +423,11 @@ export const TWINS: TwinSeed[] = [
     ],
     interview_rubrics: [],
     performance_history: [
-      { cycle: "2025-H2", rating: "Exceeds Expectations", summary: "Shipped platform reliability program." },
+      { cycle: "2025-H2", rating: "Exceeds Expectations", goals_met: 92, feedback: [{ sentiment: "positive", text: "Shipped platform reliability program." }], summary: "Shipped platform reliability program." },
     ],
-    signals: [],
+    signals: [
+      { type: "workforce_review_signal", value: 17, computed_at: "2026-09-10T09:00:00Z", factors: { tenure: 0.5, attendance: 0, delivery: 0.125, growth: 0 } },
+    ],
     audit_events: [],
   },
   {
@@ -423,6 +442,9 @@ export const TWINS: TwinSeed[] = [
     manager_id: "22222222-2222-2222-2222-222222222202",
     tenure_months: 3,
     seniority_level: 3,
+    promotion_lag_months: 2,
+    attendance: { baseline: 0.3, recent: 0.2 },
+    delivery: { missed: 0, total: 3 },
     verified_skills: [
       { name: "Go", proficiency: 3, evidence_source: "interview_rubric", verification_rigor: "high" },
       { name: "Docker", proficiency: 2, evidence_source: "project", verification_rigor: "medium" },
@@ -432,9 +454,11 @@ export const TWINS: TwinSeed[] = [
       { role: "Backend Engineer", avg_score: 0.85, notes: "Strong systems thinking; growth area in production debugging.", evaluated_at: "2026-06-10T09:00:00Z" },
     ],
     performance_history: [
-      { cycle: "2026-H1", rating: "On Track", summary: "New hire, first sprint shipped on schedule." },
+      { cycle: "2026-H1", rating: "On Track", goals_met: 80, feedback: [{ sentiment: "positive", text: "New hire, first sprint shipped on schedule." }, { sentiment: "neutral", text: "Still ramping on platform specifics." }], summary: "New hire, first sprint shipped on schedule." },
     ],
-    signals: [],
+    signals: [
+      { type: "workforce_review_signal", value: 2, computed_at: "2026-09-10T09:00:00Z", factors: { tenure: 0.056, attendance: 0, delivery: 0, growth: 0 } },
+    ],
     audit_events: [
       { actor: "system", action: "created", note: "Onboarding journey initiated", timestamp: "2026-07-20T09:00:00Z" },
     ],
@@ -451,6 +475,9 @@ export const TWINS: TwinSeed[] = [
     manager_id: "22222222-2222-2222-2222-222222222202",
     tenure_months: 42,
     seniority_level: 3,
+    promotion_lag_months: 40,
+    attendance: { baseline: 0.5, recent: 1.5 },
+    delivery: { missed: 3, total: 8 },
     verified_skills: [
       { name: "SQL", proficiency: 4, evidence_source: "certification", verification_rigor: "high" },
       { name: "Python", proficiency: 3, evidence_source: "project", verification_rigor: "medium" },
@@ -459,15 +486,15 @@ export const TWINS: TwinSeed[] = [
     ],
     interview_rubrics: [],
     performance_history: [
-      { cycle: "2024-H2", rating: "Exceeds Expectations", summary: "Rebuilt core reporting pipeline." },
-      { cycle: "2025-H1", rating: "Exceeds Expectations", summary: "Owned executive metrics dashboards." },
-      { cycle: "2025-H2", rating: "Exceeds Expectations", summary: "Consistent high output; strong stakeholder trust." },
-      { cycle: "2026-H1", rating: "Exceeds Expectations", summary: "Top-quartile delivery again; engagement concerns noted." },
+      { cycle: "2024-H2", rating: "Exceeds Expectations", goals_met: 95, feedback: [{ sentiment: "positive", text: "Rebuilt core reporting pipeline." }], summary: "Rebuilt core reporting pipeline." },
+      { cycle: "2025-H1", rating: "Exceeds Expectations", goals_met: 93, feedback: [{ sentiment: "positive", text: "Owned executive metrics dashboards." }], summary: "Owned executive metrics dashboards." },
+      { cycle: "2025-H2", rating: "Exceeds Expectations", goals_met: 90, feedback: [{ sentiment: "positive", text: "Consistent high output; strong stakeholder trust." }], summary: "Consistent high output; strong stakeholder trust." },
+      { cycle: "2026-H1", rating: "Exceeds Expectations", goals_met: 88, feedback: [{ sentiment: "positive", text: "Top-quartile delivery again." }, { sentiment: "negative", text: "Engagement concerns noted; seeks more scope and leadership exposure." }], summary: "Top-quartile delivery again; engagement concerns noted." },
     ],
     signals: [
-      { type: "workforce_review_signal", value: 78, computed_at: "2026-09-10T09:00:00Z", factors: ["declining engagement survey", "below-baseline attendance (4 weeks)", "3 late deliverables this quarter"] },
+      { type: "workforce_review_signal", value: 68, computed_at: "2026-09-10T09:00:00Z", factors: { tenure: 1, attendance: 1, delivery: 0.375, growth: 1 } },
+      { type: "seeks_growth", value: true, last_measured: "2026-08-25T09:00:00Z" },
       { type: "engagement_survey", value: "3.1 / 5", trend: "declining over 2 cycles", last_measured: "2026-08-25T09:00:00Z" },
-      { type: "attendance", value: "below baseline", windows: "last 4 weeks", last_measured: "2026-09-12T09:00:00Z" },
     ],
     audit_events: [
       { actor: "system", action: "signal_updated", note: "Workforce review signal recomputed to 78", timestamp: "2026-09-10T09:00:00Z" },
@@ -485,6 +512,9 @@ export const TWINS: TwinSeed[] = [
     manager_id: "22222222-2222-2222-2222-222222222201",
     tenure_months: 30,
     seniority_level: 4,
+    promotion_lag_months: 12,
+    attendance: { baseline: 0.3, recent: 0.4 },
+    delivery: { missed: 1, total: 9 },
     verified_skills: [
       { name: "Leadership", proficiency: 4, evidence_source: "performance_review", verification_rigor: "high" },
       { name: "People Analytics", proficiency: 3, evidence_source: "certification", verification_rigor: "medium" },
@@ -492,9 +522,11 @@ export const TWINS: TwinSeed[] = [
     ],
     interview_rubrics: [],
     performance_history: [
-      { cycle: "2026-H1", rating: "Exceeds Expectations", summary: "Partnered with Platform and Data orgs on retention." },
+      { cycle: "2026-H1", rating: "Exceeds Expectations", goals_met: 91, feedback: [{ sentiment: "positive", text: "Partnered with Platform and Data orgs on retention." }], summary: "Partnered with Platform and Data orgs on retention." },
     ],
-    signals: [],
+    signals: [
+      { type: "workforce_review_signal", value: 18, computed_at: "2026-09-10T09:00:00Z", factors: { tenure: 0.333, attendance: 0.333, delivery: 0.111, growth: 0 } },
+    ],
     audit_events: [],
   },
   {
@@ -509,6 +541,9 @@ export const TWINS: TwinSeed[] = [
     manager_id: "22222222-2222-2222-2222-222222222201",
     tenure_months: 18,
     seniority_level: 3,
+    promotion_lag_months: 10,
+    attendance: { baseline: 0.25, recent: 0.3 },
+    delivery: { missed: 2, total: 11 },
     verified_skills: [
       { name: "Sourcing", proficiency: 4, evidence_source: "performance_review", verification_rigor: "high" },
       { name: "Interview Design", proficiency: 3, evidence_source: "certification", verification_rigor: "medium" },
@@ -516,9 +551,11 @@ export const TWINS: TwinSeed[] = [
     ],
     interview_rubrics: [],
     performance_history: [
-      { cycle: "2026-H1", rating: "Exceeds Expectations", summary: "Filled 12 roles; cut time-to-hire by 20%." },
+      { cycle: "2026-H1", rating: "Exceeds Expectations", goals_met: 94, feedback: [{ sentiment: "positive", text: "Filled 12 roles; cut time-to-hire by 20%." }], summary: "Filled 12 roles; cut time-to-hire by 20%." },
     ],
-    signals: [],
+    signals: [
+      { type: "workforce_review_signal", value: 16, computed_at: "2026-09-10T09:00:00Z", factors: { tenure: 0.278, attendance: 0.2, delivery: 0.182, growth: 0 } },
+    ],
     audit_events: [],
   },
   {
@@ -533,6 +570,9 @@ export const TWINS: TwinSeed[] = [
     manager_id: null,
     tenure_months: 0,
     seniority_level: 4,
+    promotion_lag_months: 0,
+    attendance: { baseline: 0, recent: 0 },
+    delivery: { missed: 0, total: 0 },
     verified_skills: [
       { name: "Go", proficiency: 4, evidence_source: "interview_rubric", verification_rigor: "high" },
       { name: "PostgreSQL", proficiency: 4, evidence_source: "technical_assessment", verification_rigor: "medium" },
@@ -561,6 +601,9 @@ export const TWINS: TwinSeed[] = [
     manager_id: null,
     tenure_months: 0,
     seniority_level: 2,
+    promotion_lag_months: 0,
+    attendance: { baseline: 0, recent: 0 },
+    delivery: { missed: 0, total: 0 },
     verified_skills: [
       { name: "Go", proficiency: 2, evidence_source: "resume", verification_rigor: "low" },
       { name: "Node.js", proficiency: 4, evidence_source: "resume", verification_rigor: "low" },
@@ -583,6 +626,9 @@ export const TWINS: TwinSeed[] = [
     manager_id: null,
     tenure_months: 0,
     seniority_level: 2,
+    promotion_lag_months: 0,
+    attendance: { baseline: 0, recent: 0 },
+    delivery: { missed: 0, total: 0 },
     verified_skills: [
       { name: "SQL", proficiency: 4, evidence_source: "resume", verification_rigor: "low" },
       { name: "Python", proficiency: 3, evidence_source: "resume", verification_rigor: "low" },

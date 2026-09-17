@@ -3362,10 +3362,12 @@ export type Database = {
     Tables: {
       digital_twins: {
         Row: {
+          attendance: Json
           audit_events: Json
           auth_user_id: string | null
           computed_fits: Json
           created_at: string
+          delivery: Json
           department: string | null
           email: string
           id: string
@@ -3375,6 +3377,8 @@ export type Database = {
           name: string
           org_id: string | null
           performance_history: Json
+          performance_synthesis: Json
+          promotion_lag_months: number
           resume_text: string | null
           role: string
           seniority_level: number
@@ -3385,10 +3389,12 @@ export type Database = {
           verified_skills: Json
         }
         Insert: {
+          attendance?: Json
           audit_events?: Json
           auth_user_id?: string | null
           computed_fits?: Json
           created_at?: string
+          delivery?: Json
           department?: string | null
           email: string
           id?: string
@@ -3398,6 +3404,8 @@ export type Database = {
           name: string
           org_id?: string | null
           performance_history?: Json
+          performance_synthesis?: Json
+          promotion_lag_months?: number
           resume_text?: string | null
           role: string
           seniority_level?: number
@@ -3408,10 +3416,12 @@ export type Database = {
           verified_skills?: Json
         }
         Update: {
+          attendance?: Json
           audit_events?: Json
           auth_user_id?: string | null
           computed_fits?: Json
           created_at?: string
+          delivery?: Json
           department?: string | null
           email?: string
           id?: string
@@ -3421,6 +3431,8 @@ export type Database = {
           name?: string
           org_id?: string | null
           performance_history?: Json
+          performance_synthesis?: Json
+          promotion_lag_months?: number
           resume_text?: string | null
           role?: string
           seniority_level?: number
@@ -3674,10 +3686,12 @@ export type Database = {
       current_twin: {
         Args: Record<PropertyKey, never>
         Returns: {
+          attendance: Json
           audit_events: Json
           auth_user_id: string | null
           computed_fits: Json
           created_at: string
+          delivery: Json
           department: string | null
           email: string
           id: string
@@ -3687,6 +3701,8 @@ export type Database = {
           name: string
           org_id: string | null
           performance_history: Json
+          performance_synthesis: Json
+          promotion_lag_months: number
           resume_text: string | null
           role: string
           seniority_level: number
