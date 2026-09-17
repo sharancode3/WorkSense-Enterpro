@@ -55,7 +55,7 @@ describe("citation validator", () => {
   it("accepts a quote that is verbatim (fuzzy) in the retrieved chunk", () => {
     const quote = "Employees accrue 24 days of paid annual leave per year";
     const { valid, droppedCount } = validateCitations(
-      [{ claim: "24 days", doc_code: "POL-LVE", section: "s1", quote }],
+      [{ claim: "24 days", doc_code: "POL-LVE", section: "s1", exact_quote: quote }],
       chunks
     );
     expect(droppedCount).toBe(0);
@@ -64,7 +64,7 @@ describe("citation validator", () => {
 
   it("drops a fabricated quote that appears nowhere in the chunks", () => {
     const { valid, droppedCount } = validateCitations(
-      [{ claim: "sabbatical after 1 year", doc_code: "POL-LVE", section: "s1", quote: "every employee gets a fully paid sabbatical quarter" }],
+      [{ claim: "sabbatical after 1 year", doc_code: "POL-LVE", section: "s1", exact_quote: "every employee gets a fully paid sabbatical quarter" }],
       chunks
     );
     expect(droppedCount).toBe(1);

@@ -425,9 +425,27 @@ const corsHeaders = {
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
-const PROBE_SYSTEM = `You tailor behavioral interview probe questions to a candidate's skill profile.
-Respond with JSON only: {"probes":[{"skill":"string","questions":["string"]}]}
-Questions must probe how the candidate would close a specific skill gap or leverage an adjacent/transferable skill. Never reference scores or that a model generated the questions.`;
+const BIAS_SYSTEM = `You are the WorkSense Interview Architect. For the given role, competency, and the candidate's specific Adjacent/Transferable/Gap items, generate one question, two follow-up probes, and a strict 5-tier OBSERVABLE behavioral rubric (concrete behaviors, not adjectives). Tier 1 = concrete red-flag behavior. Tier 3 = solid role-baseline behavior. Tier 5 = master/architectural-level behavior. Bias the question toward probing the candidate's specific adjacent/transferable claim, not a generic question.
+Respond with JSON only:
+{"competency":"string","question":"string","follow_up_probes":["string","string"],
+"rubric":{"tier_1":"string","tier_2":"string","tier_3":"string","tier_4":"string","tier_5":"string"}}`;
+
+const TIER_KEYS = ["tier_1", "tier_2", "tier_3", "tier_4", "tier_5"] as const;
+
+function shapeRubric(parsed: { competency?: string; question?: string; follow_up_probes?: string[]; rubric?: Partial<Record<(typeof TIER_KEYS)[number], string>> }, fallbackComp: string) {
+  return {
+    competency: (parsed.competency ?? fallbackComp).replace(/\s*\(.*\)\s*$/, "").trim() || fallbackComp,
+    question: parsed.question ?? `Tell me about your experience with ${fallbackComp}.`,
+    follow_up_probes: (parsed.follow_up_probes ?? []).slice(0, 2),
+    rubric: {
+      tier_1: parsed.rubric?.tier_1 ?? "",
+      tier_2: parsed.rubric?.tier_2 ?? "",
+      tier_3: parsed.rubric?.tier_3 ?? "",
+      tier_4: parsed.rubric?.tier_4 ?? "",
+      tier_5: parsed.rubric?.tier_5 ?? "",
+    },
+  };
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -488,19 +506,12 @@ Deno.serve(async (req) => {
       temperature: 0.3,
       maxTokens: 1200,
       system:
-        'You design 5-tier behavioral interview rubrics. Respond with JSON only: {"competency":"string","question":"string","levels":[{"tier":"Red Flag","criteria":["string"]},{"tier":"Developing","criteria":["string"]},{"tier":"Competent-Baseline","criteria":["string"]},{"tier":"Advanced","criteria":["string"]},{"tier":"Master-Architectural","criteria":["string"]}]}',
+        'You are the WorkSense Interview Architect. For the given role and competency, generate one question, two follow-up probes, and a strict 5-tier OBSERVABLE behavioral rubric (concrete behaviors, not adjectives). Tier 1 = concrete red-flag behavior. Tier 3 = solid role-baseline behavior. Tier 5 = master/architectural-level behavior.\nRespond with JSON only:\n{"competency":"string","question":"string","follow_up_probes":["string","string"],"rubric":{"tier_1":"string","tier_2":"string","tier_3":"string","tier_4":"string","tier_5":"string"}}',
       user: `Role: ${reqRow.title}. Competency: ${comp} (required proficiency ${target} of 5). Produce the rubric as JSON.`,
-    })) as { competency?: string; question?: string; levels?: { tier?: string; criteria?: string[] }[] };
-    const name = (parsed.competency ?? comp).replace(/\s*\(.*\)\s*$/, "").trim() || comp;
+    })) as { competency?: string; question?: string; follow_up_probes?: string[]; rubric?: Partial<Record<(typeof TIER_KEYS)[number], string>> };
+    const name = shapeRubric(parsed, comp).competency;
     rubrics = rubrics.filter((r) => r.competency.toLowerCase() !== name.toLowerCase());
-    rubrics.push({
-      competency: name,
-      question: parsed.question ?? `Tell me about your experience with ${comp}.`,
-      levels: ["Red Flag", "Developing", "Competent-Baseline", "Advanced", "Master-Architectural"].map((label, i) => ({
-        tier: label,
-        criteria: (parsed.levels ?? []).find((l) => l.tier === label)?.criteria ?? [],
-      })),
-    });
+    rubrics.push(shapeRubric(parsed, comp));
   }
   if (missing.length > 0) {
     await supabase.from("job_requisitions").update({ rubrics }).eq("id", reqId);
@@ -539,17 +550,17 @@ Deno.serve(async (req) => {
 
   const focusItems = [...(fit.classification.gaps ?? []), ...(fit.classification.adjacent ?? []), ...(fit.classification.transferable ?? [])].slice(0, 3);
 
-  // 3) One bounded Qwen call: candidate-specific probes biased by the fit card.
-  let probes: { skill: string; questions: string[] }[] = [];
+  // One 6.2 call, biased toward the candidate's top focus item from their Fit card.
+  let biasedProbe: { competency: string; question: string; follow_up_probes: string[]; rubric: Record<string, string> } | null = null;
   if (focusItems.length > 0) {
     const parsed = (await callQwen({
       json: true,
       temperature: 0.3,
       maxTokens: 900,
-      system: PROBE_SYSTEM,
-      user: `Candidate is applying for ${reqRow.title}. Their skill fit flagged these focus areas: ${focusItems.map((i) => i.skill).join(", ")}. Write 2 behavioral probe questions per area as JSON.`,
-    })) as { probes?: { skill?: string; questions?: string[] }[] };
-    probes = (parsed.probes ?? []).slice(0, 3).map((p) => ({ skill: p.skill ?? "Focus area", questions: (p.questions ?? []).slice(0, 2) }));
+      system: BIAS_SYSTEM,
+      user: `Role: ${reqRow.title}. Candidate's Adjacent/Transferable/Gap items: ${focusItems.map((i) => i.skill).join(", ")}. Bias the question toward the top item and produce the rubric JSON.`,
+    })) as { competency?: string; question?: string; follow_up_probes?: string[]; rubric?: Partial<Record<(typeof TIER_KEYS)[number], string>> };
+    biasedProbe = shapeRubric(parsed, focusItems[0].skill);
   }
 
   const kit = {
@@ -559,7 +570,7 @@ Deno.serve(async (req) => {
     candidate_name: twin.name,
     score: fit.score,
     focus_items: focusItems.map((i) => i.skill),
-    probes,
+    biased_probe: biasedProbe,
     competencies: rubrics,
     created_at: new Date().toISOString(),
   };

@@ -9,17 +9,12 @@ const corsHeaders = {
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
-const RUBRIC_SYSTEM = `You design 5-tier behavioral interview rubrics.
-Respond with JSON only, exactly this shape:
-{"competency":"string","question":"string","levels":[
-{"tier":"Red Flag","criteria":["string"]},
-{"tier":"Developing","criteria":["string"]},
-{"tier":"Competent-Baseline","criteria":["string"]},
-{"tier":"Advanced","criteria":["string"]},
-{"tier":"Master-Architectural","criteria":["string"]}]}
-Criteria must be observable behaviors. Do not reference candidates, resumes, or anything outside the competency.`;
+const RUBRIC_SYSTEM = `You are the WorkSense Interview Architect. For the given role and competency, generate one question, two follow-up probes, and a strict 5-tier OBSERVABLE behavioral rubric (concrete behaviors, not adjectives). Tier 1 = concrete red-flag behavior. Tier 3 = solid role-baseline behavior. Tier 5 = master/architectural-level behavior.
+Respond with JSON only:
+{"competency":"string","question":"string","follow_up_probes":["string","string"],
+"rubric":{"tier_1":"string","tier_2":"string","tier_3":"string","tier_4":"string","tier_5":"string"}}`;
 
-const TIER_LABELS = ["Red Flag", "Developing", "Competent-Baseline", "Advanced", "Master-Architectural"];
+const TIER_KEYS = ["tier_1", "tier_2", "tier_3", "tier_4", "tier_5"] as const;
 
 async function generateRubric(supabase, reqRow: { id: string; title: string; required_skills: { skill: string; target_proficiency: number }[] }, competency: string, target: number) {
   const parsed = (await callQwen({
@@ -28,17 +23,24 @@ async function generateRubric(supabase, reqRow: { id: string; title: string; req
     maxTokens: 1200,
     system: RUBRIC_SYSTEM,
     user: `Role: ${reqRow.title}. Competency: ${competency} (required proficiency ${target} of 5).\nProduce the 5-tier behavioral interview rubric as JSON.`,
-  })) as { competency?: string; question?: string; levels?: { tier?: string; criteria?: string[] }[] };
-
-  const levels = TIER_LABELS.map((label, i) => ({
-    tier: label,
-    criteria: (parsed.levels ?? []).find((l) => l.tier === label)?.criteria ?? [],
-  }));
+  })) as {
+    competency?: string;
+    question?: string;
+    follow_up_probes?: string[];
+    rubric?: Partial<Record<(typeof TIER_KEYS)[number], string>>;
+  };
 
   return {
     competency: (parsed.competency ?? competency).replace(/\s*\(.*\)\s*$/, "").trim() || competency,
     question: parsed.question ?? `Tell me about your experience with ${competency}.`,
-    levels,
+    follow_up_probes: (parsed.follow_up_probes ?? []).slice(0, 2),
+    rubric: {
+      tier_1: parsed.rubric?.tier_1 ?? "",
+      tier_2: parsed.rubric?.tier_2 ?? "",
+      tier_3: parsed.rubric?.tier_3 ?? "",
+      tier_4: parsed.rubric?.tier_4 ?? "",
+      tier_5: parsed.rubric?.tier_5 ?? "",
+    },
   };
 }
 

@@ -10,10 +10,9 @@ const corsHeaders = {
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
-const SUMMARY_SYSTEM = `You are a workforce decision synthesis writer.
-Given an evidence ledger (facts already computed deterministically — never add, remove or alter facts) and an urgency label, write:
-{"executive_summary":"2-3 sentences synthesizing the situation from the evidence only","recommended_action":"one concrete sentence"}
-Never compute scores, never invent facts, never use the word 'prediction' about people leaving.`;
+const SUMMARY_SYSTEM = `You are the WorkSense Decision Support Synthesizer. You are given an already-computed evidence_ledger and urgency — do not change or second-guess the numbers. Write a short executive_summary connecting the evidence into a clear rationale for the proposed action, for a human to approve or reject. You are not making the decision.
+Respond with JSON only:
+{"title":"string","executive_summary":"string","proposed_action":{"action_type":"string","target_entity_id":"string"},"required_human_signoff_role":"HR_EXECUTIVE|MANAGER"}`;
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -76,8 +75,13 @@ Deno.serve(async (req) => {
       temperature: 0.2,
       maxTokens: 300,
       system: SUMMARY_SYSTEM,
-      user: `Category: ${c.category}\nUrgency: ${c.urgency}\nEvidence ledger:\n${JSON.stringify(c.evidence_ledger, null, 2)}\nWrite the executive summary JSON.`,
-    })) as { executive_summary?: string; recommended_action?: string };
+      user: `Category: ${c.category}\nUrgency: ${c.urgency}\nEvidence ledger:\n${JSON.stringify(c.evidence_ledger, null, 2)}\nWrite the synthesis JSON.`,
+    })) as {
+      title?: string;
+      executive_summary?: string;
+      proposed_action?: { action_type?: string; target_entity_id?: string };
+      required_human_signoff_role?: string;
+    };
 
     const { error } = await supabase.from("recommendations").insert({
       org_id: caller.org_id,
@@ -87,11 +91,14 @@ Deno.serve(async (req) => {
       evidence_ledger: c.evidence_ledger,
       proposed_action: {
         ...c.proposed_action,
+        title: parsed.title ?? c.proposed_action.title,
         executive_summary: parsed.executive_summary ?? "",
-        recommended_action: parsed.recommended_action ?? c.proposed_action.title,
+        action_type: c.category,
+        target_entity_id: c.twin_id,
       },
       executive_summary: parsed.executive_summary ?? "",
       status: "needs_review",
+      // Sign-off comes from the deterministic engine — the model is not deciding.
       required_signoff_role: c.required_signoff_role,
       reviewer_rationale: {},
       audit_events: [{ actor: caller.email ?? uid, action: "created", note: `Triggered by intelligence scan (${c.category}).`, timestamp: now }],

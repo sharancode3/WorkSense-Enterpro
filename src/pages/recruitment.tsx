@@ -115,7 +115,6 @@ export default function Recruitment() {
   const [resumeText, setResumeText] = useState("");
   const [extractBusy, setExtractBusy] = useState(false);
   const [extractResult, setExtractResult] = useState<{ skills: string[]; years: number; fit: number | null } | null>(null);
-
   // Evaluate modal
   const [evalTwin, setEvalTwin] = useState<CandidateRow | null>(null);
   const [evalNotes, setEvalNotes] = useState("");
@@ -243,7 +242,7 @@ export default function Recruitment() {
     try {
       const res = await extractResume(resumeTwin.id, resumeText, req.id);
       setExtractResult({
-        skills: res.skills.map((s) => s.name),
+        skills: res.extracted_skills.map((s) => s.name),
         years: res.years_experience ?? 0,
         fit: res.fit?.score ?? null,
       });
@@ -485,19 +484,17 @@ export default function Recruitment() {
                   <span className="font-bold">{kit.focus_items.join(", ") || "core skills"}</span>
                 </p>
               </div>
-              {kit.probes.length > 0 && (
+              {kit.biased_probe && (
                 <div>
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Candidate-specific probes</h3>
-                  <ul className="mt-2 flex flex-col gap-2">
-                    {kit.probes.map((p) => (
-                      <li key={p.skill} className="rounded-md bg-muted p-3">
-                        <p className="text-sm font-bold text-foreground">{p.skill}</p>
-                        {p.questions.map((q, i) => (
-                          <p key={i} className="mt-1 text-sm text-muted-foreground">Q{i + 1}: {q}</p>
-                        ))}
-                      </li>
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                    Candidate-specific probe · {kit.biased_probe.competency}
+                  </h3>
+                  <div className="mt-2 rounded-md bg-muted p-3">
+                    <p className="text-sm font-bold text-foreground">{kit.biased_probe.question}</p>
+                    {kit.biased_probe.follow_up_probes.map((q, i) => (
+                      <p key={i} className="mt-1 text-sm text-muted-foreground">Probe {i + 1}: {q}</p>
                     ))}
-                  </ul>
+                  </div>
                 </div>
               )}
               {kit.competencies.map((comp) => (
@@ -505,10 +502,10 @@ export default function Recruitment() {
                   <p className="font-bold text-foreground">{comp.competency}</p>
                   <p className="mt-1 text-sm text-muted-foreground">{comp.question}</p>
                   <div className="mt-2 flex flex-col gap-1.5">
-                    {comp.levels.map((lvl) => (
-                      <div key={lvl.tier} className="flex gap-2 text-xs">
-                        <span className="w-36 shrink-0 font-bold uppercase tracking-wide text-primary">{lvl.tier}</span>
-                        <span className="text-muted-foreground">{lvl.criteria.join(" · ")}</span>
+                    {(["tier_1", "tier_2", "tier_3", "tier_4", "tier_5"] as const).map((tier, i) => (
+                      <div key={tier} className="flex gap-2 text-xs">
+                        <span className="w-36 shrink-0 font-bold uppercase tracking-wide text-primary">Tier {i + 1}</span>
+                        <span className="text-muted-foreground">{comp.rubric[tier]}</span>
                       </div>
                     ))}
                   </div>

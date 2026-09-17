@@ -191,7 +191,7 @@ export default function PolicyStudio() {
                         <span className="text-xs text-muted-foreground">{c.claim}</span>
                       </div>
                       <blockquote className="rounded-md bg-muted px-3 py-2 text-sm italic text-foreground/80">
-                        “{c.quote}”
+                        “{c.exact_quote}”
                       </blockquote>
                     </li>
                   ))}

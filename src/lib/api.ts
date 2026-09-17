@@ -80,18 +80,18 @@ export async function fetchCandidateStatus(
 
 export interface ExtractResumeResult {
   ok: true;
-  skills: { name: string; proficiency: number; evidence_source: string; verification_rigor: string; evidence?: string }[];
-  experience: { title: string; years: number; highlights: string[] }[];
-  projects: { name: string; description: string; technologies: string[] }[];
-  summary: string;
+  full_name: string;
   years_experience: number;
+  extracted_skills: { name: string; proficiency: number; evidence_source: string; verification_rigor: string; evidence?: string; years: number }[];
+  verified_projects: { project_name: string; role: string; tech_stack: string[]; impact_metric: string }[];
   fit: FitRecordShape | null;
 }
 
 export interface RubricCompetency {
   competency: string;
   question: string;
-  levels: { tier: string; criteria: string[] }[];
+  follow_up_probes: string[];
+  rubric: { tier_1: string; tier_2: string; tier_3: string; tier_4: string; tier_5: string };
 }
 
 export interface InterviewKit {
@@ -101,7 +101,7 @@ export interface InterviewKit {
   candidate_name: string;
   score: number;
   focus_items: string[];
-  probes: { skill: string; questions: string[] }[];
+  biased_probe: RubricCompetency | null;
   competencies: RubricCompetency[];
   created_at: string;
 }
@@ -212,10 +212,10 @@ export const onboardingTask = (
 // ---- Policy Studio ----
 
 export interface PolicyCitation {
-  claim: string;
+  claim?: string;
   doc_code: string;
   section: string;
-  quote: string;
+  exact_quote: string;
 }
 
 export interface PolicyRetrievedChunk {

@@ -249,7 +249,7 @@ export interface Citation {
   claim?: string;
   doc_code?: string;
   section?: string;
-  quote?: string;
+  exact_quote?: string;
 }
 
 /**
@@ -263,7 +263,7 @@ export function validateCitations(citations: Citation[] | undefined, chunks: Ret
   const valid: Citation[] = [];
   let dropped = 0;
   for (const c of citations ?? []) {
-    const quote = normalizeForMatch(c.quote ?? "");
+    const quote = normalizeForMatch(c.exact_quote ?? "");
     if (!quote) {
       dropped++;
       continue;
@@ -291,14 +291,9 @@ const corsHeaders = {
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
-const GROUNDING_SYSTEM = `You are a grounded HR policy assistant.
-Answer ONLY from the provided <policy_chunks>. Each chunk is tagged with its doc_code, section heading and text.
-If the chunks do not contain the answer, return status "insufficient_evidence" with an empty answer and empty citations.
-Never invent policies, numbers, quotes, or approval flows that are not in the chunks.
-For every factual claim provide a citation with an EXACT short quote copied verbatim from a chunk's text.
+const GROUNDING_SYSTEM = `You are the WorkSense HR Policy Reasoning Agent. Answer using ONLY the provided policy excerpts. If they do not contain the answer, set status to "insufficient_evidence" and say so plainly — never invent a policy. Every claim must cite doc_code, section, and a short exact quote.
 Respond with JSON only:
-{"status":"grounded"|"partially_supported"|"insufficient_evidence","answer":"string","citations":[{"claim":"string","doc_code":"string","section":"string","quote":"string"}],"note":"string"}
-Use "grounded" only when every claim has a verbatim quote. Use "partially_supported" when some claims lack a verbatim quote.`;
+{"status":"grounded_response|insufficient_evidence","answer":"string","citations":[{"doc_code":"string","section":"string","exact_quote":"string"}]}`;
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -374,15 +369,15 @@ Question (untrusted): ${wrapUntrusted(question)}`,
   })) as {
     status?: string;
     answer?: string;
-    citations?: { claim?: string; doc_code?: string; section?: string; quote?: string }[];
-    note?: string;
+    citations?: { doc_code?: string; section?: string; exact_quote?: string }[];
   };
 
-  // 4) Never let an ungrounded answer through: every quote must exist verbatim
-  // in a retrieved chunk. Dropped citations downgrade the confidence state.
+  // Never let an ungrounded answer through: every exact_quote must exist
+  // verbatim in a retrieved chunk. Dropped citations downgrade the state.
   const { valid, droppedCount } = validateCitations(parsed.citations, retrieval);
   const answer = String(parsed.answer ?? "").trim();
-  let status = parsed.status === "partially_supported" ? "partially_supported" : "grounded";
+  let status: "grounded" | "partially_supported" | "insufficient_evidence" =
+    parsed.status === "grounded_response" ? "grounded" : "insufficient_evidence";
 
   if (status === "grounded" && droppedCount > 0) status = "partially_supported";
   if (answer.length === 0 || (valid.length === 0 && droppedCount > 0)) status = "insufficient_evidence";
@@ -396,7 +391,7 @@ Question (untrusted): ${wrapUntrusted(question)}`,
       answer: "",
       citations: [],
       retrieval,
-      note: parsed.note ?? "The model could not answer from the retrieved chunks.",
+      note: "The model could not answer from the retrieved chunks.",
     });
   }
 
@@ -408,6 +403,5 @@ Question (untrusted): ${wrapUntrusted(question)}`,
     answer,
     citations: valid,
     retrieval,
-    note: parsed.note ?? "",
   });
 });

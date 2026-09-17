@@ -113,7 +113,7 @@ export interface Citation {
   claim?: string;
   doc_code?: string;
   section?: string;
-  quote?: string;
+  exact_quote?: string;
 }
 
 /**
@@ -127,7 +127,7 @@ export function validateCitations(citations: Citation[] | undefined, chunks: Ret
   const valid: Citation[] = [];
   let dropped = 0;
   for (const c of citations ?? []) {
-    const quote = normalizeForMatch(c.quote ?? "");
+    const quote = normalizeForMatch(c.exact_quote ?? "");
     if (!quote) {
       dropped++;
       continue;
