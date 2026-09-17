@@ -57,6 +57,14 @@ export const DEMO_ACCOUNTS: DemoAccount[] = [
     badge: "EMPLOYEE",
     blurb: "Your tasks, your growth path, and instant answers to policy questions.",
   },
+  {
+    role: "it_security",
+    email: "elena@worksense.demo",
+    password: DEMO_PASSWORD,
+    name: "Elena Voss",
+    badge: "IT SEC",
+    blurb: "Provision access, resolve blockers, and keep onboarding technically on track.",
+  },
 ];
 
 export const DEMO_CANDIDATE_CODE = "WS-PRIYA-2026";

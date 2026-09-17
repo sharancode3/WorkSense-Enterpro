@@ -222,6 +222,91 @@ export const onboardingTask = (
     { journey_id: journeyId, task_id: taskId, action, note }
   );
 
+// ---- Phase 8: adaptive onboarding (normalized plan/task model) ----
+
+export type PlanTaskType = "learning" | "verification" | "provisioning" | "policy" | "access" | "onboarding_admin";
+export type OwnerRole = "employee" | "manager" | "hr" | "it_security";
+export type PlanTaskState = "pending" | "blocked" | "ready" | "in_progress" | "done" | "waived" | "failed";
+
+export interface PlanTaskView {
+  task_code: string;
+  title: string;
+  task_type: PlanTaskType;
+  owner_role: OwnerRole;
+  required: boolean;
+  non_waivable: boolean;
+  depends_on: string[];
+  duration_days: number;
+  due_date: string | null;
+  topological_level: number;
+  why_evidence: { reason: string; source_evidence: { source_type: string; fact: string; ref?: string }[] };
+  evidence_requirements: { kind: "note" | "assessment_id"; label: string; required: boolean }[];
+  state: PlanTaskState;
+  blocked_reasons: string[];
+  blockers: { id: string; note: string; reported_by: string; at: string; status: "open" | "resolved" }[];
+  waiver: { by_twin_id: string; by_name: string; reason: string; policy_basis: { doc_code: string; version: number | null } | null; at: string } | null;
+  completion_record: {
+    actor_twin_id: string;
+    actor_name: string;
+    at: string;
+    evidence: { kind: string; label: string; value: string }[];
+    attempt_hash: string;
+    note?: string;
+  } | null;
+  adaptation: { kind: "replaced" | "reopened_gap"; replaced_by?: string; reason: string; source_evidence: { source_type: string; fact: string; ref?: string }[]; at: string; actor_twin_id: string } | null;
+}
+
+export interface PlanView {
+  id: string;
+  twin_id: string;
+  application_id: string | null;
+  version: number;
+  plan_hash: string;
+  status: "draft" | "pending_approval" | "approved" | "completed" | "superseded";
+  manager_approval: { by: string; by_twin_id: string; at: string } | null;
+  hr_approval: { by: string; by_twin_id: string; at: string } | null;
+  start_date: string;
+  generated_at: string;
+  readiness: {
+    ready_pct: number;
+    satisfied: number;
+    total: number;
+    remaining_critical_days: number;
+    projected_ready_date: string | null;
+    blocked_count: number;
+    note: string;
+  };
+  carryover: { task_code: string; from_version: number; from_plan_id: string; note: string }[];
+  audit_events: { actor: string; action: string; note?: string; timestamp: string }[];
+}
+
+export const onboardingPlanBuild = (twinId: string, regen = false, startDate?: string) =>
+  invoke<{ ok: true; plan: PlanView & { tasks: PlanTaskView[]; requisition: { id: string; title: string }; fit_current: number } }>(
+    "onboarding-plan",
+    { twin_id: twinId, regen, start_date: startDate }
+  );
+
+export const onboardingPlanApprove = (planId: string, planHash: string) =>
+  invoke<{ ok: true; plan_id: string; version: number; plan_hash: string; status: string; manager_approved: boolean; hr_approved: boolean }>(
+    "onboarding-approve",
+    { plan_id: planId, plan_hash: planHash }
+  );
+
+export interface TaskActionPayload {
+  evidence?: { kind: "note" | "assessment_id"; label: string; value: string }[];
+  note?: string;
+  blocker_id?: string;
+  waiver?: { reason?: string; policy_basis?: { doc_code?: string; version?: number | null } | null };
+  skill?: string;
+  source_evidence?: { source_type: string; fact: string; ref?: string }[];
+}
+
+export const onboardingTaskAction = (planId: string, taskCode: string, action: "complete" | "block" | "resolve" | "waive" | "adapt" | "fail", payload: TaskActionPayload = {}) =>
+  invoke<{ ok: true; action: string; task_code: string; state?: string; readiness?: PlanView["readiness"]; plan_id?: string; version?: number; status?: string; plan_hash?: string; replaced_by?: string; reopened_by?: string; completion?: unknown; waiver?: unknown; blockers?: unknown[] }>(
+    "onboarding-task",
+    { plan_id: planId, task_code: taskCode, action, ...payload }
+  );
+
 // ---- Policy Studio ----
 
 export interface PolicyCitation {

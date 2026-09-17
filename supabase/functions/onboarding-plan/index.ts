@@ -281,39 +281,113 @@ export function fitKey(record: { target_type: string; target_id: string; scenari
 
 
 // ---------------------------------------------------------------------------
-// WorkSense Adaptive Onboarding engine — fully deterministic, zero LLM.
-//  - Bloom-style waiver rule (proficiency >= target -> waive)
-//  - Plan quality guard (non-waivable tasks)
-//  - Kahn's topological scheduler + date assignment
-//  - Blocker-aware date recomputation
+// WorkSense Phase 8 onboarding engine — fully deterministic, zero LLM.
+//  - Task definition vs execution state (separate column groups)
+//  - Strict owner matrix: employee | manager | hr | it_security (no broad HR
+//    to service owners)
+//  - DAG planning from the APPROVED role relationship (application ->
+//    requisition), never a title substring
+//  - Cycle / missing-dep validation + Kahn topological scheduling
+//  - Blocked set (multiple simultaneous blockers) + critical path
+//  - Honest readiness estimate (never a guarantee)
+//  - plan_hash bound to canonical task definitions (approvals bind to it)
+//  - Waiver, adaptation (learning -> verification, failed verification reopens
+//    gap), completion checks as PURE functions so backend functions just
+//    load rows and apply them.
 // ---------------------------------------------------------------------------
 
-export interface TaskInput {
-  id: string;
-  title: string;
-  depends_on?: string[];
-  skill?: string;
-  target_proficiency?: number;
-  non_waivable?: boolean;
-  duration_days?: number;
+export type OwnerRole = "employee" | "manager" | "hr" | "it_security";
+export type TaskType = "learning" | "verification" | "provisioning" | "policy" | "access" | "onboarding_admin";
+export type TaskState = "pending" | "blocked" | "ready" | "in_progress" | "done" | "waived" | "failed";
+export type PlanStatus = "draft" | "pending_approval" | "approved" | "completed" | "superseded";
+
+export interface WhyEvidence {
+  reason: string;
+  source_evidence: { source_type: string; fact: string; ref?: string }[];
 }
 
-export interface ScheduledTask extends TaskInput {
+export interface EvReq {
+  kind: "note" | "assessment_id";
+  label: string;
+  required: boolean;
+}
+
+/** Immutable task DEFINITION — what needs to happen. */
+export interface TaskDef {
+  task_code: string;
+  title: string;
+  task_type: TaskType;
+  owner_role: OwnerRole;
+  required: boolean;
+  non_waivable: boolean;
   depends_on: string[];
   duration_days: number;
-  waived: boolean;
-  status: "waived" | "pending" | "done" | "blocked";
-  start_date: string | null;
-  end_date: string | null;
-  topological_level: number;
-  blocked?: { note: string; reported_by: string; at: string } | null;
+  why_evidence: WhyEvidence;
+  evidence_requirements: EvReq[];
 }
 
 export interface Blocker {
-  taskId: string;
+  id: string;
   note: string;
   reported_by: string;
   at: string;
+  status: "open" | "resolved";
+}
+
+export interface Waiver {
+  by_twin_id: string;
+  by_name: string;
+  reason: string;
+  policy_basis: { doc_code: string; version: number | null } | null;
+  at: string;
+}
+
+export interface CompletionRecord {
+  actor_twin_id: string;
+  actor_name: string;
+  at: string;
+  evidence: { kind: "note" | "assessment_id"; label: string; value: string }[];
+  attempt_hash: string;
+  note?: string;
+}
+
+export interface Adaptation {
+  kind: "replaced" | "reopened_gap";
+  replaced_by?: string;
+  reason: string;
+  source_evidence: WhyEvidence["source_evidence"];
+  at: string;
+  actor_twin_id: string;
+}
+
+/** Task DEFINITION + EXECUTION state. */
+export interface PlanTask extends TaskDef {
+  state: TaskState;
+  start_date: string | null;
+  due_date: string | null;
+  topological_level: number;
+  blocked_reasons: string[]; // task_codes of unmet deps
+  blockers: Blocker[];
+  waiver: Waiver | null;
+  completion_record: CompletionRecord | null;
+  adaptation: Adaptation | null;
+}
+
+export interface ReadinessEstimate {
+  ready_pct: number;
+  satisfied: number;
+  total: number;
+  remaining_critical_days: number;
+  projected_ready_date: string | null;
+  blocked_count: number;
+  note: string;
+}
+
+export interface CarryoverEntry {
+  task_code: string;
+  from_version: number;
+  from_plan_id: string;
+  note: string;
 }
 
 export class CycleError extends Error {
@@ -323,147 +397,654 @@ export class CycleError extends Error {
   }
 }
 
-/** Non-negotiable tasks: never waived or deleted, regardless of skill match. */
-export const NON_WAIVABLE_TASK_IDS = new Set(["security", "compliance_signoff", "payroll"]);
+// ---------------------------------------------------------------------------
+// Hashing (deterministic, sync; binding approval to exact task definitions)
+// ---------------------------------------------------------------------------
 
-export function applyWaivers(
-  tasks: TaskInput[],
-  skills: { name: string; proficiency: number }[]
-): { tasks: TaskInput[]; waived: string[]; required: string[] } {
-  const skillMap = new Map(skills.map((s) => [s.name.toLowerCase(), s.proficiency]));
-  const waived: string[] = [];
-  const required: string[] = [];
-  const out = tasks.map((t) => {
-    if (t.non_waivable || NON_WAIVABLE_TASK_IDS.has(t.id)) {
-      required.push(t.id);
-      return t;
-    }
-    const prof = t.skill ? skillMap.get(t.skill.toLowerCase()) : undefined;
-    if (prof !== undefined && prof >= (t.target_proficiency ?? 3)) {
-      waived.push(t.id);
-      return t;
-    }
-    required.push(t.id);
-    return t;
-  });
-  return { tasks: out, waived, required };
+function fnv1a(str: string, seed = 0x811c9dc5): number {
+  let h = seed >>> 0;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return h >>> 0;
 }
 
-const DAY_MS = 24 * 60 * 60 * 1000;
-
-function addDays(d: Date, days: number): Date {
-  return new Date(d.getTime() + days * DAY_MS);
+/** Stable hash of canonical task definitions — same defs always hash equal. */
+export function planHash(defs: TaskDef[]): string {
+  const canonical = defs
+    .map((d) =>
+      JSON.stringify({
+        code: d.task_code,
+        title: d.title,
+        type: d.task_type,
+        owner: d.owner_role,
+        required: d.required,
+        non_waivable: d.non_waivable,
+        deps: [...d.depends_on].sort(),
+        days: d.duration_days,
+        why: d.why_evidence,
+        evreq: d.evidence_requirements,
+      })
+    )
+    .sort()
+    .join("\u0001");
+  const h1 = fnv1a(canonical).toString(16).padStart(8, "0");
+  const h2 = fnv1a(canonical, 0x811c9dc5 ^ canonical.length).toString(16).padStart(8, "0");
+  return `${h1}${h2}`;
 }
 
-/**
- * Kahn's topological scheduler, exactly as specified:
- * compute in-degree, queue zero-in-degree tasks, pop -> append -> decrement
- * dependents -> enqueue newly-zero. Any task not scheduled => cyclic error.
- * Start date = max(end of prerequisites) or the onboarding start date.
- */
-export function schedulePlan(params: {
-  tasks: TaskInput[];
-  skills: { name: string; proficiency: number }[];
-  startDate: string;
-  blocked?: Blocker;
-  doneTaskIds?: string[];
-}): ScheduledTask[] {
-  const { tasks: input, waived: waivedIds } = applyWaivers(params.tasks, params.skills);
-  const ids = new Set(input.map((t) => t.id));
-  for (const t of input) {
-    for (const d of t.depends_on ?? []) {
-      if (!ids.has(d)) throw new Error(`task ${t.id} depends on unknown task ${d}`);
+/** Attempt hash for execution dedup: same actor+payload on same task+action. */
+export function attemptHash(planId: string, taskCode: string, action: string, payload: unknown): string {
+  const canonical = JSON.stringify({ planId, taskCode, action, payload });
+  const h1 = fnv1a(canonical).toString(16).padStart(8, "0");
+  const h2 = fnv1a(canonical, 0xdeadbeef).toString(16).padStart(8, "0");
+  return `${h1}${h2}`;
+}
+
+// ---------------------------------------------------------------------------
+// DAG validation + topological scheduling
+// ---------------------------------------------------------------------------
+
+export function validateDag(defs: TaskDef[]): void {
+  const ids = new Set(defs.map((d) => d.task_code));
+  for (const d of defs) {
+    for (const dep of d.depends_on) {
+      if (!ids.has(dep)) throw new Error(`task ${d.task_code} depends on unknown task ${dep}`);
     }
   }
-
-  const indegree = new Map<string, number>();
+  const indegree = new Map(defs.map((d) => [d.task_code, d.depends_on.length]));
   const adj = new Map<string, string[]>();
-  for (const t of input) {
-    indegree.set(t.id, (t.depends_on ?? []).length);
-    for (const d of t.depends_on ?? []) {
-      adj.set(d, [...(adj.get(d) ?? []), t.id]);
-    }
+  for (const d of defs) {
+    for (const dep of d.depends_on) adj.set(dep, [...(adj.get(dep) ?? []), d.task_code]);
   }
-
-  const queue: string[] = [];
-  for (const t of input) if ((indegree.get(t.id) ?? 0) === 0) queue.push(t.id);
+  const queue = defs.filter((d) => (indegree.get(d.task_code) ?? 0) === 0).map((d) => d.task_code);
   const order: string[] = [];
   while (queue.length > 0) {
     const id = queue.shift()!;
     order.push(id);
-    for (const dep of adj.get(id) ?? []) {
-      indegree.set(dep, (indegree.get(dep) ?? 0) - 1);
-      if ((indegree.get(dep) ?? 0) === 0) queue.push(dep);
+    for (const child of adj.get(id) ?? []) {
+      indegree.set(child, (indegree.get(child) ?? 0) - 1);
+      if ((indegree.get(child) ?? 0) === 0) queue.push(child);
     }
   }
-  if (order.length !== input.length) {
-    throw new CycleError();
-  }
+  if (order.length !== defs.length) throw new CycleError();
+}
 
-  // Topological level (wave) per task for the DAG view.
+const DAY_MS = 24 * 60 * 60 * 1000;
+function addDays(d: Date, days: number): Date {
+  return new Date(d.getTime() + days * DAY_MS);
+}
+
+export function topologicalOrder(defs: TaskDef[]): string[] {
+  validateDag(defs);
+  const indegree = new Map(defs.map((d) => [d.task_code, d.depends_on.length]));
+  const adj = new Map<string, string[]>();
+  for (const d of defs) {
+    for (const dep of d.depends_on) adj.set(dep, [...(adj.get(dep) ?? []), d.task_code]);
+  }
+  const queue = defs.filter((d) => (indegree.get(d.task_code) ?? 0) === 0).map((d) => d.task_code);
+  const order: string[] = [];
+  while (queue.length > 0) {
+    const id = queue.shift()!;
+    order.push(id);
+    for (const child of adj.get(id) ?? []) {
+      indegree.set(child, (indegree.get(child) ?? 0) - 1);
+      if ((indegree.get(child) ?? 0) === 0) queue.push(child);
+    }
+  }
+  return order;
+}
+
+/** Satisfied = done or waived. Used for both state derivation and critical path. */
+export function satisfiedSet(tasks: Pick<PlanTask, "task_code" | "state">[]): Set<string> {
+  return new Set(tasks.filter((t) => t.state === "done" || t.state === "waived").map((t) => t.task_code));
+}
+
+export function hasOpenBlocker(blockers: Blocker[]): boolean {
+  return blockers.some((b) => b.status === "open");
+}
+
+/**
+ * Recompute execution state + dates from stored facts (definition + state).
+ * Dates are null for blocked/failed tasks and cascade downstream.
+ */
+export function deriveStates(defs: TaskDef[], facts: {
+  done?: string[];
+  waived?: string[];
+  failed?: string[];
+  blockers?: Record<string, Blocker[]>;
+  approved?: boolean;
+  startDate?: string;
+}): PlanTask[] {
+  validateDag(defs);
+  const done = new Set(facts.done ?? []);
+  const waived = new Set(facts.waived ?? []);
+  const failed = new Set(facts.failed ?? []);
+  const approved = facts.approved ?? false;
+  const start = facts.startDate ? new Date(facts.startDate) : new Date();
+
+  const order = topologicalOrder(defs);
+  const defById = new Map(defs.map((d) => [d.task_code, d]));
+
   const level = new Map<string, number>();
   for (const id of order) {
-    const t = input.find((x) => x.id === id)!;
-    level.set(id, (t.depends_on ?? []).reduce((m, d) => Math.max(m, (level.get(d) ?? 0) + 1), 0));
+    const d = defById.get(id)!;
+    level.set(id, d.depends_on.reduce((m, dep) => Math.max(m, (level.get(dep) ?? 0) + 1), 0));
   }
 
-  const taskById = new Map(input.map((t) => [t.id, t]));
-  const start = new Date(params.startDate);
   const endBy = new Map<string, Date | null>();
-  const done = new Set(params.doneTaskIds ?? []);
-  const scheduled: ScheduledTask[] = [];
-
+  const out = new Map<string, PlanTask>();
   for (const id of order) {
-    const t = taskById.get(id)!;
-    const blocked = params.blocked?.taskId === id ? params.blocked : null;
-    const blockedPrereq = (t.depends_on ?? []).find((d) => endBy.get(d) === null);
+    const d = defById.get(id)!;
+    const blockers = facts.blockers?.[id] ?? [];
+    const open = hasOpenBlocker(blockers);
+    const depStates = new Map(d.depends_on.map((dep) => [dep, out.get(dep)?.state ?? "missing"]));
+    const unmet = d.depends_on.filter((dep) => !done.has(dep) && !waived.has(dep));
+    const cascadingBlock = d.depends_on.some((dep) => {
+      const s = depStates.get(dep);
+      return s === "blocked" || s === "failed";
+    });
+
+    let state: TaskState = "pending";
+    if (done.has(id)) state = "done";
+    else if (waived.has(id)) state = "waived";
+    else if (failed.has(id)) state = "failed";
+    else if (!approved) state = "pending";
+    else if (open) state = "blocked";
+    else if (cascadingBlock) state = "blocked";
+    else if (unmet.length > 0) state = "pending"; // queued: approved but deps not yet satisfied
+    else state = "ready";
 
     let startDate: Date | null;
     let endDate: Date | null;
-    if (blocked) {
-      startDate = null;
-      endDate = null;
-    } else if (blockedPrereq) {
-      // Waiting on a blocked prerequisite — downstream dates recompute to null.
+    if (state === "blocked" || state === "failed") {
       startDate = null;
       endDate = null;
     } else {
-      const prereqEnds = (t.depends_on ?? [])
-        .map((d) => endBy.get(d))
-        .filter((d): d is Date => d instanceof Date);
-      const base = prereqEnds.length > 0 ? new Date(Math.max(...prereqEnds.map((d) => d.getTime()))) : new Date(start);
+      const prereqEnds = d.depends_on
+        .map((dep) => endBy.get(dep))
+        .filter((e): e is Date => e instanceof Date);
+      const base = prereqEnds.length > 0 ? new Date(Math.max(...prereqEnds.map((e) => e.getTime()))) : new Date(start);
       startDate = base;
-      endDate = addDays(base, t.duration_days ?? 1);
+      endDate = addDays(base, d.duration_days);
     }
     endBy.set(id, endDate);
 
-    const isDone = done.has(id);
-    const status: ScheduledTask["status"] = isDone
-      ? "done"
-      : blocked
-        ? "blocked"
-        : waivedIds.includes(id)
-          ? "waived"
-          : "pending";
-
-    scheduled.push({
-      id: t.id,
-      title: t.title,
-      depends_on: [...(t.depends_on ?? [])],
-      skill: t.skill,
-      target_proficiency: t.target_proficiency,
-      non_waivable: t.non_waivable || NON_WAIVABLE_TASK_IDS.has(t.id),
-      duration_days: t.duration_days ?? 1,
-      waived: waivedIds.includes(id),
-      status,
+    out.set(id, {
+      ...d,
+      state,
       start_date: startDate ? startDate.toISOString() : null,
-      end_date: endDate ? endDate.toISOString() : null,
+      due_date: endDate ? endDate.toISOString() : null,
       topological_level: level.get(id) ?? 0,
-      blocked: blocked ? { note: blocked.note, reported_by: blocked.reported_by, at: blocked.at } : null,
+      blocked_reasons: unmet,
+      blockers,
+      waiver: null,
+      completion_record: null,
+      adaptation: null,
     });
   }
+  return [...out.values()];
+}
 
-  return scheduled;
+/** Apply stored execution records onto derived states (single source of truth). */
+export function materialize(tasks: PlanTask[], records: {
+  completion?: Record<string, CompletionRecord>;
+  waiver?: Record<string, Waiver>;
+  adaptation?: Record<string, Adaptation>;
+  blockers?: Record<string, Blocker[]>;
+}): PlanTask[] {
+  return tasks.map((t) => ({
+    ...t,
+    state: records.waiver?.[t.task_code]
+      ? "waived"
+      : records.completion?.[t.task_code]
+        ? "done"
+        : records.adaptation?.[t.task_code]
+          ? "failed"
+          : t.state,
+    blockers: records.blockers?.[t.task_code] ?? t.blockers,
+    waiver: records.waiver?.[t.task_code] ?? t.waiver,
+    completion_record: records.completion?.[t.task_code] ?? t.completion_record,
+    adaptation: records.adaptation?.[t.task_code] ?? t.adaptation,
+  }));
+}
+
+// ---------------------------------------------------------------------------
+// Critical path + honest readiness estimate
+// ---------------------------------------------------------------------------
+
+/** Longest remaining chain (by duration) among tasks that are not satisfied. */
+export function criticalPath(defs: TaskDef[], satisfied: Set<string>): { tasks: string[]; total_days: number } {
+  validateDag(defs);
+  const defById = new Map(defs.map((d) => [d.task_code, d]));
+  const adj = new Map<string, string[]>();
+  for (const d of defs) for (const dep of d.depends_on) adj.set(dep, [...(adj.get(dep) ?? []), d.task_code]);
+
+  const memo = new Map<string, { tasks: string[]; days: number }>();
+  const chainFrom = (id: string): { tasks: string[]; days: number } => {
+    const known = memo.get(id);
+    if (known) return known;
+    const d = defById.get(id)!;
+    let best: { tasks: string[]; days: number } = { tasks: [], days: 0 };
+    for (const child of adj.get(id) ?? []) {
+      const c = chainFrom(child);
+      if (c.days > best.days) best = c;
+    }
+    const res = { tasks: [id, ...best.tasks], days: d.duration_days + best.days };
+    memo.set(id, res);
+    return res;
+  };
+
+  let best: { tasks: string[]; days: number } = { tasks: [], days: 0 };
+  for (const d of defs) {
+    if (satisfied.has(d.task_code)) continue;
+    const c = chainFrom(d.task_code);
+    if (c.days > best.days) best = c;
+  }
+  return { tasks: best.tasks, total_days: best.days };
+}
+
+/** Honest readiness: satisfied/total + remaining critical path from today. */
+export function estimateReadiness(defs: TaskDef[], tasks: PlanTask[], startDate: string, now: string): ReadinessEstimate {
+  const satisfied = satisfiedSet(tasks);
+  const total = defs.length;
+  const readyPct = total === 0 ? 0 : Math.round((satisfied.size / total) * 1000) / 10;
+  const { total_days } = criticalPath(defs, satisfied);
+  const blockedCount = tasks.filter((t) => t.state === "blocked" || t.state === "failed").length;
+  const projected = total_days === 0 ? null : addDays(new Date(now), total_days).toISOString();
+  const note =
+    blockedCount > 0
+      ? "Estimated readiness — projected earliest completion if every blocker clears today; blocked work makes this provisional, not a guarantee."
+      : "Estimated readiness — projected earliest completion from today's date; an estimate, not a guarantee.";
+  return {
+    ready_pct: readyPct,
+    satisfied: satisfied.size,
+    total,
+    remaining_critical_days: total_days,
+    projected_ready_date: projected,
+    blocked_count: blockedCount,
+    note,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Authorization matrix — strict per-owner-role, no broad HR to service owners
+// ---------------------------------------------------------------------------
+
+export function canActOnTask(actor: { id: string; role: string; org_id: string | null }, taskOwner: OwnerRole, twin: { id: string; manager_id: string | null; org_id: string | null }): { ok: boolean; error?: string } {
+  if (actor.org_id !== twin.org_id) return { ok: false, error: "Cross-org task access is forbidden." };
+  switch (taskOwner) {
+    case "employee":
+      return actor.id === twin.id
+        ? { ok: true }
+        : { ok: false, error: "Only the employee themselves may complete this task." };
+    case "manager":
+      return actor.role === "manager" && actor.id === twin.manager_id
+        ? { ok: true }
+        : { ok: false, error: "Only the employee's direct manager may act on this task." };
+    case "hr":
+      return actor.role === "hr_executive" || actor.role === "hr_partner"
+        ? { ok: true }
+        : { ok: false, error: "Only HR may act on this task." };
+    case "it_security":
+      return actor.role === "it_security"
+        ? { ok: true }
+        : { ok: false, error: "Only the IT security service owner may act on this task — HR has no access to service-owner tasks." };
+    default:
+      return { ok: false, error: "Unknown owner role." };
+  }
+}
+
+export function canWaive(actor: { id: string; role: string }, twin: { manager_id: string | null }, taskNonWaivable: boolean, taskOwner: OwnerRole): { ok: boolean; error?: string } {
+  if (taskNonWaivable) {
+    return actor.role === "hr_executive"
+      ? { ok: true }
+      : { ok: false, error: "Non-waivable tasks may only be waived by an HR Executive with a policy basis." };
+  }
+  if (actor.role === "manager" && actor.id === twin.manager_id) return { ok: true };
+  if (actor.role === "hr_executive" || actor.role === "hr_partner") return { ok: true };
+  return { ok: false, error: "Waivers require the employee's manager or an HR role." };
+}
+
+export function canAdapt(actor: { id: string; role: string }, twin: { manager_id: string | null }): { ok: boolean; error?: string } {
+  if (actor.role === "manager" && actor.id === twin.manager_id) return { ok: true };
+  if (actor.role === "hr_executive" || actor.role === "hr_partner") return { ok: true };
+  return { ok: false, error: "Plan adaptation requires the employee's manager or an HR role." };
+}
+
+// ---------------------------------------------------------------------------
+// Completion checks — pure; every gate the backend must enforce
+// ---------------------------------------------------------------------------
+
+export interface CompletionCheckInput {
+  planStatus: PlanStatus;
+  task: PlanTask;
+  actor: { id: string; role: string; org_id: string | null };
+  twin: { id: string; manager_id: string | null; org_id: string | null };
+  evidence: { kind: "note" | "assessment_id"; label: string; value: string }[];
+}
+
+export function validateCompletion(i: CompletionCheckInput): { ok: boolean; code?: string; error?: string } {
+  if (i.planStatus !== "approved") {
+    return { ok: false, code: "plan_pending", error: "The plan must be approved by the Manager and HR Executive before tasks can be completed." };
+  }
+  const auth = canActOnTask(i.actor, i.task.owner_role, i.twin);
+  if (!auth.ok) return { ok: false, code: "forbidden", error: auth.error };
+  if (i.task.state === "done") {
+    return { ok: false, code: "double_submission", error: `"${i.task.title}" is already complete — double submission rejected.` };
+  }
+  if (i.task.state === "waived") {
+    return { ok: false, code: "already_waived", error: `"${i.task.title}" was waived — nothing to complete.` };
+  }
+  if (i.task.state === "failed") {
+    return { ok: false, code: "task_failed", error: `"${i.task.title}" is failed/adopted out — regenerate the plan.` };
+  }
+  const open = i.task.blockers.filter((b) => b.status === "open");
+  if (open.length > 0) {
+    return { ok: false, code: "blocked", error: `Cannot complete — open blocker(s): ${open.map((b) => b.note).join("; ")}.` };
+  }
+  if (i.task.state === "blocked") {
+    const why = i.task.blocked_reasons.length > 0 ? `Prerequisites not satisfied: ${i.task.blocked_reasons.join(", ")}` : "blocked by an upstream task or blocker";
+    return { ok: false, code: "unmet_prerequisite", error: `Cannot complete — ${why}.` };
+  }
+  if (i.task.blocked_reasons.length > 0) {
+    return { ok: false, code: "unmet_prerequisite", error: `Prerequisites not satisfied: ${i.task.blocked_reasons.join(", ")}.` };
+  }
+  if (i.task.state === "pending") {
+    return { ok: false, code: "plan_pending", error: "The plan is not active yet." };
+  }
+  const missing = (i.task.evidence_requirements ?? []).filter((r) => r.required && !i.evidence.some((e) => e.kind === r.kind && String(e.value ?? "").trim().length > 0));
+  if (missing.length > 0) {
+    return { ok: false, code: "missing_evidence", error: `Evidence required before completion: ${missing.map((m) => m.label).join(", ")}.` };
+  }
+  return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
+// Waiver application (authorized actor/reason/policy basis/audit)
+// ---------------------------------------------------------------------------
+
+export interface WaiverInput {
+  by_twin_id: string;
+  by_name: string;
+  reason: string;
+  policy_basis: { doc_code: string; version: number | null } | null;
+  at: string;
+}
+
+export function applyWaiver(task: PlanTask, waiver: WaiverInput): PlanTask {
+  return {
+    ...task,
+    state: "waived",
+    waiver: { ...waiver },
+    completion_record: null,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Adaptation: learning -> verification, and failed verification reopens gap
+// ---------------------------------------------------------------------------
+
+export interface AdaptationInput {
+  actor_twin_id: string;
+  reason: string;
+  source_evidence: WhyEvidence["source_evidence"];
+  at: string;
+}
+
+/** Replace a learning task with a verification task (new assessment evidence). */
+export function adaptLearningToVerification(defs: TaskDef[], learningTask: TaskDef, verifyDef: TaskDef, input: AdaptationInput): { defs: TaskDef[]; adaptation: Adaptation } {
+  const adaptation: Adaptation = {
+    kind: "replaced",
+    replaced_by: verifyDef.task_code,
+    reason: input.reason,
+    source_evidence: input.source_evidence,
+    at: input.at,
+    actor_twin_id: input.actor_twin_id,
+  };
+  const rest = defs.filter((d) => d.task_code !== learningTask.task_code);
+  return { defs: [...rest, verifyDef], adaptation };
+}
+
+/** Mark a verification task failed: the gap reopens and the plan must revise. */
+export function failVerification(task: PlanTask, input: AdaptationInput): { task: PlanTask; adaptation: Adaptation } {
+  const adaptation: Adaptation = {
+    kind: "reopened_gap",
+    reason: input.reason,
+    source_evidence: input.source_evidence,
+    at: input.at,
+    actor_twin_id: input.actor_twin_id,
+  };
+  return { task: { ...task, state: "failed", adaptation }, adaptation };
+}
+
+// ---------------------------------------------------------------------------
+// Plan builder — deterministic DAG from the approved role relationship
+// ---------------------------------------------------------------------------
+
+export interface PlanBuildInput {
+  role: {
+    title: string;
+    required_skills: { skill: string; target_proficiency: number }[];
+    future_skills: { skill: string; target_proficiency: number }[];
+    seniority_level: number;
+  };
+  verified_skills: { name: string; proficiency: number }[];
+  policy_docs: { doc_code: string; title: string }[];
+  reopened_skills?: string[]; // skills whose verification failed — learn again
+}
+
+const slug = (s: string) => s.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+
+function skillProficiency(verified: { name: string; proficiency: number }[], skill: string): number {
+  const hit = verified.find((v) => v.name.toLowerCase() === skill.toLowerCase());
+  return hit?.proficiency ?? 0;
+}
+
+/**
+ * Deterministic plan: core provisioning/policy/admin + skill-gap learning tasks
+ * + one verification task on the first required-skill gap + survey.
+ */
+export function buildPlanDefs(input: PlanBuildInput): TaskDef[] {
+  const required = (input.role.required_skills ?? []).slice(0, 3);
+  const future = (input.role.future_skills ?? []).slice(0, 2);
+  const reopened = new Set((input.reopened_skills ?? []).map((s) => s.toLowerCase()));
+
+  const gaps = required.filter(
+    (s) => reopened.has(s.skill.toLowerCase()) || skillProficiency(input.verified_skills, s.skill) < s.target_proficiency
+  );
+  const futureGaps = future.filter((s) => skillProficiency(input.verified_skills, s.skill) < s.target_proficiency);
+
+  const secPolicy = input.policy_docs.find((p) => p.doc_code === "POL-SEC");
+  const defs: TaskDef[] = [
+    {
+      task_code: "it_provisioning",
+      title: "IT & Laptop Provisioning",
+      task_type: "provisioning",
+      owner_role: "it_security",
+      required: true,
+      non_waivable: true,
+      depends_on: [],
+      duration_days: 1,
+      why_evidence: {
+        reason: "Company-issued equipment is mandatory before any system access is granted.",
+        source_evidence: [{ source_type: "policy", fact: secPolicy ? `POL-SEC ${secPolicy.title} — work on company-issued devices only.` : "Equipment & Security policy — company-issued devices only." }],
+      },
+      evidence_requirements: [{ kind: "note", label: "Hardware & asset tag", required: true }],
+    },
+    {
+      task_code: "security_training",
+      title: "Security & Compliance Training",
+      task_type: "policy",
+      owner_role: "employee",
+      required: true,
+      non_waivable: true,
+      depends_on: [],
+      duration_days: 1,
+      why_evidence: {
+        reason: "Annual security training is required for continued system access.",
+        source_evidence: [{ source_type: "policy", fact: secPolicy ? `POL-SEC ${secPolicy.title} — annual training required.` : "Equipment & Security policy — annual training required." }],
+      },
+      evidence_requirements: [{ kind: "note", label: "Training completion reference", required: true }],
+    },
+    {
+      task_code: "payroll",
+      title: "Direct Deposit & Payroll Setup",
+      task_type: "onboarding_admin",
+      owner_role: "hr",
+      required: true,
+      non_waivable: true,
+      depends_on: [],
+      duration_days: 0.5,
+      why_evidence: {
+        reason: "Payroll setup is handled by HR before the first pay run.",
+        source_evidence: [{ source_type: "onboarding_admin", fact: "Standard onboarding payroll step." }],
+      },
+      evidence_requirements: [{ kind: "note", label: "Payroll reference (HR)", required: true }],
+    },
+    {
+      task_code: "access_sso",
+      title: "System Access & SSO Enrollment",
+      task_type: "access",
+      owner_role: "it_security",
+      required: true,
+      non_waivable: true,
+      depends_on: ["it_provisioning", "security_training"],
+      duration_days: 0.5,
+      why_evidence: {
+        reason: "SSO and tool access can only be provisioned after hardware and security training are complete.",
+        source_evidence: [{ source_type: "policy", fact: "POL-SEC — MFA mandatory on all accounts; access requires completed security training." }],
+      },
+      evidence_requirements: [{ kind: "note", label: "MFA / SSO enrollment reference", required: true }],
+    },
+    {
+      task_code: "team_intro",
+      title: "Team Introduction & Codebase Walkthrough",
+      task_type: "onboarding_admin",
+      owner_role: "manager",
+      required: true,
+      non_waivable: false,
+      depends_on: ["access_sso"],
+      duration_days: 1,
+      why_evidence: {
+        reason: "Manager-led introduction and codebase walkthrough require system access first.",
+        source_evidence: [{ source_type: "manager", fact: "Standard team integration step after access." }],
+      },
+      evidence_requirements: [{ kind: "note", label: "Walkthrough held (manager)", required: true }],
+    },
+  ];
+
+  const firstGap = gaps[0];
+  for (const s of gaps) {
+    const isReopened = reopened.has(s.skill.toLowerCase());
+    const code = isReopened ? `learn_${slug(s.skill)}_reopen` : `learn_${slug(s.skill)}`;
+    defs.push({
+      task_code: code,
+      title: isReopened ? `Re-learning: ${s.skill} (verified gap re-opened)` : `First contribution using ${s.skill}`,
+      task_type: "learning",
+      owner_role: "employee",
+      required: true,
+      non_waivable: false,
+      depends_on: ["team_intro"],
+      duration_days: 1,
+      why_evidence: {
+        reason: isReopened
+          ? `A prior verification attempt did not confirm ${s.skill} at target ${s.target_proficiency}; the gap is re-opened for learning.`
+          : `Role requires ${s.skill} at ${s.target_proficiency}; current verified proficiency is ${skillProficiency(input.verified_skills, s.skill)}.`,
+        source_evidence: [
+          { source_type: "role_fit", fact: `Gap on ${s.skill} vs approved role ${input.role.title} (target ${s.target_proficiency}).` },
+          ...(isReopened ? [{ source_type: "verification", fact: `Previous verification of ${s.skill} failed — reason preserved on the superseded task.` }] : []),
+        ],
+      },
+      evidence_requirements: [{ kind: "note", label: `Contribution evidence: ${s.skill}`, required: true }],
+    });
+    // Verification task on the FIRST gap only.
+    if (firstGap && s.skill.toLowerCase() === firstGap.skill.toLowerCase()) {
+      defs.push({
+        task_code: `verify_${slug(s.skill)}`,
+        title: `Verification: ${s.skill} mastery assessment`,
+        task_type: "verification",
+        owner_role: "employee",
+        required: true,
+        non_waivable: false,
+        depends_on: [code],
+        duration_days: 0.5,
+        why_evidence: {
+          reason: `New assessment evidence replaces further learning for ${s.skill}: verify mastery at target ${s.target_proficiency}.`,
+          source_evidence: [{ source_type: "assessment", fact: `Assessment evidence supersedes the learning-only path for ${s.skill}.` }],
+        },
+        evidence_requirements: [{ kind: "assessment_id", label: "Assessment evidence id", required: true }],
+      });
+    }
+  }
+  for (const s of futureGaps) {
+    const anchor = gaps[0] ? `learn_${slug(gaps[0].skill)}` : "team_intro";
+    defs.push({
+      task_code: `future_${slug(s.skill)}`,
+      title: `Upskilling plan: ${s.skill}`,
+      task_type: "learning",
+      owner_role: "employee",
+      required: true,
+      non_waivable: false,
+      depends_on: [anchor],
+      duration_days: 1,
+      why_evidence: {
+        reason: `Future skill ${s.skill} is part of the role's growth path; current verified proficiency ${skillProficiency(input.verified_skills, s.skill)} is below target ${s.target_proficiency}.`,
+        source_evidence: [{ source_type: "role_fit", fact: `Future-fit gap on ${s.skill} vs approved role ${input.role.title}.` }],
+      },
+      evidence_requirements: [{ kind: "note", label: `Upskilling evidence: ${s.skill}`, required: true }],
+    });
+  }
+  defs.push({
+    task_code: "survey",
+    title: "Onboarding Feedback Survey",
+    task_type: "onboarding_admin",
+    owner_role: "employee",
+    required: true,
+    non_waivable: false,
+    depends_on: [gaps.length > 0 ? `learn_${slug(gaps[0].skill)}` : "team_intro"],
+    duration_days: 0.5,
+    why_evidence: {
+      reason: "Feedback survey closes the loop after the core journey is underway.",
+      source_evidence: [{ source_type: "onboarding_admin", fact: "Standard closing step." }],
+    },
+    evidence_requirements: [{ kind: "note", label: "Survey submitted", required: true }],
+  });
+  return defs;
+}
+
+// ---------------------------------------------------------------------------
+// Carryover on regeneration: preserve valid completed work with a mapping
+// ---------------------------------------------------------------------------
+
+export function buildCarryover(prevTasks: PlanTask[], newDefs: TaskDef[], fromPlanId: string, fromVersion: number): { tasks: PlanTask[]; entries: CarryoverEntry[] } {
+  const byCode = new Map(prevTasks.map((t) => [t.task_code, t]));
+  const entries: CarryoverEntry[] = [];
+  const tasks: PlanTask[] = newDefs.map((d) => {
+    const prev = byCode.get(d.task_code);
+    const fresh: PlanTask = { ...d, state: "pending", start_date: null, due_date: null, topological_level: 0, blocked_reasons: [], blockers: [], waiver: null, completion_record: null, adaptation: null };
+    if (!prev) return fresh;
+    const defSame =
+      prev.title === d.title &&
+      prev.task_type === d.task_type &&
+      prev.owner_role === d.owner_role &&
+      prev.required === d.required &&
+      prev.non_waivable === d.non_waivable &&
+      prev.duration_days === d.duration_days &&
+      JSON.stringify([...prev.depends_on].sort()) === JSON.stringify([...d.depends_on].sort());
+    if (!defSame) return fresh;
+    if (prev.state === "done" && prev.completion_record) {
+      entries.push({ task_code: d.task_code, from_version: fromVersion, from_plan_id: fromPlanId, note: "Completed work preserved on regeneration." });
+      return { ...d, state: "done", start_date: prev.start_date, due_date: prev.due_date, topological_level: 0, blocked_reasons: [], blockers: [], waiver: prev.waiver, completion_record: prev.completion_record, adaptation: prev.adaptation };
+    }
+    if (prev.state === "waived" && prev.waiver) {
+      entries.push({ task_code: d.task_code, from_version: fromVersion, from_plan_id: fromPlanId, note: "Waiver preserved on regeneration." });
+      return { ...d, state: "waived", start_date: prev.start_date, due_date: prev.due_date, topological_level: 0, blocked_reasons: [], blockers: [], waiver: prev.waiver, completion_record: null, adaptation: prev.adaptation };
+    }
+    return fresh;
+  });
+  return { tasks, entries };
 }
 
 
@@ -478,17 +1059,6 @@ const corsHeaders = {
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-
-const normId = (s: string) => s.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_");
-
-const CORE_TASKS: TaskInput[] = [
-  { id: "it", title: "IT & Laptop Provisioning", depends_on: [], duration_days: 1 },
-  { id: "security", title: "Security & Compliance Training", depends_on: [], non_waivable: true, duration_days: 1 },
-  { id: "payroll", title: "Direct Deposit & Payroll Setup", depends_on: [], non_waivable: true, duration_days: 0.5 },
-  { id: "access", title: "System Access & SSO", depends_on: ["it", "security"], duration_days: 0.5 },
-  { id: "compliance_signoff", title: "Compliance Sign-off", depends_on: ["security"], non_waivable: true, duration_days: 0.5 },
-  { id: "team_intro", title: "Team Introduction & Codebase Walkthrough", depends_on: ["access"], duration_days: 1 },
-];
 
 async function isTeamMember(supabase, rootTwinId: string, checkTwinId: string): Promise<boolean> {
   const { data } = await supabase.from("digital_twins").select("id, manager_id");
@@ -505,6 +1075,31 @@ async function isTeamMember(supabase, rootTwinId: string, checkTwinId: string): 
     for (const c of children.get(cur) ?? []) stack.push(c);
   }
   return seen.has(checkTwinId);
+}
+
+function taskRow(planId: string, t: PlanTask) {
+  return {
+    org_id: null, // filled by caller
+    plan_id: planId,
+    version: null, // filled by caller
+    task_code: t.task_code,
+    title: t.title,
+    task_type: t.task_type,
+    owner_role: t.owner_role,
+    required: t.required,
+    non_waivable: t.non_waivable,
+    depends_on: t.depends_on,
+    duration_days: t.duration_days,
+    due_date: t.due_date,
+    topological_level: t.topological_level,
+    why_evidence: t.why_evidence,
+    evidence_requirements: t.evidence_requirements,
+    state: t.state,
+    completion_record: t.completion_record,
+    blockers: t.blockers,
+    waiver: t.waiver,
+    adaptation: t.adaptation,
+  };
 }
 
 Deno.serve(async (req) => {
@@ -527,7 +1122,7 @@ Deno.serve(async (req) => {
     .maybeSingle();
   if (!caller) return json({ error: "UNAUTHENTICATED" }, 401);
 
-  let body: { twin_id?: string; req_id?: string; start_date?: string } = {};
+  let body: { twin_id?: string; regen?: boolean; start_date?: string } = {};
   try {
     body = await req.json();
   } catch {
@@ -538,32 +1133,51 @@ Deno.serve(async (req) => {
 
   const { data: twin, error: twinErr } = await supabase
     .from("digital_twins")
-    .select("id, org_id, role, name, job_title, verified_skills, seniority_level, computed_fits, audit_events")
+    .select("id, org_id, role, name, job_title, verified_skills, seniority_level, computed_fits, audit_events, manager_id")
     .eq("id", twinId)
     .maybeSingle();
   if (twinErr || !twin) return json({ error: "NOT_FOUND" }, 404);
 
-  // Visibility: HR/partner see anyone; manager sees team + self; employee self only.
+  // Visibility: HR/partner see anyone; manager sees team + self; employee self only; IT sees all org (service view).
   let allowed = false;
-  if (["hr_executive", "hr_partner"].includes(caller.role)) allowed = twin.org_id === caller.org_id;
+  if (["hr_executive", "hr_partner", "it_security"].includes(caller.role)) allowed = twin.org_id === caller.org_id;
   else if (caller.role === "manager" || caller.role === "employee") {
     allowed = twin.id === caller.id || (caller.role === "manager" && (await isTeamMember(supabase, caller.id, twin.id)));
   }
   if (!allowed) return json({ error: "FORBIDDEN" }, 403);
 
-  // Role skills: explicit req, else a requisition whose title matches the job title.
-  let reqRow: { id: string; title: string; required_skills: { skill: string; target_proficiency: number }[]; future_skills: { skill: string; target_proficiency: number }[]; seniority_level: number } | null = null;
-  if (body.req_id) {
-    const { data } = await supabase.from("job_requisitions").select("id, title, required_skills, future_skills, seniority_level").eq("id", body.req_id).maybeSingle();
-    reqRow = data ?? null;
+  // -------------------------------------------------------------------------
+  // Approved role relationship: the employee's SELECTED application binds the
+  // plan to a real requisition. NEVER a title substring match.
+  // -------------------------------------------------------------------------
+  const { data: appRows } = await supabase
+    .from("applications")
+    .select("id, requisition_id, stage")
+    .eq("org_id", twin.org_id)
+    .eq("candidate_twin_id", twinId)
+    .eq("stage", "selected")
+    .order("applied_at", { ascending: false })
+    .limit(5);
+  const approvedApp = (appRows ?? []).find((a) => a.stage === "selected");
+  if (!approvedApp) {
+    return json(
+      { error: "NO_APPROVED_ROLE", message: "No approved application (selected role) is on file for this employee. Plans are built from the approved role relationship only — not from a title guess." },
+      400
+    );
   }
-  if (!reqRow) {
-    const { data: all } = await supabase.from("job_requisitions").select("id, title, required_skills, future_skills, seniority_level");
-    const job = (twin.job_title ?? "").toLowerCase();
-    reqRow = (all ?? []).find(
-      (r) => r.title.toLowerCase().includes(job) || job.includes(r.title.toLowerCase())
-    ) ?? null;
-  }
+
+  const { data: reqRow } = await supabase
+    .from("job_requisitions")
+    .select("id, title, required_skills, future_skills, seniority_level")
+    .eq("id", approvedApp.requisition_id)
+    .maybeSingle();
+  if (!reqRow) return json({ error: "NOT_FOUND", message: "Approved requisition not found." }, 404);
+
+  const { data: polRows } = await supabase
+    .from("policy_documents")
+    .select("doc_code, title")
+    .eq("org_id", twin.org_id);
+  const policyDocs = (polRows ?? []) as { doc_code: string; title: string }[];
 
   const { data: graphRows } = await supabase
     .from("skill_graph")
@@ -573,116 +1187,189 @@ Deno.serve(async (req) => {
   const now = new Date().toISOString();
   const startDate = body.start_date ?? now;
 
-  // Requirement 1: fit vs the employee's own role — current AND future skills.
-  const fits = (twin.computed_fits ?? []) as { target_id: string; scenario: string }[];
+  // Fit context (informational — the plan itself is built from gaps).
   const fitCurrent = computeFit({
-    candidateSkills: twin.verified_skills ?? [],
+    candidateSkills: (twin.verified_skills ?? []) as { name: string; proficiency: number }[],
     candidateLevel: twin.seniority_level ?? 3,
-    requiredSkills: reqRow?.required_skills ?? [],
-    roleLevel: reqRow?.seniority_level ?? 3,
+    requiredSkills: (reqRow.required_skills ?? []) as { skill: string; target_proficiency: number }[],
+    roleLevel: reqRow.seniority_level ?? 3,
     skillGraph: graphRows ?? [],
-    target: { type: "requisition", id: reqRow?.id ?? "own-role", title: reqRow?.title ?? twin.job_title ?? "Role" },
+    target: { type: "requisition", id: reqRow.id, title: reqRow.title },
     scenario: "current",
     computedAt: now,
   });
-  const fitFuture = computeFit({
-    candidateSkills: twin.verified_skills ?? [],
-    candidateLevel: twin.seniority_level ?? 3,
-    requiredSkills: reqRow?.future_skills ?? [],
-    roleLevel: reqRow?.seniority_level ?? 3,
-    skillGraph: graphRows ?? [],
-    target: { type: "requisition", id: reqRow?.id ?? "own-role", title: reqRow?.title ?? twin.job_title ?? "Role" },
-    scenario: "future",
-    computedAt: now,
+
+  const defs: TaskDef[] = buildPlanDefs({
+    role: reqRow,
+    verified_skills: (twin.verified_skills ?? []) as { name: string; proficiency: number }[],
+    policy_docs: policyDocs,
   });
-  const nextFits = fits.filter((f) => !(f.target_id === fitCurrent.target_id && f.scenario === "current") && !(f.target_id === fitFuture.target_id && f.scenario === "future")).concat([fitCurrent, fitFuture] as unknown as { target_id: string; scenario: string }[]);
+  const hash = planHash(defs);
 
-  // Build the task graph: core + role skills + future skills + survey.
-  const tasks: TaskInput[] = [...CORE_TASKS];
-  const required = (reqRow?.required_skills ?? []).slice(0, 3);
-  const future = (reqRow?.future_skills ?? []).slice(0, 2);
-  const firstSkillId = required.length > 0 ? `skill_${normId(required[0].skill)}` : "team_intro";
-  for (const s of required) {
-    tasks.push({
-      id: `skill_${normId(s.skill)}`,
-      title: `First contribution using ${s.skill}`,
-      skill: s.skill,
-      target_proficiency: s.target_proficiency,
-      depends_on: ["team_intro"],
-      duration_days: 1,
-    });
-  }
-  for (const s of future) {
-    tasks.push({
-      id: `future_${normId(s.skill)}`,
-      title: `Upskilling plan: ${s.skill}`,
-      skill: s.skill,
-      target_proficiency: s.target_proficiency,
-      depends_on: [firstSkillId],
-      duration_days: 1,
-    });
-  }
-  tasks.push({ id: "survey", title: "Onboarding Feedback Survey", depends_on: [firstSkillId], duration_days: 0.5 });
-
-  let scheduled;
-  try {
-    scheduled = schedulePlan({
-      tasks,
-      skills: (twin.verified_skills ?? []) as { name: string; proficiency: number }[],
-      startDate,
-    });
-  } catch (err) {
-    if (err instanceof CycleError) {
-      return json({ error: "VALIDATION_ERROR", message: err.message }, 400);
-    }
-    throw err;
-  }
-
-  const { data: existing } = await supabase
-    .from("onboarding_journeys")
-    .select("id, status, plan, audit_events")
+  // Latest plan for the twin (any status) — for carryover + supersession.
+  const { data: prevPlans } = await supabase
+    .from("onboarding_plans")
+    .select("id, version, status")
+    .eq("org_id", twin.org_id)
     .eq("twin_id", twinId)
-    .maybeSingle();
+    .order("version", { ascending: false })
+    .limit(1);
+  const prevPlan = (prevPlans ?? [])[0];
 
-  const plan = {
-    start_date: startDate,
-    approvals: (existing?.plan as { approvals?: unknown[] })?.approvals ?? [],
-    fit_current: fitCurrent.score,
-    fit_future: fitFuture.score,
-    generated_at: now,
-  };
-  const audit = [
-    ...((existing?.audit_events as unknown[]) ?? []),
-    { actor: caller.email ?? uid, action: existing ? "plan_regenerated" : "plan_generated", note: `Onboarding plan for ${twin.name}: ${scheduled.length} tasks, ${scheduled.filter((t) => t.waived).length} waived.`, timestamp: now },
-  ];
+  // A plain build (no regen) with an existing non-superseded plan is a no-op —
+  // version churn only happens on explicit regeneration.
+  if (prevPlan && prevPlan.status !== "superseded" && body.regen !== true) {
+    const { data: noopTasks } = await supabase
+      .from("onboarding_tasks")
+      .select("task_code, title, task_type, owner_role, required, non_waivable, depends_on, duration_days, due_date, topological_level, why_evidence, evidence_requirements, state, completion_record, blockers, waiver, adaptation")
+      .eq("plan_id", prevPlan.id)
+      .order("topological_level", { ascending: true });
+    return json({
+      ok: true,
+      plan: {
+        id: prevPlan.id,
+        twin_id: twinId,
+        version: prevPlan.version,
+        plan_hash: (prevPlan as unknown as { plan_hash?: string }).plan_hash ?? hash,
+        status: prevPlan.status,
+        start_date: startDate,
+        generated_at: now,
+        readiness: (prevPlan as unknown as { readiness?: unknown }).readiness ?? {},
+        carryover: (prevPlan as unknown as { carryover?: unknown[] }).carryover ?? [],
+        requisition: { id: reqRow.id, title: reqRow.title },
+        fit_current: fitCurrent.score,
+        tasks: (noopTasks ?? []) as unknown[],
+      },
+    });
+  }
 
-  let journeyId = existing?.id;
-  if (existing) {
+  let tasks: PlanTask[] = deriveStates(defs, { approved: false, startDate });
+  let carryover: { task_code: string; from_version: number; from_plan_id: string; note: string }[] = [];
+  let version = 1;
+
+  if (prevPlan) {
+    const { data: prevTaskRows } = await supabase
+      .from("onboarding_tasks")
+      .select("*")
+      .eq("plan_id", prevPlan.id);
+    const prevTasks = (prevTaskRows ?? []) as unknown[];
+    const mapped: PlanTask[] = (prevTasks as {
+      task_code: string; title: string; task_type: string; owner_role: string; required: boolean;
+      non_waivable: boolean; depends_on: string[]; duration_days: number; why_evidence: unknown;
+      evidence_requirements: unknown[]; state: string; completion_record: unknown; blockers: unknown[];
+      waiver: unknown; adaptation: unknown;
+    }[]).map((r) => ({
+      task_code: r.task_code,
+      title: r.title,
+      task_type: r.task_type as PlanTask["task_type"],
+      owner_role: r.owner_role as PlanTask["owner_role"],
+      required: r.required,
+      non_waivable: r.non_waivable,
+      depends_on: r.depends_on ?? [],
+      duration_days: Number(r.duration_days),
+      why_evidence: r.why_evidence as PlanTask["why_evidence"],
+      evidence_requirements: (r.evidence_requirements ?? []) as PlanTask["evidence_requirements"],
+      state: r.state as PlanTask["state"],
+      start_date: null,
+      due_date: null,
+      topological_level: 0,
+      blocked_reasons: [],
+      blockers: (r.blockers ?? []) as PlanTask["blockers"],
+      waiver: r.waiver as PlanTask["waiver"],
+      completion_record: r.completion_record as PlanTask["completion_record"],
+      adaptation: r.adaptation as PlanTask["adaptation"],
+    }));
+
+    const carried = buildCarryover(mapped, defs, prevPlan.id, prevPlan.version);
+    tasks = carried.tasks;
+    carryover = carried.entries;
+    version = prevPlan.version + 1;
+  }
+
+  // Recompute the full scheduled view (dates/levels/states) from the defs.
+  const done = tasks.filter((t) => t.state === "done").map((t) => t.task_code);
+  const waived = tasks.filter((t) => t.state === "waived").map((t) => t.task_code);
+  const blockers: Record<string, PlanTask["blockers"]> = {};
+  for (const t of tasks) if (t.blockers.length > 0) blockers[t.task_code] = t.blockers;
+  const derived = materialize(
+    deriveStates(defs, { approved: true, startDate, done, waived, blockers }),
+    { completion: Object.fromEntries(tasks.filter((t) => t.completion_record).map((t) => [t.task_code, t.completion_record!])),
+      waiver: Object.fromEntries(tasks.filter((t) => t.waiver).map((t) => [t.task_code, t.waiver!])),
+      blockers }
+  );
+  tasks = derived;
+  const readiness = estimateReadiness(defs, tasks, startDate, now);
+
+  // Supersede any prior plan — old approvals never carry (no retained approved state).
+  if (prevPlan && prevPlan.status !== "superseded") {
     await supabase
-      .from("onboarding_journeys")
-      .update({ tasks: scheduled, status: "pending", plan, audit_events: audit })
-      .eq("id", existing.id);
-  } else {
-    const { data: inserted, error: insErr } = await supabase
-      .from("onboarding_journeys")
-      .insert({ org_id: twin.org_id, twin_id: twinId, tasks: scheduled, status: "pending", plan, audit_events: audit })
-      .select("id")
-      .single();
-    if (insErr) return json({ error: "INTERNAL", message: insErr.message }, 500);
-    journeyId = inserted.id;
+      .from("onboarding_plans")
+      .update({ status: "superseded", audit_events: [...((prevPlan as unknown as { audit_events?: unknown[] }).audit_events ?? []), { actor: caller.email ?? uid, action: "superseded_by_regeneration", note: `Superseded by plan v${version}.`, timestamp: now }] })
+      .eq("id", prevPlan.id);
+  }
+
+  const planRow = {
+    org_id: twin.org_id,
+    twin_id: twinId,
+    application_id: approvedApp.id,
+    version,
+    plan_hash: hash,
+    status: "pending_approval",
+    manager_approval: null,
+    hr_approval: null,
+    start_date: startDate,
+    generated_at: now,
+    readiness,
+    carryover,
+    audit_events: [
+      { actor: caller.email ?? uid, action: prevPlan ? "plan_regenerated" : "plan_generated", note: `Plan v${version} built from approved role "${reqRow.title}" — ${defs.length} tasks, ${carryover.length} carried.`, timestamp: now },
+    ],
+  };
+  const { data: inserted, error: insErr } = await supabase
+    .from("onboarding_plans")
+    .insert(planRow)
+    .select("id")
+    .single();
+  if (insErr || !inserted) return json({ error: "INTERNAL", message: insErr?.message ?? "plan insert failed" }, 500);
+  const planId = inserted.id;
+
+  const { error: taskErr } = await supabase
+    .from("onboarding_tasks")
+    .insert(tasks.map((t) => ({ ...taskRow(planId, t), org_id: twin.org_id, version })));
+  if (taskErr) {
+    await supabase.from("onboarding_plans").delete().eq("id", planId);
+    return json({ error: "INTERNAL", message: taskErr.message }, 500);
   }
 
   // Persist fits + audit on the twin.
+  const fits = (twin.computed_fits ?? []) as { target_id: string; scenario: string }[];
+  const nextFits = [...fits.filter((f) => !(f.target_id === reqRow.id && f.scenario === "current")), fitCurrent as unknown as { target_id: string; scenario: string }];
   await supabase
     .from("digital_twins")
     .update({
       computed_fits: nextFits,
       audit_events: [
         ...(twin.audit_events ?? []),
-        { actor: caller.email ?? uid, action: "plan_fit_computed", note: `Role fit current ${fitCurrent.score.toFixed(2)} / future ${fitFuture.score.toFixed(2)}.`, timestamp: now },
+        { actor: caller.email ?? uid, action: "plan_fit_computed", note: `Role fit current ${fitCurrent.score.toFixed(2)}.`, timestamp: now },
       ],
     })
     .eq("id", twinId);
 
-  return json({ ok: true, journey: { id: journeyId, status: "pending", plan, tasks: scheduled } });
+  return json({
+    ok: true,
+    plan: {
+      id: planId,
+      twin_id: twinId,
+      version,
+      plan_hash: hash,
+      status: "pending_approval",
+      start_date: startDate,
+      generated_at: now,
+      readiness,
+      carryover,
+      requisition: { id: reqRow.id, title: reqRow.title },
+      fit_current: fitCurrent.score,
+      tasks,
+    },
+  });
 });

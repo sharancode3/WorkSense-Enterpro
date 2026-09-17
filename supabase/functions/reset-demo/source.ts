@@ -14,6 +14,13 @@ import { SEED_FITS } from "../_shared/generated-seed-fits.ts";
 import { DEMO_FIXTURES } from "../_shared/generated-demo-fixtures.ts";
 import { ASSESSMENT_SEEDS, PEOPLE_OPS_REQUISITION } from "../_shared/assessment.ts";
 import { POLICY_ADDITIONS, TWIN_CONTEXT_OVERRIDES } from "../_shared/policy-seed.ts";
+import {
+  buildPlanDefs,
+  deriveStates,
+  estimateReadiness,
+  materialize,
+  planHash,
+} from "../_shared/onboarding-v2.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -105,6 +112,9 @@ async function tearDownDemo(supabase, authIds: Record<string, string>) {
     await supabase.from("application_stage_events").delete().eq("org_id", orgId);
     await supabase.from("policy_escalations").delete().eq("org_id", orgId);
     await supabase.from("assessments").delete().eq("org_id", orgId);
+    await supabase.from("onboarding_task_events").delete().eq("org_id", orgId);
+    await supabase.from("onboarding_tasks").delete().eq("org_id", orgId);
+    await supabase.from("onboarding_plans").delete().eq("org_id", orgId);
     await supabase.from("applications").delete().eq("org_id", orgId);
     await supabase.from("assessment_rubrics").delete().eq("org_id", orgId);
     await supabase.from("assessment_blueprints").delete().eq("org_id", orgId);
@@ -128,7 +138,11 @@ async function tearDownDemo(supabase, authIds: Record<string, string>) {
 async function reseedLegacy(supabase, authIds: Record<string, string>) {
   // Compact mode: the small golden seed (single org, 9 personas) — a quick demo.
   await supabase.from("recommendations").delete().eq("org_id", DEMO_ORG_ID);
+  await supabase.from("onboarding_task_events").delete().eq("org_id", DEMO_ORG_ID);
+  await supabase.from("onboarding_tasks").delete().eq("org_id", DEMO_ORG_ID);
+  await supabase.from("onboarding_plans").delete().eq("org_id", DEMO_ORG_ID);
   await supabase.from("onboarding_journeys").delete().eq("org_id", DEMO_ORG_ID);
+  await supabase.from("applications").delete().eq("org_id", DEMO_ORG_ID);
   await supabase.from("job_requisitions").delete().eq("org_id", DEMO_ORG_ID);
   await supabase.from("skill_graph").delete().eq("org_id", DEMO_ORG_ID);
   await supabase.from("model_jobs").delete().eq("org_id", DEMO_ORG_ID);
@@ -141,14 +155,183 @@ async function reseedLegacy(supabase, authIds: Record<string, string>) {
   if (orgErr) throw new Error(`org insert: ${orgErr.message}`);
   const { error: twinsErr } = await supabase.from("digital_twins").insert(buildTwins(authIds));
   if (twinsErr) throw new Error(`twins insert: ${twinsErr.message}`);
+  // IT security service owner (explicit insert — kept out of TWINS so the
+  // deterministic fixtures generator is unchanged).
+  const { error: itErr } = await supabase.from("digital_twins").insert({
+    id: ELENA_TWIN_ID,
+    org_id: DEMO_ORG_ID,
+    auth_user_id: authIds["elena@worksense.demo"] ?? null,
+    role: "it_security",
+    status: "active",
+    name: "Elena Voss",
+    email: "elena@worksense.demo",
+    department: "IT Security",
+    job_title: "IT Security Engineer",
+    manager_id: DANA_TWIN_ID,
+    tenure_months: 36,
+    seniority_level: 3,
+    promotion_lag_months: 12,
+    attendance: { baseline: 0.2, recent: 0.2 },
+    delivery: { missed: 1, total: 12 },
+    verified_skills: [
+      { name: "Identity & Access Management", proficiency: 4, evidence_source: "certification", verification_rigor: "high" },
+      { name: "Incident Response", proficiency: 3, evidence_source: "project", verification_rigor: "medium" },
+    ],
+    interview_rubrics: [],
+    performance_history: [
+      { cycle: "2026-H1", rating: "Exceeds Expectations", goals_met: 92, feedback: [{ sentiment: "positive", text: "Cut SSO onboarding time by 40%." }], summary: "Cut SSO onboarding time by 40%." },
+    ],
+    signals: [],
+    computed_fits: [],
+    audit_events: [],
+  });
+  if (itErr) throw new Error(`IT twin insert: ${itErr.message}`);
   const { error: skillsErr } = await supabase.from("skill_graph").insert(SKILLS.map((s) => ({ ...s, org_id: DEMO_ORG_ID })));
   if (skillsErr) throw new Error(`skills insert: ${skillsErr.message}`);
   const { error: reqsErr } = await supabase.from("job_requisitions").insert(REQUISITIONS.map((r) => ({ ...r, org_id: DEMO_ORG_ID })));
   if (reqsErr) throw new Error(`reqs insert: ${reqsErr.message}`);
   const { error: journeyErr } = await supabase.from("onboarding_journeys").insert(SEED_JOURNEY);
   if (journeyErr) throw new Error(`journey insert: ${journeyErr.message}`);
+  await seedPhase8Plan(supabase, DEMO_ORG_ID, SEED_FIXTURE_CLOCK);
   const { error: recsErr } = await supabase.from("recommendations").insert(RECOMMENDATIONS.map((r) => ({ ...r, org_id: DEMO_ORG_ID })));
   if (recsErr) throw new Error(`recs insert: ${recsErr.message}`);
+}
+
+// ---------------------------------------------------------------------------
+// Phase 8 demo seed: Alex Chen's plan is APPROVED and active, with an access
+// blocker reported by IT. Live flow: IT resolves + provisions (evidence) ->
+// access_sso ready -> technical tasks become available -> employee completes
+// with evidence -> readiness updates.
+// ---------------------------------------------------------------------------
+const ALEX_TWIN_ID = "22222222-2222-2222-2222-222222222203";
+const ALEX_REQ_ID = "33333333-3333-3333-3333-333333333301";
+const JORDAN_TWIN_ID = "22222222-2222-2222-2222-222222222202";
+const DANA_TWIN_ID = "22222222-2222-2222-2222-222222222201";
+const ELENA_TWIN_ID = "22222222-2222-2222-2222-222222222210";
+export const SEED_FIXTURE_CLOCK = "2026-09-15T09:00:00Z";
+
+async function seedPhase8Plan(supabase, orgId: string, clock: string) {
+  const { data: alex } = await supabase
+    .from("digital_twins")
+    .select("id, verified_skills, audit_events")
+    .eq("id", ALEX_TWIN_ID)
+    .maybeSingle();
+  if (!alex) throw new Error("phase8 seed: Alex twin missing");
+
+  const { data: req } = await supabase
+    .from("job_requisitions")
+    .select("id, title, required_skills, future_skills, seniority_level")
+    .eq("id", ALEX_REQ_ID)
+    .maybeSingle();
+  if (!req) throw new Error("phase8 seed: Senior Backend Engineer requisition missing");
+
+  const { data: polRows } = await supabase.from("policy_documents").select("doc_code, title").eq("org_id", orgId);
+  const policyDocs = (polRows ?? []) as { doc_code: string; title: string }[];
+
+  // Approved role relationship (application -> requisition), NOT a title guess.
+  const { data: existingApp } = await supabase
+    .from("applications")
+    .select("id")
+    .eq("org_id", orgId)
+    .eq("candidate_twin_id", ALEX_TWIN_ID)
+    .eq("requisition_id", ALEX_REQ_ID)
+    .maybeSingle();
+  let appId = existingApp?.id ?? null;
+  if (!appId) {
+    const { data: app, error: appErr } = await supabase
+      .from("applications")
+      .insert({
+        org_id: orgId,
+        candidate_twin_id: ALEX_TWIN_ID,
+        requisition_id: ALEX_REQ_ID,
+        stage: "selected",
+        application_code: "WS-ALEX-2026",
+        applied_at: "2026-07-20T09:00:00Z",
+      })
+      .select("id")
+      .single();
+    if (appErr) throw new Error(`phase8 seed: application insert ${appErr.message}`);
+    appId = app.id;
+  }
+
+  const defs = buildPlanDefs({
+    role: req,
+    verified_skills: (alex.verified_skills ?? []) as { name: string; proficiency: number }[],
+    policy_docs: policyDocs,
+  });
+  const hash = planHash(defs);
+
+  const done = ["security_training"];
+  const blockedFacts = {
+    access_sso: [
+      { id: "blk-demo-access", note: "SSO enrollment blocked — laptop WS-8842 pending provisioning", reported_by: "elena@worksense.demo", at: clock, status: "open" as const },
+    ],
+  };
+  const completion = {
+    security_training: {
+      actor_twin_id: ALEX_TWIN_ID,
+      actor_name: "Alex Chen",
+      at: clock,
+      evidence: [{ kind: "note" as const, label: "Training completion reference", value: "TR-2026-SEC-ALEX" }],
+      attempt_hash: "seed-security-training",
+    },
+  };
+  const tasks = materialize(
+    deriveStates(defs, { approved: true, startDate: clock, done, blockers: blockedFacts }),
+    { completion, blockers: blockedFacts }
+  );
+  const readiness = estimateReadiness(defs, tasks, clock, clock);
+
+  const startDate = "2026-07-21T09:00:00Z";
+  const { data: planRow, error: planErr } = await supabase
+    .from("onboarding_plans")
+    .insert({
+      org_id: orgId,
+      twin_id: ALEX_TWIN_ID,
+      application_id: appId,
+      version: 1,
+      plan_hash: hash,
+      status: "approved",
+      manager_approval: { by: "jordan@worksense.demo", by_twin_id: JORDAN_TWIN_ID, at: clock },
+      hr_approval: { by: "dana@worksense.demo", by_twin_id: DANA_TWIN_ID, at: clock },
+      start_date: startDate,
+      generated_at: clock,
+      readiness,
+      carryover: [],
+      audit_events: [
+        { actor: "system", action: "plan_generated", note: `Plan v1 built from approved role "${req.title}" (deterministic seed).`, timestamp: clock },
+        { actor: "system", action: "plan_activated", note: "Seeded with Manager + HR Executive approval (demo).", timestamp: clock },
+      ],
+    })
+    .select("id")
+    .single();
+  if (planErr || !planRow) throw new Error(`phase8 seed: plan insert ${planErr?.message}`);
+
+  const { error: taskErr } = await supabase.from("onboarding_tasks").insert(
+    tasks.map((t) => ({
+      org_id: orgId,
+      plan_id: planRow.id,
+      version: 1,
+      task_code: t.task_code,
+      title: t.title,
+      task_type: t.task_type,
+      owner_role: t.owner_role,
+      required: t.required,
+      non_waivable: t.non_waivable,
+      depends_on: t.depends_on,
+      duration_days: t.duration_days,
+      due_date: t.due_date,
+      topological_level: t.topological_level,
+      why_evidence: t.why_evidence,
+      evidence_requirements: t.evidence_requirements,
+      state: t.state,
+      completion_record: t.completion_record,
+      blockers: t.blockers,
+      waiver: t.waiver,
+      adaptation: t.adaptation,
+    }))
+  );
+  if (taskErr) throw new Error(`phase8 seed: tasks insert ${taskErr.message}`);
 }
 
 async function reseed(supabase, authIds: Record<string, string>) {
@@ -178,6 +361,34 @@ async function reseed(supabase, authIds: Record<string, string>) {
   const twins = [
     ...fx.employees.map((p) => twinRow(p, DEMO_ORG_ID, authIds)),
     ...fx.candidates.map((p) => twinRow(p, DEMO_ORG_ID, authIds)),
+    {
+      id: ELENA_TWIN_ID,
+      org_id: DEMO_ORG_ID,
+      auth_user_id: authIds["elena@worksense.demo"] ?? null,
+      role: "it_security",
+      status: "active",
+      name: "Elena Voss",
+      email: "elena@worksense.demo",
+      department: "IT Security",
+      job_title: "IT Security Engineer",
+      manager_id: DANA_TWIN_ID,
+      tenure_months: 36,
+      seniority_level: 3,
+      promotion_lag_months: 12,
+      attendance: { baseline: 0.2, recent: 0.2 },
+      delivery: { missed: 1, total: 12 },
+      verified_skills: [
+        { name: "Identity & Access Management", proficiency: 4, evidence_source: "certification", verification_rigor: "high" },
+        { name: "Incident Response", proficiency: 3, evidence_source: "project", verification_rigor: "medium" },
+      ],
+      interview_rubrics: [],
+      performance_history: [
+        { cycle: "2026-H1", rating: "Exceeds Expectations", goals_met: 92, feedback: [{ sentiment: "positive", text: "Cut SSO onboarding time by 40%." }], summary: "Cut SSO onboarding time by 40%." },
+      ],
+      signals: [],
+      computed_fits: [],
+      audit_events: [],
+    },
     {
       id: fx.org2.admin_twin.id,
       org_id: SECOND_ORG_ID,
@@ -422,6 +633,10 @@ async function reseed(supabase, authIds: Record<string, string>) {
     const { error: appsErr } = await supabase.from("applications").insert(apps);
     if (appsErr) throw new Error(`applications insert: ${appsErr.message}`);
   }
+
+  // 9a) Phase 8: Alex's approved role application + adaptive onboarding plan
+  // (access blocker reported by IT, provisioning/learning/verification tasks).
+  await seedPhase8Plan(supabase, DEMO_ORG_ID, fx.clock);
 
   // 9b) Candidate sessions (Phase 6): Priya has an open work-sample and an
   // interview session on the Senior Backend Engineer blueprint — this is the

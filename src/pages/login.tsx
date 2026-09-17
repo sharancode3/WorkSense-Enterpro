@@ -16,6 +16,7 @@ const BADGE: Record<string, string> = {
   recruiter: "RECRUITER",
   employee: "EMPLOYEE",
   candidate: "CANDIDATE",
+  it_security: "IT SEC",
 };
 
 export default function Login() {

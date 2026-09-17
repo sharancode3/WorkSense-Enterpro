@@ -5,33 +5,64 @@ import {
   AlertTriangle,
   ArrowRight,
   BadgeCheck,
+  CalendarClock,
   CheckCircle2,
+  ChevronDown,
+  ChevronRight,
+  GitBranch,
+  GraduationCap,
   Loader2,
   Lock,
   RefreshCw,
+  ShieldCheck,
+  Sparkles,
   UserCheck,
   Users,
   XCircle,
+  ClipboardCheck,
+  FileCheck2,
+  KeyRound,
+  Scale,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/auth-context";
 import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { can, ROLE_LABEL } from "@/lib/rbac";
 import {
-  onboardingApprove,
-  onboardingPlan,
-  onboardingTask,
-  type JourneyRow,
-  type ScheduledTask,
+  onboardingPlanApprove,
+  onboardingPlanBuild,
+  onboardingTaskAction,
+  type PlanTaskView,
+  type PlanView,
 } from "@/lib/api";
 
-const STATUS_CHIP: Record<ScheduledTask["status"], { label: string; cls: string }> = {
-  done: { label: "Done", cls: "bg-secondary text-white" },
-  waived: { label: "Waived", cls: "bg-primary/15 text-primary" },
-  blocked: { label: "Blocked", cls: "bg-destructive text-white" },
-  pending: { label: "Required", cls: "bg-muted text-foreground" },
+const OWNER_LABEL: Record<PlanTaskView["owner_role"], string> = {
+  employee: "Employee",
+  manager: "Manager",
+  hr: "HR",
+  it_security: "IT Security",
+};
+
+const TYPE_LABEL: Record<PlanTaskView["task_type"], string> = {
+  learning: "Learning",
+  verification: "Verification",
+  provisioning: "Provisioning",
+  policy: "Policy",
+  access: "Access",
+  onboarding_admin: "Admin",
+};
+
+const TYPE_ICON: Record<PlanTaskView["task_type"], typeof GraduationCap> = {
+  learning: GraduationCap,
+  verification: ClipboardCheck,
+  provisioning: KeyRound,
+  policy: ShieldCheck,
+  access: KeyRound,
+  onboarding_admin: FileCheck2,
 };
 
 function fmt(d: string | null | undefined) {
@@ -40,117 +71,357 @@ function fmt(d: string | null | undefined) {
   return Number.isNaN(t.getTime()) ? "—" : t.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
+function StatusChip({ state }: { state: PlanTaskView["state"] }) {
+  const map: Record<PlanTaskView["state"], { label: string; cls: string }> = {
+    done: { label: "Done", cls: "bg-secondary text-white" },
+    waived: { label: "Waived", cls: "bg-primary/15 text-primary" },
+    blocked: { label: "Blocked", cls: "bg-destructive text-white" },
+    pending: { label: "Queued", cls: "bg-muted text-foreground" },
+    ready: { label: "Ready", cls: "bg-accent text-foreground" },
+    in_progress: { label: "In progress", cls: "bg-accent text-foreground" },
+    failed: { label: "Failed", cls: "bg-destructive/15 text-destructive" },
+  };
+  const chip = map[state] ?? map.pending;
+  return <span className={`shrink-0 rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${chip.cls}`}>{chip.label}</span>;
+}
+
+function WhyEvidence({ task }: { task: PlanTaskView }) {
+  const [open, setOpen] = useState(false);
+  const why = task.why_evidence;
+  if (!why?.reason) return null;
+  return (
+    <div className="rounded-md bg-muted/60 px-2.5 py-2 text-[11px] leading-snug">
+      <button type="button" onClick={() => setOpen((v) => !v)} className="flex items-center gap-1 font-semibold text-foreground hover:underline">
+        {open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+        Why this task
+      </button>
+      {open && (
+        <div className="mt-1.5 flex flex-col gap-1.5 text-muted-foreground">
+          <p>{why.reason}</p>
+          {(why.source_evidence ?? []).map((s, i) => (
+            <p key={i} className="rounded bg-background px-1.5 py-1">
+              <span className="font-bold uppercase tracking-wider text-primary/80">{s.source_type}</span>: {s.fact}
+            </p>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TaskCard({
   task,
-  canAct,
+  plan,
+  viewer,
   canComplete,
-  journeyActive,
-  depsDone,
-  blockerOpen,
-  blockerText,
-  onOpenBlocker,
-  onBlockerChange,
-  onBlockerSubmit,
+  canWaive,
+  canAdapt,
+  canFail,
+  canResolve,
   onComplete,
+  onBlock,
   onResolve,
+  onWaive,
+  onAdapt,
+  onFail,
   busy,
 }: {
-  task: ScheduledTask;
-  canAct: boolean;
+  task: PlanTaskView;
+  plan: PlanView;
+  viewer: { id: string; role: string } | null;
   canComplete: boolean;
-  journeyActive: boolean;
-  depsDone: boolean;
-  blockerOpen: boolean;
-  blockerText: string;
-  onOpenBlocker: () => void;
-  onBlockerChange: (v: string) => void;
-  onBlockerSubmit: () => void;
-  onComplete: () => void;
-  onResolve: () => void;
+  canWaive: boolean;
+  canAdapt: boolean;
+  canFail: boolean;
+  canResolve: boolean;
+  onComplete: (evidence: { kind: "note" | "assessment_id"; label: string; value: string }[], note?: string) => void;
+  onBlock: (note: string) => void;
+  onResolve: (blockerId: string) => void;
+  onWaive: (reason: string, policyDoc: string) => void;
+  onAdapt: (note: string) => void;
+  onFail: (note: string) => void;
   busy: boolean;
 }) {
-  const chip = STATUS_CHIP[task.status];
+  const [blockerOpen, setBlockerOpen] = useState(false);
+  const [blockerText, setBlockerText] = useState("");
+  const [completeOpen, setCompleteOpen] = useState(false);
+  const [evidence, setEvidence] = useState<Record<string, string>>({});
+  const [note, setNote] = useState("");
+  const [waiveOpen, setWaiveOpen] = useState(false);
+  const [waiveReason, setWaiveReason] = useState("");
+  const [waivePolicy, setWaivePolicy] = useState("");
+  const [adaptOpen, setAdaptOpen] = useState(false);
+  const [adaptNote, setAdaptNote] = useState("");
+  const [failOpen, setFailOpen] = useState(false);
+  const [failNote, setFailNote] = useState("");
+  const Icon = TYPE_ICON[task.task_type];
+
+  const openBlockers = task.blockers.filter((b) => b.status === "open");
+
+  const doComplete = () => {
+    const ev = (task.evidence_requirements ?? [])
+      .filter((r) => r.required)
+      .map((r) => ({ kind: r.kind as "note" | "assessment_id", label: r.label, value: (evidence[r.label] ?? "").trim() }));
+    if (ev.some((e) => !e.value)) {
+      toast.error("All required evidence fields must be filled before completing.");
+      return;
+    }
+    onComplete(ev, note.trim() || undefined);
+    setCompleteOpen(false);
+    setEvidence({});
+    setNote("");
+  };
+
   return (
-    <div className="flex flex-col gap-2 rounded-lg bg-white p-4 transition-all duration-200 hover:scale-[1.02]">
+    <div className="flex flex-col gap-2.5 rounded-lg bg-white p-4 transition-all duration-200 hover:scale-[1.01]">
       <div className="flex items-start justify-between gap-2">
-        <p className="text-sm font-bold leading-snug text-foreground">{task.title}</p>
-        <span className={`shrink-0 rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${chip.cls}`}>
-          {chip.label}
-        </span>
+        <div className="flex items-start gap-2">
+          <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-muted text-foreground">
+            <Icon className="h-3.5 w-3.5" />
+          </span>
+          <div>
+            <p className="text-sm font-bold leading-snug text-foreground">{task.title}</p>
+            <div className="mt-1 flex flex-wrap items-center gap-1.5">
+              <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                {TYPE_LABEL[task.task_type]}
+              </span>
+              <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                {OWNER_LABEL[task.owner_role]}
+              </span>
+              {task.non_waivable && (
+                <span className="rounded bg-destructive/10 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-destructive">
+                  Non-waivable
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+        <StatusChip state={task.state} />
       </div>
 
-      {task.waived && task.skill && (
-        <p className="flex items-center gap-1 text-[11px] text-primary">
-          <BadgeCheck className="h-3 w-3" strokeWidth={2.5} />
-          Waived — verified {task.skill} at/above target {task.target_proficiency}
-        </p>
-      )}
-      {task.non_waivable && (
-        <p className="text-[11px] text-muted-foreground">Non-waivable — required by policy</p>
-      )}
+      <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
+        <span className="flex items-center gap-1 font-medium text-foreground">
+          <CalendarClock className="h-3 w-3" /> due {fmt(task.due_date)}
+        </span>
+        <span>{task.duration_days}d</span>
+      </div>
 
       {task.depends_on.length > 0 && (
         <p className="text-[11px] text-muted-foreground">
+          <GitBranch className="mr-1 inline h-3 w-3" />
           needs: {task.depends_on.join(", ")}
         </p>
       )}
 
-      <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
-        <span className="font-medium text-foreground">{fmt(task.start_date)} → {fmt(task.end_date)}</span>
-        {typeof task.duration_days === "number" && <span>{task.duration_days}d</span>}
-      </div>
-
-      {task.blocked && (
+      {task.blocked_reasons.length > 0 && (
         <p className="rounded-md bg-destructive/10 px-2 py-1.5 text-[11px] leading-snug text-destructive">
-          <AlertTriangle className="mr-1 inline h-3 w-3" /> {task.blocked.note}
-          <span className="block text-destructive/80">reported by {task.blocked.reported_by}</span>
+          <AlertTriangle className="mr-1 inline h-3 w-3" />
+          Waiting on: {task.blocked_reasons.join(", ")}
         </p>
       )}
 
-      {canAct && task.status === "blocked" && (
-        <Button size="sm" variant="outline" onClick={onResolve} disabled={busy}>
-          <RefreshCw className="h-3.5 w-3.5" /> Resolve & recompute
-        </Button>
+      {openBlockers.length > 0 && (
+        <div className="flex flex-col gap-1.5">
+          {openBlockers.map((b) => (
+            <div key={b.id} className="flex items-start justify-between gap-2 rounded-md bg-destructive/10 px-2 py-1.5 text-[11px] leading-snug text-destructive">
+              <span>
+                <AlertTriangle className="mr-1 inline h-3 w-3" />
+                {b.note}
+                <span className="block text-destructive/80">reported by {b.reported_by}</span>
+              </span>
+              {canResolve && (
+                <Button size="sm" variant="outline" className="h-6 shrink-0 px-2 text-[10px]" onClick={() => onResolve(b.id)} disabled={busy}>
+                  Resolve
+                </Button>
+              )}
+            </div>
+          ))}
+        </div>
       )}
 
-      {canAct && task.status !== "done" && task.status !== "blocked" && task.status !== "waived" && (
-        <div className="flex flex-col gap-2">
-          {blockerOpen ? (
-            <div className="flex flex-col gap-2">
-              <Textarea
-                rows={2}
-                value={blockerText}
-                onChange={(e) => onBlockerChange(e.target.value)}
-                placeholder={`Report a blocker (e.g. "${task.title} — waiting on…")`}
-                className="h-auto min-h-0 text-xs"
-              />
-              <div className="flex gap-2">
-                <Button size="sm" onClick={onBlockerSubmit} disabled={busy || !blockerText.trim()}>
-                  Report blocker
-                </Button>
-              </div>
+      {task.completion_record && (
+        <div className="rounded-md bg-secondary/10 px-2 py-1.5 text-[11px] leading-snug">
+          <p className="flex items-center gap-1 font-semibold text-secondary">
+            <CheckCircle2 className="h-3 w-3" /> Completed by {task.completion_record.actor_name}
+          </p>
+          {(task.completion_record.evidence ?? []).length > 0 && (
+            <div className="mt-1 flex flex-col gap-0.5 text-muted-foreground">
+              {task.completion_record.evidence.map((e, i) => (
+                <p key={i}>
+                  <span className="font-bold uppercase tracking-wider text-secondary/80">{e.label}</span>: {e.value}
+                </p>
+              ))}
             </div>
-          ) : canComplete ? (
-            <Button size="sm" onClick={onComplete} disabled={busy}>
-              <CheckCircle2 className="h-3.5 w-3.5" /> Mark complete
+          )}
+          {task.completion_record.note && <p className="mt-0.5 text-muted-foreground">{task.completion_record.note}</p>}
+        </div>
+      )}
+
+      {task.waiver && (
+        <div className="rounded-md bg-primary/10 px-2 py-1.5 text-[11px] leading-snug">
+          <p className="flex items-center gap-1 font-semibold text-primary">
+            <Scale className="h-3 w-3" /> Waived by {task.waiver.by_name}
+          </p>
+          <p className="text-muted-foreground">{task.waiver.reason}</p>
+          {task.waiver.policy_basis && <p className="text-muted-foreground">Policy basis: {task.waiver.policy_basis.doc_code}</p>}
+        </div>
+      )}
+
+      {task.adaptation && (
+        <div className="rounded-md bg-accent/20 px-2 py-1.5 text-[11px] leading-snug">
+          <p className="flex items-center gap-1 font-semibold text-foreground">
+            <Sparkles className="h-3 w-3 text-primary" />
+            {task.adaptation.kind === "replaced" ? `Adapted → ${task.adaptation.replaced_by}` : "Verification failed — gap re-opened"}
+          </p>
+          <p className="text-muted-foreground">{task.adaptation.reason}</p>
+        </div>
+      )}
+
+      <WhyEvidence task={task} />
+
+      {/* Actions */}
+      {canComplete && task.state !== "done" && task.state !== "waived" && task.state !== "failed" && task.state !== "blocked" && (
+        <div className="flex flex-wrap gap-2">
+          <Button size="sm" onClick={() => setCompleteOpen(true)} disabled={busy}>
+            <CheckCircle2 className="h-3.5 w-3.5" /> Complete
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => setBlockerOpen((v) => !v)} disabled={busy}>
+            <AlertTriangle className="h-3.5 w-3.5" /> Report blocker
+          </Button>
+          {canWaive && (
+            <Button size="sm" variant="ghost" onClick={() => setWaiveOpen(true)} disabled={busy}>
+              <Scale className="h-3.5 w-3.5" /> Waive
             </Button>
-          ) : (
-            <p className="rounded-md bg-muted px-2 py-1.5 text-[11px] leading-snug text-muted-foreground">
-              {!journeyActive
-                ? "Requires Manager + HR approval before tasks can be completed."
-                : !depsDone
-                  ? "Waiting on prerequisites to complete."
-                  : "Cannot complete this task yet."}
-            </p>
+          )}
+          {canAdapt && task.task_type === "learning" && (
+            <Button size="sm" variant="ghost" onClick={() => setAdaptOpen(true)} disabled={busy}>
+              <Sparkles className="h-3.5 w-3.5" /> Adapt to verification
+            </Button>
+          )}
+          {canFail && task.task_type === "verification" && task.state !== "done" && (
+            <Button size="sm" variant="ghost" className="text-destructive" onClick={() => setFailOpen(true)} disabled={busy}>
+              <XCircle className="h-3.5 w-3.5" /> Mark failed
+            </Button>
           )}
         </div>
       )}
 
-      {canAct && task.status !== "done" && task.status !== "blocked" && task.status !== "waived" && !blockerOpen && canComplete && (
-        <Button size="sm" variant="ghost" onClick={onOpenBlocker} disabled={busy}>
-          <AlertTriangle className="h-3.5 w-3.5" /> Report blocker
-        </Button>
+      {task.state === "blocked" && task.blocked_reasons.length === 0 && openBlockers.length === 0 && (
+        <p className="rounded-md bg-muted px-2 py-1.5 text-[11px] text-muted-foreground">Blocked by a prerequisite upstream.</p>
       )}
+
+      {blockerOpen && (
+        <div className="flex flex-col gap-2">
+          <Textarea
+            rows={2}
+            value={blockerText}
+            onChange={(e) => setBlockerText(e.target.value)}
+            placeholder="Describe the blocker…"
+            className="h-auto min-h-0 text-xs"
+          />
+          <div className="flex gap-2">
+            <Button size="sm" onClick={() => { if (blockerText.trim()) onBlock(blockerText.trim()); setBlockerText(""); setBlockerOpen(false); }} disabled={busy || !blockerText.trim()}>
+              Report
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Completion evidence dialog */}
+      <Dialog open={completeOpen} onOpenChange={setCompleteOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Complete: {task.title}</DialogTitle>
+            <DialogDescription>Genuine completion requires evidence per task requirements.</DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-3">
+            {(task.evidence_requirements ?? []).map((r) => (
+              <label key={r.label} className="flex flex-col gap-1 text-xs font-semibold text-foreground">
+                {r.label}
+                {r.kind === "note" ? (
+                  <Input value={evidence[r.label] ?? ""} onChange={(e) => setEvidence((s) => ({ ...s, [r.label]: e.target.value }))} placeholder="Evidence reference…" className="text-sm font-normal" />
+                ) : (
+                  <Input value={evidence[r.label] ?? ""} onChange={(e) => setEvidence((s) => ({ ...s, [r.label]: e.target.value }))} placeholder="Assessment evidence id…" className="text-sm font-normal" />
+                )}
+              </label>
+            ))}
+            <label className="flex flex-col gap-1 text-xs font-semibold text-foreground">
+              Note (optional)
+              <Textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)} className="h-auto min-h-0 text-xs font-normal" />
+            </label>
+          </div>
+          <DialogFooter>
+            <Button onClick={doComplete} disabled={busy}><CheckCircle2 className="h-4 w-4" /> Confirm completion</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Waiver dialog */}
+      <Dialog open={waiveOpen} onOpenChange={setWaiveOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Waive: {task.title}</DialogTitle>
+            <DialogDescription>
+              {task.non_waivable
+                ? "This task is non-waivable — an HR Executive waiver with a policy basis and reason is required."
+                : "A reason is required. A policy basis citation is recommended."}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-3">
+            <label className="flex flex-col gap-1 text-xs font-semibold text-foreground">
+              Reason
+              <Textarea rows={2} value={waiveReason} onChange={(e) => setWaiveReason(e.target.value)} className="h-auto min-h-0 text-xs font-normal" />
+            </label>
+            <label className="flex flex-col gap-1 text-xs font-semibold text-foreground">
+              Policy basis (doc_code, optional unless non-waivable)
+              <Input value={waivePolicy} onChange={(e) => setWaivePolicy(e.target.value)} placeholder="e.g. POL-SEC" className="text-sm font-normal" />
+            </label>
+          </div>
+          <DialogFooter>
+            <Button variant="destructive" onClick={() => { if (waiveReason.trim()) onWaive(waiveReason.trim(), waivePolicy.trim()); setWaiveOpen(false); setWaiveReason(""); setWaivePolicy(""); }} disabled={busy || !waiveReason.trim()}>
+              Confirm waiver
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Adapt dialog */}
+      <Dialog open={adaptOpen} onOpenChange={setAdaptOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Adapt learning → verification</DialogTitle>
+            <DialogDescription>New assessment evidence replaces further learning for this skill with a verification task. The plan version bumps and approvals are invalidated.</DialogDescription>
+          </DialogHeader>
+          <label className="flex flex-col gap-1 text-xs font-semibold text-foreground">
+            Reason / evidence note
+            <Textarea rows={2} value={adaptNote} onChange={(e) => setAdaptNote(e.target.value)} placeholder="e.g. Assessment evidence confirms mastery at target…" className="h-auto min-h-0 text-xs font-normal" />
+          </label>
+          <DialogFooter>
+            <Button onClick={() => { onAdapt(adaptNote.trim()); setAdaptOpen(false); setAdaptNote(""); }} disabled={busy}>
+              Confirm adaptation
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Fail dialog */}
+      <Dialog open={failOpen} onOpenChange={setFailOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Mark verification failed</DialogTitle>
+            <DialogDescription>The gap re-opens and the plan is revised — approvals are invalidated and a re-learning task is added.</DialogDescription>
+          </DialogHeader>
+          <label className="flex flex-col gap-1 text-xs font-semibold text-foreground">
+            Reason
+            <Textarea rows={2} value={failNote} onChange={(e) => setFailNote(e.target.value)} placeholder="e.g. Assessment anchor not met…" className="h-auto min-h-0 text-xs font-normal" />
+          </label>
+          <DialogFooter>
+            <Button variant="destructive" onClick={() => { onFail(failNote.trim()); setFailOpen(false); setFailNote(""); }} disabled={busy}>
+              Confirm failure
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -159,17 +430,12 @@ export default function Onboarding() {
   const { role, twin, user } = useAuth();
   const qc = useQueryClient();
   const [selected, setSelected] = useState<string>("");
-  const [blockerState, setBlockerState] = useState<{ taskId: string; open: boolean; text: string }>({
-    taskId: "",
-    open: false,
-    text: "",
-  });
   const [busy, setBusy] = useState<string | null>(null);
 
   const canView = role ? can(role, "view_onboarding") : false;
 
   const employees = useQuery({
-    queryKey: ["onb-employees", user?.id ?? "anon"],
+    queryKey: ["ob-employees", user?.id ?? "anon"],
     enabled: canView && role !== "employee",
     queryFn: async () => {
       const { data } = await supabase.from("digital_twins").select("id, name, role, job_title").in("role", ["employee"]).order("name");
@@ -177,42 +443,49 @@ export default function Onboarding() {
     },
   });
 
-  // Manager / HR pick an employee; employees see themselves.
+  // Employee + IT service view resolve to the actor's own twin by default;
+  // managers/HR pick an employee.
   useEffect(() => {
-    if (role === "employee" && twin && !selected) setSelected(twin.id);
+    if ((role === "employee" || role === "it_security") && twin && !selected) setSelected(twin.id);
   }, [role, twin, selected]);
 
-  const journey = useQuery({
-    queryKey: ["journey", user?.id ?? "anon", selected],
+  const plan = useQuery({
+    queryKey: ["plan", user?.id ?? "anon", selected],
     enabled: !!selected && canView,
     queryFn: async () => {
-      const { data } = await supabase.from("onboarding_journeys").select("*").eq("twin_id", selected).maybeSingle();
-      return (data ?? null) as JourneyRow | null;
+      const { data } = await supabase
+        .from("onboarding_plans")
+        .select("*")
+        .eq("twin_id", selected)
+        .eq("org_id", twin?.org_id)
+        .order("version", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      return (data ?? null) as PlanView | null;
     },
   });
 
-  // Auto-generate the plan for the employee's own journey if it is missing/draft.
-  const needGen = selected === twin?.id && role === "employee" && journey.data && journey.data.status === "draft";
-  useEffect(() => {
-    if (needGen) {
-      void (async () => {
-        try {
-          await onboardingPlan(selected);
-          void qc.invalidateQueries({ queryKey: ["journey", user?.id ?? "anon", selected] });
-        } catch (err) {
-          toast.error(err instanceof Error ? err.message : "Plan generation failed");
-        }
-      })();
-    }
-  }, [needGen, selected, user?.id, qc]);
+  const tasks = useQuery({
+    queryKey: ["plan-tasks", user?.id ?? "anon", plan.data?.id ?? "none"],
+    enabled: !!plan.data?.id,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("onboarding_tasks")
+        .select("*")
+        .eq("plan_id", plan.data!.id)
+        .order("topological_level", { ascending: true });
+      return ((data ?? []) as unknown[]) as PlanTaskView[];
+    },
+  });
 
-  const generate = async () => {
+  const build = async (regen = false) => {
     if (!selected) return;
     setBusy("gen");
     try {
-      await onboardingPlan(selected);
-      toast.success("Onboarding plan generated — awaiting dual approval.");
-      void qc.invalidateQueries({ queryKey: ["journey", user?.id ?? "anon", selected] });
+      await onboardingPlanBuild(selected, regen);
+      toast.success(regen ? "Plan regenerated — approvals invalidated (new version)." : "Plan built from the approved role relationship.");
+      await qc.invalidateQueries({ queryKey: ["plan", user?.id ?? "anon", selected] });
+      await qc.invalidateQueries({ queryKey: ["plan-tasks"] });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Generation failed");
     } finally {
@@ -221,12 +494,12 @@ export default function Onboarding() {
   };
 
   const approve = async () => {
-    if (!journey.data) return;
+    if (!plan.data) return;
     setBusy("approve");
     try {
-      const res = await onboardingApprove(journey.data.id);
-      toast.success(res.status === "active" ? "Plan active — both approvals received." : "Approval recorded.");
-      void qc.invalidateQueries({ queryKey: ["journey", user?.id ?? "anon", selected] });
+      const res = await onboardingPlanApprove(plan.data.id, plan.data.plan_hash);
+      toast.success(res.status === "approved" ? "Plan active — both approvals received." : "Approval recorded.");
+      await qc.invalidateQueries({ queryKey: ["plan", user?.id ?? "anon", selected] });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Approval failed");
     } finally {
@@ -234,14 +507,22 @@ export default function Onboarding() {
     }
   };
 
-  const act = async (taskId: string, action: "complete" | "block" | "resolve", note?: string) => {
-    if (!journey.data) return;
-    setBusy(`${action}-${taskId}`);
+  const act = async (taskCode: string, action: "complete" | "block" | "resolve" | "waive" | "adapt" | "fail", payload: Record<string, unknown> = {}) => {
+    if (!plan.data) return;
+    setBusy(`${action}-${taskCode}`);
     try {
-      await onboardingTask(journey.data.id, taskId, action, note);
-      toast.success(action === "block" ? "Blocker reported — downstream dates recomputed." : "Task updated.");
-      setBlockerState({ taskId: "", open: false, text: "" });
-      void qc.invalidateQueries({ queryKey: ["journey", user?.id ?? "anon", selected] });
+      await onboardingTaskAction(plan.data.id, taskCode, action, payload);
+      const verb: Record<string, string> = {
+        complete: "Task completed with evidence.",
+        block: "Blocker reported.",
+        resolve: "Blocker resolved.",
+        waive: "Task waived.",
+        adapt: "Plan adapted to a verification task — pending approval again.",
+        fail: "Verification failed — plan revised, gap re-opened.",
+      };
+      toast.success(verb[action] ?? "Updated.");
+      await qc.invalidateQueries({ queryKey: ["plan", user?.id ?? "anon", selected] });
+      await qc.invalidateQueries({ queryKey: ["plan-tasks"] });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Update failed");
     } finally {
@@ -249,37 +530,52 @@ export default function Onboarding() {
     }
   };
 
+  const viewer = twin ? { id: twin.id, role: twin.role } : null;
+
   const columns = useMemo(() => {
-    const tasks = journey.data?.tasks ?? [];
-    // Resilient wave computation: use stored topological_level, else derive
-    // from depends_on depth so legacy/seed plans still render correctly.
-    const levelOf = new Map<string, number>();
-    const resolveLevel = (t: ScheduledTask): number => {
-      const known = levelOf.get(t.id);
-      if (known !== undefined) return known;
-      if (typeof t.topological_level === "number") {
-        levelOf.set(t.id, t.topological_level);
-        return t.topological_level;
-      }
-      const depLevel = (t.depends_on ?? [])
-        .map((d) => {
-          const dep = tasks.find((x) => x.id === d);
-          return dep ? resolveLevel(dep) + 1 : 0;
-        })
-        .reduce((m, l) => Math.max(m, l), 0);
-      levelOf.set(t.id, depLevel);
-      return depLevel;
-    };
-    const maxLevel = tasks.reduce((m, t) => Math.max(m, resolveLevel(t)), -1);
-    const cols: ScheduledTask[][] = Array.from({ length: maxLevel + 1 }, () => []);
-    for (const t of tasks) cols[resolveLevel(t)]?.push(t);
+    const list = tasks.data ?? [];
+    const maxLevel = list.reduce((m, t) => Math.max(m, t.topological_level ?? 0), -1);
+    const cols: PlanTaskView[][] = Array.from({ length: maxLevel + 1 }, () => []);
+    for (const t of list) cols[t.topological_level]?.push(t);
     return cols;
-  }, [journey.data]);
+  }, [tasks.data]);
+
+  const allTasks = tasks.data ?? [];
+  const critical = useMemo(() => {
+    // Critical path (longest remaining chain) — local UI estimate mirrors the engine.
+    const list = tasks.data ?? [];
+    const doneSetLocal = new Set(list.filter((t) => t.state === "done" || t.state === "waived").map((t) => t.task_code));
+    const byCode = new Map(list.map((t) => [t.task_code, t]));
+    const adj = new Map<string, string[]>();
+    for (const t of list) for (const d of t.depends_on) adj.set(d, [...(adj.get(d) ?? []), t.task_code]);
+    const memo = new Map<string, string[]>();
+    const chain = (id: string): string[] => {
+      const known = memo.get(id);
+      if (known) return known;
+      const deps = adj.get(id) ?? [];
+      let best: string[] = [];
+      for (const c of deps) {
+        const ch = chain(c);
+        if (ch.length > best.length) best = ch;
+      }
+      const res = [id, ...best];
+      memo.set(id, res);
+      return res;
+    };
+    let best: string[] = [];
+    for (const t of list) {
+      if (doneSetLocal.has(t.task_code)) continue;
+      const ch = chain(t.task_code);
+      if (ch.length > best.length) best = ch;
+    }
+    void byCode;
+    return best;
+  }, [tasks.data]);
 
   const isOwner = selected === twin?.id;
-  const isManagerOf = role === "manager" && journey.data && twin ? twin.id !== journey.data.twin_id : false;
-  const canAct = role === "employee" ? isOwner : role === "manager" || role === "hr_executive" || role === "hr_partner";
-  const canApprove = role === "manager" || role === "hr_executive";
+  const canApprove =
+    role === "manager" || role === "hr_executive";
+  const canRegen = role === "manager" || role === "hr_executive" || role === "it_security";
 
   if (!canView) {
     return (
@@ -289,7 +585,7 @@ export default function Onboarding() {
             <Lock className="h-8 w-8" />
           </span>
           <h1 className="text-2xl font-extrabold text-foreground">Onboarding access only</h1>
-          <p className="text-muted-foreground">This center is for employees and their managers/HR.</p>
+          <p className="text-muted-foreground">This center is for employees, their managers/HR, and IT service owners.</p>
         </div>
       </AppShell>
     );
@@ -297,10 +593,12 @@ export default function Onboarding() {
 
   if (!user) return null;
 
-  const plan = journey.data?.plan;
-  const approvals = plan?.approvals ?? [];
-  const mgrApproved = approvals.some((a) => a.role === "manager" && a.approved);
-  const hrApproved = approvals.some((a) => a.role === "hr_executive" && a.approved);
+  const planData = plan.data;
+  const readiness = planData?.readiness;
+  const mgrApproved = Boolean(planData?.manager_approval);
+  const hrApproved = Boolean(planData?.hr_approval);
+  const planActive = planData?.status === "approved";
+  const planPending = planData?.status === "pending_approval";
 
   return (
     <AppShell>
@@ -308,15 +606,14 @@ export default function Onboarding() {
         <div className="flex flex-col gap-2">
           <span className="text-xs font-bold uppercase tracking-wider text-primary">Adaptive Onboarding Center</span>
           <h1 className="text-3xl font-extrabold tracking-tight text-foreground md:text-4xl">
-            Personalized journeys, <span className="text-primary">deterministically</span> scheduled.
+            Owned tasks, <span className="text-primary">versioned approvals</span>, real evidence.
           </h1>
           <p className="max-w-2xl text-muted-foreground">
-            Kahn's topological scheduler builds the plan; the Bloom-style waiver rule skips what you
-            already prove; every approval and blocker is audited.
+            Plans are built from the approved role relationship, scheduled as a DAG, and every completion
+            requires an authorized owner and genuine evidence.
           </p>
         </div>
 
-        {/* Employee selector for manager/HR */}
         {role !== "employee" && (
           <div className="mt-8 flex flex-wrap items-center gap-3">
             <Users className="h-5 w-5 text-primary" strokeWidth={2.5} />
@@ -332,68 +629,123 @@ export default function Onboarding() {
                 </option>
               ))}
             </select>
-            {journey.data && journey.data.status === "draft" && (
-              <Button onClick={() => void generate()} disabled={busy === "gen"}>
+            {selected && !planData && (
+              <Button onClick={() => void build(false)} disabled={busy === "gen"}>
                 {busy === "gen" ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                Generate plan
+                Build plan from approved role
               </Button>
             )}
           </div>
         )}
 
-        {role === "employee" && journey.data && journey.data.status === "draft" && (
+        {role === "employee" && !planData && (
           <div className="mt-8 flex items-center gap-3 rounded-lg bg-muted p-4 text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin text-primary" /> Generating your personalized onboarding plan…
+            <Loader2 className="h-4 w-4 animate-spin text-primary" /> Loading your plan…
           </div>
         )}
 
-        {selected && journey.data && (
+        {selected && planData && (
           <div className="mt-8 flex flex-col gap-6">
-            {/* Approval banner */}
+            {/* Plan header: status / approvals / version+hash / regenerate */}
             <div className="rounded-lg bg-white p-5">
               <div className="flex flex-wrap items-center justify-between gap-4">
                 <div className="flex flex-col gap-2">
-                  <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                    Plan status
-                  </p>
+                  <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Plan status</p>
                   <div className="flex items-center gap-3">
                     <span
                       className={`rounded-md px-3 py-1.5 text-xs font-bold uppercase tracking-wider ${
-                        journey.data.status === "active"
+                        planData.status === "approved"
                           ? "bg-secondary text-white"
-                          : journey.data.status === "pending"
+                          : planData.status === "pending_approval"
                             ? "bg-accent text-foreground"
                             : "bg-muted text-foreground"
                       }`}
                     >
-                      {journey.data.status === "active" ? "Active" : journey.data.status === "pending" ? "Pending approval" : "Draft"}
+                      {planData.status === "approved" ? "Active" : planData.status === "pending_approval" ? "Pending approval" : planData.status}
                     </span>
                     <span className="text-sm text-muted-foreground">
-                      Fit vs role: current <b className="text-foreground">{Math.round((plan?.fit_current ?? 0) * 100)}</b> ·
-                      future <b className="text-foreground">{Math.round((plan?.fit_future ?? 0) * 100)}</b>
+                      v<b className="text-foreground">{planData.version}</b> · hash{" "}
+                      <code className="rounded bg-muted px-1.5 py-0.5 text-[11px] text-foreground">{planData.plan_hash.slice(0, 12)}…</code>
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-4 text-sm">
+                    <span className={`flex items-center gap-1.5 ${mgrApproved ? "text-secondary" : "text-muted-foreground"}`}>
+                      <UserCheck className="h-4 w-4" /> Manager {mgrApproved ? `approved (${planData.manager_approval?.by})` : "pending"}
+                    </span>
+                    <span className={`flex items-center gap-1.5 ${hrApproved ? "text-secondary" : "text-muted-foreground"}`}>
+                      <BadgeCheck className="h-4 w-4" /> HR Exec {hrApproved ? `approved (${planData.hr_approval?.by})` : "pending"}
                     </span>
                   </div>
                 </div>
                 <div className="flex flex-col gap-2">
-                  <div className="flex items-center gap-4 text-sm">
-                    <span className={`flex items-center gap-1.5 ${mgrApproved ? "text-secondary" : "text-muted-foreground"}`}>
-                      <UserCheck className="h-4 w-4" /> Manager {mgrApproved ? "approved" : "pending"}
-                    </span>
-                    <span className={`flex items-center gap-1.5 ${hrApproved ? "text-secondary" : "text-muted-foreground"}`}>
-                      <BadgeCheck className="h-4 w-4" /> HR Exec {hrApproved ? "approved" : "pending"}
-                    </span>
+                  <div className="flex flex-wrap gap-2">
+                    {canApprove && planPending && role === "manager" && !isOwner && (
+                      <Button size="sm" onClick={() => void approve()} disabled={busy === "approve"}>
+                        {busy === "approve" ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserCheck className="h-4 w-4" />}
+                        Approve as Manager
+                      </Button>
+                    )}
+                    {canApprove && planPending && role === "hr_executive" && (
+                      <Button size="sm" onClick={() => void approve()} disabled={busy === "approve"}>
+                        {busy === "approve" ? <Loader2 className="h-4 w-4 animate-spin" /> : <BadgeCheck className="h-4 w-4" />}
+                        Approve as HR Exec
+                      </Button>
+                    )}
+                    {isOwner && role === "employee" && (
+                      <p className="text-[11px] text-muted-foreground">An employee cannot approve their own plan.</p>
+                    )}
+                    {canRegen && (
+                      <Button size="sm" variant="outline" onClick={() => void build(true)} disabled={busy === "gen"}>
+                        {busy === "gen" ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                        Regenerate (new version)
+                      </Button>
+                    )}
                   </div>
-                  {canApprove && journey.data.status !== "active" && (
-                    <Button onClick={() => void approve()} disabled={busy === "approve"} size="sm">
-                      {busy === "approve" ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-                      {journey.data.status === "draft" ? "Generate & approve" : "Approve as " + ROLE_LABEL[role ?? "employee"]}
-                    </Button>
-                  )}
                 </div>
               </div>
+
+              {readiness && (
+                <div className="mt-4 flex flex-col gap-2 rounded-md bg-muted p-3">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Estimated readiness</span>
+                    <span className="text-xl font-extrabold text-foreground">{readiness.ready_pct}%</span>
+                    <span className="text-xs text-muted-foreground">
+                      {readiness.satisfied}/{readiness.total} tasks · {readiness.remaining_critical_days}d remaining on critical path
+                    </span>
+                    {readiness.blocked_count > 0 && (
+                      <span className="flex items-center gap-1 rounded bg-destructive/10 px-2 py-0.5 text-[11px] font-bold text-destructive">
+                        <AlertTriangle className="h-3 w-3" /> {readiness.blocked_count} blocked
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] leading-snug text-muted-foreground">{readiness.note}</p>
+                </div>
+              )}
+
+              {planData.carryover.length > 0 && (
+                <p className="mt-3 text-[11px] text-muted-foreground">
+                  Preserved from v{planData.carryover[0].from_version}: {planData.carryover.map((c) => c.task_code).join(", ")}
+                </p>
+              )}
             </div>
 
-            {/* DAG view: columns by topological wave */}
+            {/* Critical path strip */}
+            {critical.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2 rounded-lg bg-white p-4 text-xs text-muted-foreground">
+                <span className="font-bold uppercase tracking-wider text-primary">Critical path</span>
+                <GitBranch className="h-3.5 w-3.5" />
+                <span className="flex flex-wrap items-center gap-1">
+                  {critical.map((c, i) => (
+                    <span key={c} className="flex items-center gap-1">
+                      <span className="rounded bg-muted px-1.5 py-0.5 font-semibold text-foreground">{c}</span>
+                      {i < critical.length - 1 && <ArrowRight className="h-3 w-3" />}
+                    </span>
+                  ))}
+                </span>
+              </div>
+            )}
+
+            {/* DAG view */}
             <div>
               <h2 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
                 Dependency graph — wave by wave
@@ -402,33 +754,48 @@ export default function Onboarding() {
                 {columns.map((col, level) => (
                   <div key={level} className="flex-1">
                     <div className="mb-2 flex items-center gap-2">
-                      <span className="flex h-6 w-6 items-center justify-center rounded-md bg-foreground text-xs font-bold text-white">
-                        {level}
-                      </span>
-                      <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                        Wave {level}
-                      </span>
+                      <span className="flex h-6 w-6 items-center justify-center rounded-md bg-foreground text-xs font-bold text-white">{level}</span>
+                      <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Wave {level}</span>
                     </div>
                     <div className="flex flex-col gap-3">
                       {col.map((task) => {
-                        const depsDone = (task.depends_on ?? []).every((d) => tasks.find((x) => x.id === d)?.status === "done");
-                        const journeyActive = journey.data?.status === "active";
+                        const ownerMatch =
+                          task.owner_role === "employee"
+                            ? isOwner
+                            : task.owner_role === "manager"
+                              ? role === "manager" && twin?.id === planData.twin_id
+                              : task.owner_role === "hr"
+                                ? role === "hr_executive" || role === "hr_partner"
+                                : role === "it_security";
+                        const canComplete = planActive && ownerMatch && task.state === "ready";
+                        const canWaiveAct =
+                          (role === "manager" && twin?.id === planData.twin_id) || role === "hr_executive" || role === "hr_partner";
+                        const canAdaptAct = canWaiveAct;
+                        const canFail = canAdaptAct;
+                        const canResolve =
+                          (role === "manager" && twin?.id === planData.twin_id) ||
+                          role === "hr_executive" ||
+                          role === "hr_partner" ||
+                          role === "it_security" ||
+                          (role === "employee" && isOwner);
                         return (
                           <TaskCard
-                            key={task.id}
+                            key={task.task_code}
                             task={task}
-                            canAct={canAct}
-                            canComplete={journeyActive && depsDone && !task.waived}
-                            journeyActive={journeyActive}
-                            depsDone={depsDone}
-                            blockerOpen={blockerState.taskId === task.id && blockerState.open}
-                            blockerText={blockerState.taskId === task.id ? blockerState.text : ""}
-                            onOpenBlocker={() => setBlockerState({ taskId: task.id, open: true, text: "" })}
-                            onBlockerChange={(v) => setBlockerState((s) => ({ ...s, text: v }))}
-                            onBlockerSubmit={() => void act(task.id, "block", blockerState.text)}
-                            onComplete={() => void act(task.id, "complete")}
-                            onResolve={() => void act(task.id, "resolve")}
-                            busy={busy === `complete-${task.id}` || busy === `block-${task.id}` || busy === `resolve-${task.id}`}
+                            plan={planData}
+                            viewer={viewer}
+                            canComplete={canComplete}
+                            canWaive={canWaiveAct}
+                            canAdapt={canAdaptAct}
+                            canFail={canFail}
+                            canResolve={canResolve}
+                            onComplete={(evidence, note) => void act(task.task_code, "complete", { evidence, note })}
+                            onBlock={(note) => void act(task.task_code, "block", { note })}
+                            onResolve={(blockerId) => void act(task.task_code, "resolve", { blocker_id: blockerId })}
+                            onWaive={(reason, policyDoc) => void act(task.task_code, "waive", { waiver: { reason, policy_basis: policyDoc ? { doc_code: policyDoc, version: null } : null } })}
+                            onAdapt={(note) => void act(task.task_code, "adapt", { note, skill: inferSkill(task) })}
+                            onFail={(note) => void act(task.task_code, "fail", { note, skill: inferSkill(task) })}
+                            busy={busy === `complete-${task.task_code}` || busy === `block-${task.task_code}` || busy === `resolve-${task.task_code}` || busy === `waive-${task.task_code}` || busy === `adapt-${task.task_code}` || busy === `fail-${task.task_code}`}
                           />
                         );
                       })}
@@ -442,33 +809,45 @@ export default function Onboarding() {
             </div>
 
             <p className="rounded-lg bg-muted p-4 text-xs leading-relaxed text-muted-foreground">
-              Waived tasks are proven by verified skills (Bloom-style rule, deterministic). Security,
-              compliance sign-off and payroll can never be waived. Blockers recompute downstream dates
-              through the same Kahn scheduler. Every approval and blocker is appended to the journey's
-              audit trail.
+              Every task has a strict owner (employee, manager, HR, or IT Security) — HR has no access to
+              service-owner tasks, and employees cannot claim IT provisioning. Approvals bind to the exact plan
+              version+hash; regenerating or adapting invalidates approvals and preserves completed work via an
+              explicit mapping. Blockers can be reported in parallel; each must be resolved separately. Readiness
+              is an estimate, never a guarantee.
             </p>
           </div>
         )}
 
-        {selected && !journey.data && (
+        {selected && !planData && role !== "employee" && (
           <div className="mt-8 flex flex-col items-center gap-3 rounded-lg bg-muted px-6 py-16 text-center">
             <XCircle className="h-8 w-8 text-muted-foreground" strokeWidth={2} />
-            <p className="text-sm text-muted-foreground">No onboarding journey for this employee yet.</p>
-            {role !== "employee" && (
-              <Button onClick={() => void generate()} disabled={busy === "gen"}>
-                <RefreshCw className="h-4 w-4" /> Generate plan
-              </Button>
-            )}
+            <p className="text-sm text-muted-foreground">
+              No adaptive plan yet. Plans are built only from an approved application (role relationship).
+            </p>
+            <Button onClick={() => void build(false)} disabled={busy === "gen"}>
+              <RefreshCw className="h-4 w-4" /> Build plan
+            </Button>
           </div>
         )}
 
         {!selected && role !== "employee" && (
           <div className="mt-8 flex flex-col items-center gap-3 rounded-lg bg-muted px-6 py-16 text-center">
             <Users className="h-8 w-8 text-primary" strokeWidth={2.5} />
-            <p className="text-sm text-muted-foreground">Select an employee to view their onboarding journey.</p>
+            <p className="text-sm text-muted-foreground">Select an employee to view their adaptive onboarding plan.</p>
           </div>
         )}
       </div>
     </AppShell>
   );
+}
+
+function inferSkill(task: PlanTaskView): string {
+  // Skill name from the learning/verification task's why-evidence fact or title.
+  const fact = task.why_evidence?.source_evidence?.find((s) => s.source_type === "role_fit" || s.source_type === "assessment");
+  const m = fact?.fact?.match(/\b(\w+(?:\s+\w+)*)\b/);
+  if (task.task_code.startsWith("learn_") || task.task_code.startsWith("verify_")) {
+    const codeSkill = task.task_code.replace(/^(learn|verify)_/, "").replace(/_reopen$/, "");
+    if (codeSkill && codeSkill !== "survey") return codeSkill;
+  }
+  return (m?.[1] ?? task.title).replace(/^(First contribution using|Verification:|Upskilling plan:|Re-learning:)\s*/i, "");
 }

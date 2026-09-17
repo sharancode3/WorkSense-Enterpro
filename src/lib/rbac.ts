@@ -4,7 +4,8 @@ export type Role =
   | "manager"
   | "recruiter"
   | "employee"
-  | "candidate";
+  | "candidate"
+  | "it_security";
 
 export type Action =
   | "view_all_workforce"
@@ -25,6 +26,7 @@ export const ROLES: Role[] = [
   "recruiter",
   "employee",
   "candidate",
+  "it_security",
 ];
 
 /** Full display names (demo quick-access cards + app shell). */
@@ -35,6 +37,7 @@ export const ROLE_LABEL: Record<Role, string> = {
   recruiter: "Technical Recruiter",
   employee: "Employee",
   candidate: "Candidate",
+  it_security: "IT Security",
 };
 
 /** Short badge text shown on quick-access cards (matches the reference UI). */
@@ -45,6 +48,7 @@ export const ROLE_BADGE_LABEL: Record<Role, string> = {
   recruiter: "RECRUITER",
   employee: "EMPLOYEE",
   candidate: "CANDIDATE",
+  it_security: "IT SEC",
 };
 
 export const ROLE_BADGE_CLASS: Record<Role, string> = {
@@ -54,6 +58,7 @@ export const ROLE_BADGE_CLASS: Record<Role, string> = {
   recruiter: "bg-accent text-foreground",
   employee: "bg-accent text-foreground",
   candidate: "bg-muted text-foreground",
+  it_security: "bg-secondary text-white",
 };
 
 /**
@@ -67,6 +72,7 @@ export const ROLE_LANDING: Record<Role, string> = {
   recruiter: "/app",
   employee: "/app",
   candidate: "/candidate-status",
+  it_security: "/app",
 };
 
 export const ROLE_ACTIONS: Record<Role, Action[]> = {
@@ -84,6 +90,7 @@ export const ROLE_ACTIONS: Record<Role, Action[]> = {
   recruiter: ["manage_recruitment", "use_policy_studio"],
   employee: ["self_service", "view_onboarding", "use_policy_studio"],
   candidate: [],
+  it_security: ["view_onboarding"],
 };
 
 export function can(role: Role, action: Action): boolean {

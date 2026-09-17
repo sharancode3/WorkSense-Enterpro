@@ -4152,6 +4152,234 @@ export type Database = {
           },
         ]
       }
+      onboarding_plans: {
+        Row: {
+          application_id: string | null
+          audit_events: Json
+          carryover: Json
+          created_at: string
+          generated_at: string
+          hr_approval: Json | null
+          id: string
+          manager_approval: Json | null
+          org_id: string
+          plan_hash: string
+          readiness: Json
+          start_date: string
+          status: string
+          twin_id: string
+          updated_at: string
+          version: number
+        }
+        Insert: {
+          application_id?: string | null
+          audit_events?: Json
+          carryover?: Json
+          created_at?: string
+          generated_at?: string
+          hr_approval?: Json | null
+          id?: string
+          manager_approval?: Json | null
+          org_id: string
+          plan_hash: string
+          readiness?: Json
+          start_date: string
+          status?: string
+          twin_id: string
+          updated_at?: string
+          version?: number
+        }
+        Update: {
+          application_id?: string | null
+          audit_events?: Json
+          carryover?: Json
+          created_at?: string
+          generated_at?: string
+          hr_approval?: Json | null
+          id?: string
+          manager_approval?: Json | null
+          org_id?: string
+          plan_hash?: string
+          readiness?: Json
+          start_date?: string
+          status?: string
+          twin_id?: string
+          updated_at?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "onboarding_plans_application_id_fkey"
+            columns: ["application_id"]
+            referencedRelation: "applications"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "onboarding_plans_org_id_fkey"
+            columns: ["org_id"]
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "onboarding_plans_twin_id_fkey"
+            columns: ["twin_id"]
+            referencedRelation: "digital_twins"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      onboarding_task_events: {
+        Row: {
+          action: string
+          actor_twin_id: string | null
+          attempt_hash: string
+          created_at: string
+          evidence: Json
+          id: string
+          note: string | null
+          org_id: string
+          plan_id: string
+          result: string
+          task_code: string
+        }
+        Insert: {
+          action: string
+          actor_twin_id?: string | null
+          attempt_hash: string
+          created_at?: string
+          evidence?: Json
+          id?: string
+          note?: string | null
+          org_id: string
+          plan_id: string
+          result: string
+          task_code: string
+        }
+        Update: {
+          action?: string
+          actor_twin_id?: string | null
+          attempt_hash?: string
+          created_at?: string
+          evidence?: Json
+          id?: string
+          note?: string | null
+          org_id?: string
+          plan_id?: string
+          result?: string
+          task_code?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "onboarding_task_events_actor_twin_id_fkey"
+            columns: ["actor_twin_id"]
+            referencedRelation: "digital_twins"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "onboarding_task_events_org_id_fkey"
+            columns: ["org_id"]
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "onboarding_task_events_plan_id_fkey"
+            columns: ["plan_id"]
+            referencedRelation: "onboarding_plans"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      onboarding_tasks: {
+        Row: {
+          adaptation: Json | null
+          blockers: Json
+          completion_record: Json | null
+          created_at: string
+          depends_on: Json
+          due_date: string | null
+          duration_days: number
+          evidence_requirements: Json
+          id: string
+          non_waivable: boolean
+          org_id: string
+          owner_role: string
+          plan_id: string
+          required: boolean
+          state: string
+          task_code: string
+          task_type: string
+          title: string
+          topological_level: number
+          updated_at: string
+          version: number
+          waiver: Json | null
+          why_evidence: Json
+        }
+        Insert: {
+          adaptation?: Json | null
+          blockers?: Json
+          completion_record?: Json | null
+          created_at?: string
+          depends_on?: Json
+          due_date?: string | null
+          duration_days?: number
+          evidence_requirements?: Json
+          id?: string
+          non_waivable?: boolean
+          org_id: string
+          owner_role: string
+          plan_id: string
+          required?: boolean
+          state?: string
+          task_code: string
+          task_type: string
+          title: string
+          topological_level?: number
+          updated_at?: string
+          version?: number
+          waiver?: Json | null
+          why_evidence?: Json
+        }
+        Update: {
+          adaptation?: Json | null
+          blockers?: Json
+          completion_record?: Json | null
+          created_at?: string
+          depends_on?: Json
+          due_date?: string | null
+          duration_days?: number
+          evidence_requirements?: Json
+          id?: string
+          non_waivable?: boolean
+          org_id?: string
+          owner_role?: string
+          plan_id?: string
+          required?: boolean
+          state?: string
+          task_code?: string
+          task_type?: string
+          title?: string
+          topological_level?: number
+          updated_at?: string
+          version?: number
+          waiver?: Json | null
+          why_evidence?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "onboarding_tasks_org_id_fkey"
+            columns: ["org_id"]
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "onboarding_tasks_plan_id_fkey"
+            columns: ["plan_id"]
+            referencedRelation: "onboarding_plans"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       organizations: {
         Row: {
           created_at: string

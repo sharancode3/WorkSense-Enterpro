@@ -29,66 +29,96 @@ Deno.serve(async (req) => {
     .select("id, role, email, org_id")
     .eq("auth_user_id", uid)
     .maybeSingle();
-  if (!caller || !["manager", "hr_executive"].includes(caller.role)) {
-    return json({ error: "FORBIDDEN", message: "Only the employee's Manager or an HR Executive may approve." }, 403);
-  }
+  if (!caller) return json({ error: "UNAUTHENTICATED" }, 401);
 
-  let body: { journey_id?: string; decision?: string } = {};
+  let body: { plan_id?: string; plan_hash?: string } = {};
   try {
     body = await req.json();
   } catch {
     /* empty */
   }
-  const journeyId = (body.journey_id ?? "").trim();
-  if (!journeyId) return json({ error: "VALIDATION_ERROR", message: "journey_id is required." }, 400);
+  const planId = (body.plan_id ?? "").trim();
+  const submittedHash = (body.plan_hash ?? "").trim();
+  if (!planId) return json({ error: "VALIDATION_ERROR", message: "plan_id is required." }, 400);
 
-  const { data: journey, error: journeyErr } = await supabase
-    .from("onboarding_journeys")
-    .select("id, org_id, twin_id, status, plan, tasks, audit_events")
-    .eq("id", journeyId)
+  const { data: plan, error: planErr } = await supabase
+    .from("onboarding_plans")
+    .select("id, org_id, twin_id, version, plan_hash, status, manager_approval, hr_approval, audit_events")
+    .eq("id", planId)
     .maybeSingle();
-  if (journeyErr || !journey) return json({ error: "NOT_FOUND", message: "Onboarding journey not found." }, 404);
-  if (journey.org_id !== caller.org_id) return json({ error: "FORBIDDEN" }, 403);
+  if (planErr || !plan) return json({ error: "NOT_FOUND", message: "Onboarding plan not found." }, 404);
+  if (plan.org_id !== caller.org_id) return json({ error: "FORBIDDEN" }, 403);
 
+  // Approval is bound to the exact plan version + hash. A regenerated plan has
+  // a NEW row/hash — old approvals never carry (no retained approved state).
+  // Authorization is checked BEFORE the binding so callers get the true reason.
   const { data: employee, error: empErr } = await supabase
     .from("digital_twins")
     .select("id, name, manager_id")
-    .eq("id", journey.twin_id)
+    .eq("id", plan.twin_id)
     .maybeSingle();
   if (empErr || !employee) return json({ error: "NOT_FOUND" }, 404);
 
-  // Manager must be the employee's direct manager; HR Executive may approve anyone.
+  // An employee can never approve their own journey; a manager approves only
+  // their direct reports; HR Executive approves anyone (org-scoped).
+  if (caller.role === "employee") {
+    return json({ error: "FORBIDDEN", message: "An employee cannot approve their own onboarding plan." }, 403);
+  }
   if (caller.role === "manager" && employee.manager_id !== caller.id) {
     return json({ error: "FORBIDDEN", message: "You may only approve onboarding for your direct reports." }, 403);
   }
+  if (!["manager", "hr_executive"].includes(caller.role)) {
+    return json({ error: "FORBIDDEN", message: "Only the employee's Manager or an HR Executive may approve." }, 403);
+  }
 
-  const plan = (journey.plan ?? {}) as { approvals?: { role: string; approved: boolean; by: string; at: string }[]; start_date?: string };
-  const approvals = (plan.approvals ?? []).filter((a) => a.role !== caller.role);
-  approvals.push({ role: caller.role, approved: true, by: caller.email ?? uid, at: new Date().toISOString() });
+  if (submittedHash && submittedHash !== plan.plan_hash) {
+    return json({ error: "HASH_MISMATCH", message: "This plan version was superseded — approval rejected." }, 409);
+  }
+  if (plan.status !== "pending_approval") {
+    return json({ error: "CONFLICT", message: `Plan is '${plan.status}' — approval only valid on a pending plan.` }, 409);
+  }
 
-  const managerApproved = approvals.some((a) => a.role === "manager" && a.approved);
-  const hrApproved = approvals.some((a) => a.role === "hr_executive" && a.approved);
+  if (caller.role === "manager") {
+    if (plan.manager_approval && (plan.manager_approval as { at?: string }).at) {
+      return json({ error: "CONFLICT", message: "Manager approval already recorded on this version." }, 409);
+    }
+  } else if (plan.hr_approval && (plan.hr_approval as { at?: string }).at) {
+    return json({ error: "CONFLICT", message: "HR Executive approval already recorded on this version." }, 409);
+  }
+
   const now = new Date().toISOString();
+  const approvalRecord = { by: caller.email ?? uid, by_twin_id: caller.id, at: now };
 
+  const managerApproval = caller.role === "manager" ? approvalRecord : (plan.manager_approval as typeof approvalRecord | null);
+  const hrApproval = caller.role === "hr_executive" ? approvalRecord : (plan.hr_approval as typeof approvalRecord | null);
+  const bothApproved = Boolean(managerApproval && hrApproval);
+
+  const nextStatus = bothApproved ? "approved" : "pending_approval";
   const audit = [
-    ...(journey.audit_events ?? []),
+    ...((plan.audit_events as unknown[]) ?? []),
     {
       actor: caller.email ?? uid,
       action: caller.role === "manager" ? "approved_by_manager" : "approved_by_hr",
-      note: `${employee.name}'s onboarding plan approved by ${caller.role === "manager" ? "Manager" : "HR Executive"}.`,
+      note: `${employee.name}'s plan v${plan.version} approved by ${caller.role === "manager" ? "Manager" : "HR Executive"}.`,
       timestamp: now,
     },
   ];
-
-  const nextStatus = managerApproved && hrApproved ? "active" : "pending";
-  if (nextStatus === "active") {
-    audit.push({ actor: "system", action: "plan_activated", note: `Both approvals received — plan for ${employee.name} is active.`, timestamp: now });
+  if (bothApproved) {
+    audit.push({ actor: "system", action: "plan_activated", note: `Both approvals received — plan v${plan.version} for ${employee.name} is active.`, timestamp: now });
   }
 
   await supabase
-    .from("onboarding_journeys")
-    .update({ status: nextStatus, plan: { ...plan, approvals }, audit_events: audit })
-    .eq("id", journeyId);
+    .from("onboarding_plans")
+    .update({ status: nextStatus, manager_approval: managerApproval, hr_approval: hrApproval, audit_events: audit })
+    .eq("id", planId);
 
-  return json({ ok: true, status: nextStatus, approvals, manager_approved: managerApproved, hr_approved: hrApproved });
+  return json({
+    ok: true,
+    plan_id: planId,
+    version: plan.version,
+    plan_hash: plan.plan_hash,
+    status: nextStatus,
+    manager_approved: Boolean(managerApproval),
+    hr_approved: Boolean(hrApproval),
+  });
 });

@@ -61,10 +61,20 @@ describe("rbac", () => {
     expect(ROLE_LABEL.recruiter).toBe("Technical Recruiter");
     expect(ROLE_LABEL.employee).toBe("Employee");
     expect(ROLE_LABEL.candidate).toBe("Candidate");
+    expect(ROLE_LABEL.it_security).toBe("IT Security");
+  });
+
+  it("it_security sees onboarding but no HR/recruitment powers", () => {
+    expect(can("it_security", "view_onboarding")).toBe(true);
+    expect(can("it_security", "view_all_workforce")).toBe(false);
+    expect(can("it_security", "manage_recruitment")).toBe(false);
+    expect(can("it_security", "approve_recommendations")).toBe(false);
+    expect(can("it_security", "reset_demo")).toBe(false);
+    expect(resolveLanding("it_security")).toBe("/app");
   });
 
   it("role union is stable", () => {
-    const roles: Role[] = ["hr_executive", "hr_partner", "manager", "recruiter", "employee", "candidate"];
+    const roles: Role[] = ["hr_executive", "hr_partner", "manager", "recruiter", "employee", "candidate", "it_security"];
     expect(roles).toEqual(ROLES);
   });
 });

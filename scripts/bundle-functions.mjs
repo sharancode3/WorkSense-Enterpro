@@ -22,6 +22,7 @@ const stripSharedImports = (src) =>
 
 const engine = stripAllImports(read("supabase/functions/_shared/skill-graph-engine.ts"));
 const onboarding = stripAllImports(read("supabase/functions/_shared/onboarding-engine.ts"));
+const onboardingV2 = stripAllImports(read("supabase/functions/_shared/onboarding-v2.ts"));
 const qwen = stripAllImports(read("supabase/functions/_shared/qwen.ts"));
 const policy = stripAllImports(read("supabase/functions/_shared/policy-retrieval.ts"));
 const signal = stripAllImports(read("supabase/functions/_shared/workforce-signal-engine.ts"));
@@ -40,11 +41,11 @@ const pcontext = stripAllImports(read("supabase/functions/_shared/policy-context
 const leave = stripAllImports(read("supabase/functions/_shared/leave-calc.ts"));
 const policyseed = stripAllImports(read("supabase/functions/_shared/policy-seed.ts"));
 
-const SHARED = { engine, onboarding, qwen, policy, signal, recEngine, jobs, validate, evidence, resume, generated, journey, fixtures, seed, stageEngine, assessment, pcontext, leave, policyseed };
+const SHARED = { engine, onboarding, onboardingV2, qwen, policy, signal, recEngine, jobs, validate, evidence, resume, generated, journey, fixtures, seed, stageEngine, assessment, pcontext, leave, policyseed };
 
 // Function -> shared dependencies (in import order) it needs inlined.
 const FNS = {
-  "reset-demo": ["generated", "journey", "seed", "fixtures", "assessment", "policyseed"],
+  "reset-demo": ["generated", "journey", "seed", "fixtures", "assessment", "policyseed", "onboardingV2"],
   "skill-match": ["engine", "evidence"],
   "extract-resume": ["engine", "qwen", "jobs", "validate", "evidence"],
   "rubric": ["qwen", "validate"],
@@ -52,9 +53,9 @@ const FNS = {
   "evaluate-interview": ["qwen", "validate"],
   "recruiter-decision": ["engine"],
   "requisition": [],
-  "onboarding-plan": ["engine", "onboarding"],
+  "onboarding-plan": ["engine", "onboardingV2"],
   "onboarding-approve": [],
-  "onboarding-task": ["onboarding"],
+  "onboarding-task": ["onboardingV2"],
   "policy-qa": ["qwen", "policy", "validate", "pcontext", "leave", "policyseed"],
   "escalate": [],
   "workforce-signal": ["signal"],
