@@ -882,12 +882,12 @@ export const RECOMMENDATIONS = [
     category: "workforce_review",
     urgency: "high",
     evidence_ledger: [
-      { source: "WORKFORCE_REVIEW_SIGNAL", fact: "Signal 68/100 — multiple workforce indicators warrant HR review (decision support, not a prediction)." },
+      { source: "WORKFORCE_REVIEW_SIGNAL", fact: "Signal 72/100 — multiple workforce indicators warrant HR review (decision support, not a prediction)." },
       { source: "ENGAGEMENT_SURVEY", fact: "Survey 3.1 / 5 (declining over 2 cycles)." },
       { source: "ATTENDANCE", fact: "Recent unapproved absence pattern above own baseline." },
       { source: "PERFORMANCE", fact: "Latest rating: Exceeds Expectations — strong, stable delivery across 4 cycles." },
     ],
-    executive_summary: "Samira combines strong, consistent delivery with a Workforce Review Signal of 68/100 driven by declining engagement, an above-baseline absence pattern and 40 months without a band change. The evidence supports a manager-led retention conversation and a concrete growth or mobility option.",
+    executive_summary: "Samira combines strong, consistent delivery with a Workforce Review Signal of 72/100 driven by declining engagement, an above-baseline absence pattern and 40 months without a band change. The evidence supports a manager-led retention conversation and a concrete growth or mobility option.",
     proposed_action: {
       title: "Manager review for retention intervention",
       description: "Open a manager-led check-in with Samira within the week. Focus on engagement drivers and growth path.",
@@ -1092,7 +1092,7 @@ export const TWINS: TwinSeed[] = [
     seniority_level: 3,
     promotion_lag_months: 40,
     attendance: { baseline: 0.5, recent: 1.5 },
-    delivery: { missed: 3, total: 8 },
+    delivery: { missed: 5, total: 9 },
     verified_skills: [
       { name: "SQL", proficiency: 4, evidence_source: "certification", verification_rigor: "high" },
       { name: "Python", proficiency: 3, evidence_source: "project", verification_rigor: "medium" },
@@ -1107,7 +1107,7 @@ export const TWINS: TwinSeed[] = [
       { cycle: "2026-H1", rating: "Exceeds Expectations", goals_met: 88, feedback: [{ sentiment: "positive", text: "Top-quartile delivery again." }, { sentiment: "negative", text: "Engagement concerns noted; seeks more scope and leadership exposure." }], summary: "Top-quartile delivery again; engagement concerns noted." },
     ],
     signals: [
-      { type: "workforce_review_signal", value: 68, computed_at: "2026-09-10T09:00:00Z", factors: { tenure: 1, attendance: 1, delivery: 0.375, growth: 1 } },
+      { type: "workforce_review_signal", value: 72, computed_at: "2026-09-10T09:00:00Z", factors: { tenure: 1, attendance: 1, delivery: 0.556, growth: 1 } },
       { type: "seeks_growth", value: true, last_measured: "2026-08-25T09:00:00Z" },
       { type: "engagement_survey", value: "3.1 / 5", trend: "declining over 2 cycles", last_measured: "2026-08-25T09:00:00Z" },
     ],

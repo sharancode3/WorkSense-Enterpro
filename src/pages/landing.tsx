@@ -130,9 +130,18 @@ export default function Landing() {
 
       {/* Footer */}
       <footer className="bg-foreground text-white">
-        <div className="mx-auto flex max-w-7xl flex-col items-start justify-between gap-2 px-4 py-6 text-sm sm:flex-row sm:items-center sm:px-6">
-          <span className="font-medium">WorkSense — Track 1 HR build</span>
-          <span className="text-white/60">Evidence → Reasoning → Recommendation → Approval → Action</span>
+        <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-8 sm:px-6">
+          <p className="max-w-3xl text-base font-semibold leading-relaxed">
+            WorkSense turns fragmented HR data into evidence-backed workforce decisions and moves
+            those decisions through human-approved workflows — deterministic where it can be, AI
+            only where it must be.
+          </p>
+          <div className="flex flex-col gap-1">
+            <span className="text-sm font-medium">Skill matching, onboarding scheduling, and risk scoring are deterministic.</span>
+            <span className="text-white/60">
+              AI is used only to extract, explain, and generate language — never to decide.
+            </span>
+          </div>
         </div>
       </footer>
     </div>

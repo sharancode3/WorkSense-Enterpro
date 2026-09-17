@@ -140,12 +140,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </header>
       <main className="flex-1">{children}</main>
       <footer className="bg-foreground text-white">
-        <div className="mx-auto flex max-w-7xl flex-col items-start justify-between gap-2 px-4 py-6 text-sm sm:flex-row sm:items-center sm:px-6">
-          <div className="flex items-center gap-2">
-            <ShieldCheck className="h-4 w-4 text-secondary" />
-            <span className="font-medium">Every recommendation is approved by a human before it moves.</span>
+        <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-6 text-sm sm:px-6">
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="h-4 w-4 text-secondary" />
+              <span className="font-medium">Every recommendation is approved by a human before it moves.</span>
+            </div>
+            <p className="text-white/60">
+              Skill matching, onboarding scheduling, and risk scoring are deterministic — AI is used
+              only to extract, explain, and generate language, never to decide.
+            </p>
           </div>
-          <span className="text-white/60">WorkSense — demo build</span>
+          <span className="text-xs text-white/40">
+            WorkSense — evidence-backed workforce decisions, moved through human-approved workflows.
+          </span>
         </div>
       </footer>
     </div>
