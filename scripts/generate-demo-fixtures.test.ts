@@ -297,6 +297,13 @@ for (const dept of DEPARTMENTS) {
     audit_events: [],
     assertions: newAssertions(dept, 5),
   };
+  // Phase 13: give the Data dept lead a stable demo identity so the security
+  // matrix can sign in a SECOND manager (cross-team isolation tests). RNG draw
+  // count is preserved so the rest of the fixture stays byte-identical.
+  if (dept === "Data") {
+    m.name = "Nadia Kim";
+    m.email = "nadia@worksense.demo";
+  }
   managersByDept[dept] = m.id;
   employees.push(m);
 }

@@ -1,0 +1,36 @@
+{
+  "meta": {
+    "mode": "interview-perf",
+    "date": "2026-09-17T20:47:55.864Z",
+    "env": "live Enter Cloud, AI gateway qwen3:4b (local tunnel)",
+    "final_reset": "pristine restored"
+  },
+  "groups": {
+    "AI: interview + performance explanation (human-authored references)": [
+      {
+        "name": "interview-sufficient: evaluate-interview",
+        "result": "FAIL",
+        "evidence": "status=200 {\"error\":\"INPUT_TOO_LARGE\",\"message\":\"Input exceeds the 8000 character limit.\"}",
+        "limitation": "full 5-competency kit pushes the prompt past the model's 8000-char context budget — surfaced as INPUT_TOO_LARGE, not silent"
+      },
+      {
+        "name": "interview-insufficient: evaluate-interview",
+        "result": "FAIL",
+        "evidence": "status=200 {\"error\":\"INPUT_TOO_LARGE\",\"message\":\"Input exceeds the 8000 character limit.\"}",
+        "limitation": "full 5-competency kit pushes the prompt past the model's 8000-char context budget — surfaced as INPUT_TOO_LARGE, not silent"
+      },
+      {
+        "name": "performance explanation: no invented costs/actions",
+        "result": "PASS",
+        "evidence": "len=6499 invented=none"
+      }
+    ],
+    "recovery": [
+      {
+        "name": "reset-demo restores pristine seed",
+        "result": "PASS",
+        "evidence": "twins=88"
+      }
+    ]
+  }
+}

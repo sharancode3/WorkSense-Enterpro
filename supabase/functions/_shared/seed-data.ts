@@ -23,6 +23,7 @@ export const DEMO_ACCOUNTS = [
   { email: "sam@worksense.demo", password: "WorkSenseDemo!2026", name: "Samira Patel", twinId: "22222222-2222-2222-2222-222222222204" },
   { email: "isabelle@worksense.demo", password: "WorkSenseDemo!2026", name: "Isabelle Moreau", twinId: "99999999-9999-9999-9999-999999999998" },
   { email: "elena@worksense.demo", password: "WorkSenseDemo!2026", name: "Elena Voss", twinId: "22222222-2222-2222-2222-222222222210" },
+  { email: "nadia@worksense.demo", password: "WorkSenseDemo!2026", name: "Nadia Kim", twinId: "f0e2fc7c-ebec-4f78-ae1b-0e0bf2dccff4" },
 ];
 
 export const POLICIES = [

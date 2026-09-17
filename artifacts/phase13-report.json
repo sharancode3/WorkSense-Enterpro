@@ -1,0 +1,253 @@
+{
+  "meta": {
+    "env": "live Enter Cloud (org-1 + org-2), AI gateway qwen3:4b via local tunnel, build HEAD of this session",
+    "date": "2026-09-17T20:37:07.372Z",
+    "seed": "pristine Phase 12 seed restored before run",
+    "final_reset": "pristine restored"
+  },
+  "groups": {
+    "observability": [
+      {
+        "name": "health exposes model + gateway state",
+        "result": "PASS",
+        "evidence": "{\"gateway\":\"reachable\",\"model_ready\":true,\"model\":\"qwen3:4b-instruct-2507-q4_K_M\"}"
+      },
+      {
+        "name": "AI gateway ready (build/model version observable)",
+        "result": "PASS",
+        "evidence": "qwen3:4b-instruct-2507-q4_K_M"
+      },
+      {
+        "name": "health latency p50/p95 (ms)",
+        "result": "PASS",
+        "evidence": "{\"n\":5,\"min\":148.2,\"p50\":157.2,\"p95\":168.1,\"max\":168.1}"
+      }
+    ],
+    "security: cross-org + cross-team": [
+      {
+        "name": "cross-org read blocked (org-1 → org-2 twin)",
+        "result": "PASS",
+        "evidence": "status=200 rows=0"
+      },
+      {
+        "name": "cross-org read blocked (org-2 → org-1 twin)",
+        "result": "PASS",
+        "evidence": "status=200 rows=0"
+      },
+      {
+        "name": "cross-org requisition read blocked",
+        "result": "PASS",
+        "evidence": "rows=0"
+      },
+      {
+        "name": "cross-team read blocked (manager A → manager B)",
+        "result": "PASS",
+        "evidence": "rows=0"
+      },
+      {
+        "name": "cross-team read blocked (manager B → manager A report)",
+        "result": "PASS",
+        "evidence": "rows=0"
+      },
+      {
+        "name": "within-team read allowed (manager → own report)",
+        "result": "PASS",
+        "evidence": "rows=1"
+      },
+      {
+        "name": "employee cannot read peer employee",
+        "result": "PASS",
+        "evidence": "rows=0"
+      },
+      {
+        "name": "recruiter cannot read employees (RLS twin_select_recruiter)",
+        "result": "PASS",
+        "evidence": "rows=0"
+      },
+      {
+        "name": "recruiter can read candidates",
+        "result": "PASS",
+        "evidence": "rows=3"
+      }
+    ],
+    "security: direct database writes": [
+      {
+        "name": "employee direct write to peer blocked (RLS twin_write)",
+        "result": "PASS",
+        "evidence": "status=200 rows=0"
+      },
+      {
+        "name": "recruiter cannot insert recommendations (rec_write)",
+        "result": "PASS",
+        "evidence": "rows=0"
+      },
+      {
+        "name": "manager direct status write on team rec blocked (rec_write hardened)",
+        "result": "PASS",
+        "evidence": "status=200 rows=0"
+      }
+    ],
+    "security: candidate + RPC surface": [
+      {
+        "name": "candidate-status valid code",
+        "result": "PASS",
+        "evidence": "status=200 application_status=final_round"
+      },
+      {
+        "name": "candidate protected fields refused (score/rubric/notes)",
+        "result": "PASS",
+        "evidence": "status=403 Scores, rubrics, notes and internal evaluation fields are not available to candidates."
+      },
+      {
+        "name": "invalid candidate code rejected",
+        "result": "PASS",
+        "evidence": "status=404 No application matches this code."
+      },
+      {
+        "name": "invalid/expired token → 401",
+        "result": "PASS",
+        "evidence": "status=401"
+      },
+      {
+        "name": "conversion RPC revoked from clients",
+        "result": "PASS",
+        "evidence": "status=404"
+      },
+      {
+        "name": "workflow transition RPC revoked from clients (self-approval impossible)",
+        "result": "PASS",
+        "evidence": "status=404"
+      }
+    ],
+    "security: dashboard scoping + persona switch": [
+      {
+        "name": "dashboard org scope (hr_exec)",
+        "result": "PASS",
+        "evidence": "headcount=57"
+      },
+      {
+        "name": "dashboard team scope (manager A)",
+        "result": "PASS",
+        "evidence": "headcount=12"
+      },
+      {
+        "name": "dashboard team scope (manager B)",
+        "result": "PASS",
+        "evidence": "headcount=9"
+      },
+      {
+        "name": "manager metrics are team-scoped, not org-wide",
+        "result": "PASS",
+        "evidence": "org=57 teamA=12"
+      },
+      {
+        "name": "persona switch re-scopes server-side (no cache leakage)",
+        "result": "PASS",
+        "evidence": "after-switch scope=team"
+      },
+      {
+        "name": "employee denied dashboard (403)",
+        "result": "PASS",
+        "evidence": "status=403"
+      }
+    ],
+    "workflow: race + recovery": [
+      {
+        "name": "recommendation-scan run 1",
+        "result": "PASS",
+        "evidence": "created=13 unchanged=0 stale=1"
+      },
+      {
+        "name": "workflow submit (request_id R1)",
+        "result": "PASS",
+        "evidence": "status=needs_review"
+      },
+      {
+        "name": "double submission → idempotent (same request_id)",
+        "result": "PASS",
+        "evidence": "idempotent=true"
+      },
+      {
+        "name": "two simultaneous reviewers → exactly one wins",
+        "result": "PASS",
+        "evidence": "ok=1 other=\"CONFLICT\""
+      },
+      {
+        "name": "stale approval rejected (status moved)",
+        "result": "PASS",
+        "evidence": "status=409 CONFLICT"
+      },
+      {
+        "name": "dispatch creates tasks in same transaction",
+        "result": "PASS",
+        "evidence": "tasks=2"
+      },
+      {
+        "name": "re-dispatch after dispatch → rejected",
+        "result": "PASS",
+        "evidence": "status=409 CONFLICT"
+      },
+      {
+        "name": "stale source dedupe (scan run 2 created 0)",
+        "result": "PASS",
+        "evidence": "{\"ok\":true,\"scanned_candidates\":13,\"created\":0,\"unchanged\":13,\"made_stale\":0,\"created_ids\":[]}"
+      },
+      {
+        "name": "interrupted/missing generation job surfaced",
+        "result": "PASS",
+        "evidence": "status=404 {\"error\":\"NOT_FOUND\",\"message\":\"Job not found.\"}"
+      }
+    ],
+    "performance + failure paths": [
+      {
+        "name": "parallel fit calculations both succeed",
+        "result": "PASS",
+        "evidence": "scores=0.655/0.06"
+      },
+      {
+        "name": "skill-match latency (parallel, ms)",
+        "result": "PASS",
+        "evidence": "{\"n\":2,\"min\":305.1,\"p50\":357.7,\"p95\":357.7,\"max\":357.7}"
+      },
+      {
+        "name": "dashboard latency — first call (cold-ish)",
+        "result": "PASS",
+        "evidence": "157.8 ms"
+      },
+      {
+        "name": "dashboard latency — subsequent calls (warm, ms)",
+        "result": "PASS",
+        "evidence": "{\"n\":3,\"min\":102.3,\"p50\":104.1,\"p95\":109,\"max\":109}"
+      },
+      {
+        "name": "dashboard team latency — warm (ms)",
+        "result": "PASS",
+        "evidence": "{\"n\":3,\"min\":84.4,\"p50\":89.5,\"p95\":106.9,\"max\":106.9}"
+      },
+      {
+        "name": "invalid dashboard filter tolerated (fallback label)",
+        "result": "PASS",
+        "evidence": "period.label=all observations (2025-10 – 2026-09)"
+      },
+      {
+        "name": "skill-match invalid input rejected",
+        "result": "PASS",
+        "evidence": "status=400"
+      }
+    ],
+    "AI evaluation (human-authored fixtures)": [
+      {
+        "name": "AI evaluation harness",
+        "result": "PASS",
+        "evidence": "delegated to scripts/verify-phase13-ai.mjs — see artifacts/phase13-ai-report.json"
+      }
+    ],
+    "recovery": [
+      {
+        "name": "reset-demo restores pristine seed",
+        "result": "PASS",
+        "evidence": "twins=88 reqs=8"
+      }
+    ]
+  }
+}
