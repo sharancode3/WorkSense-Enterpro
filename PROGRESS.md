@@ -13,7 +13,8 @@ Bounded repair loop: max 3 attempts per external blocker, then stop + report evi
 | P0–P8 (original build) | Design system, RBAC, Skill Graph, Recruitment, Onboarding, Policy, Signal/Perf, Hub, Dashboard, Section-11 prompts | ✅ Baseline (pre-contract, live-verified) | 62 tests, lint, tsc, build, API matrix |
 | AUDIT-FIX | Recruiter fit 403; RLS org-scoping; RPC lockdown; onboarding completion gate; seed consistency; 403 UX; escalation state | ✅ Verified live | curl checks + build |
 | PHASE-1 | Foundation: build/deploy provenance, authorization, session safety, error contract | ✅ Gate passed (below) | See §9 |
-| P2+ | *(awaiting user prompts, one at a time)* | ⏳ Not started | — |
+| PHASE-2 | Qwen gateway: config, capability handling, validated generation, durable jobs, UI, observability | 🟡 Machinery built + unit-verified; **live gate blocked by tunnel** | See §10 |
+| P3+ | *(awaiting user prompts, one at a time)* | ⏳ Not started | — |
 
 ## 9. Phase 1 — Foundation (completion gate)
 
@@ -42,7 +43,25 @@ Bounded repair loop: max 3 attempts per external blocker, then stop + report evi
 - ✅ Canonical codes: candidate protected → `FORBIDDEN`, onboarding-on-pending → `CONFLICT`.
 - ⏳ Persona-switch cache + live build-id drift: code-level guarantees verified; browser click-through pending a logged-in session / post-commit preview rebuild.
 
-## 6. Unresolved defects / open requirements (queued for P2+)
+## 10. Phase 2 — Qwen gateway (status: machinery verified, live gate blocked)
+
+**Built & deployed (all functions live):**
+- `_shared/qwen.ts` — server-managed config (base URL, model, gateway auth header, 40s timeout, 8k input cap, token cap), strict JSON extraction (full parse → fences → balanced, never blind brace-salvage), HTML/interstitial detection → `MODEL_UNAVAILABLE`, exactly **one** repair attempt, sanitized telemetry (latency/tokens/hash, no raw prompts), `QwenError` codes incl. `INPUT_TOO_LARGE`.
+- `_shared/validate.ts` — 6 per-task runtime schemas (resume, rubric, evaluation, policy, performance, recommendation) with enum/bounds/evidence/source-reference constraints; wired into all 7 Qwen functions (invalid output → `MODEL_OUTPUT_INVALID`, never persisted).
+- Durable jobs: `model_jobs` table (RLS reads-only), `_shared/jobs.ts` (queued→running→succeeded/failed, actor+org+task+input-hash dedup with 5-min stale-running rule, timing/retry/model/validated output), wired into **resume extraction** and **interview kit** (the gate tasks); `model-job` GET (actor-scoped) for refresh recovery.
+- Interview kit: **batched** competency generation (one call, not N sequential) + validated biased probe.
+- `health` function + AppShell 4-state indicator (app ok / gateway reachable / model ready / generation failed per job).
+- Recruitment UI: job id surfaced, `?job=` refresh recovery banner.
+
+**Unit-verified (11 new tests → 73 total, all passing):** strict parser (clean/fenced/malformed/HTML→MODEL_UNAVAILABLE/noise-rejected), all 6 validators (incl. out-of-enum, out-of-bounds, missing evidence), sanitizer regression. lint / app+functions tsc / build green.
+
+**External blocker (bounded loop exhausted — 3+ attempts, stop + evidence):**
+- The ngrok tunnel URL now serves the **wrong backend**: `GET /v1/models` → **404 HTML** (0.04s) — it is pointing at the other project's service, not the Ollama instance. From the sandbox this is confirmed.
+- With the tunnel in that state, the deployed `extract-resume` invocation returns **no response** within 60s (platform-level kill suspected; log search API is 500ing so the failure cannot be traced server-side).
+- Per the contract: the positive generation path and the live failure paths (`MODEL_UNAVAILABLE`, duplicate `CONFLICT`, recovery) **cannot be completed until the tunnel points at Ollama** (`ngrok http 11434`), ideally behind basic auth (`ngrok http --basic-auth …`), and `QWEN_GATEWAY_AUTH` is set.
+- **Required user action:** restart the tunnel to the local Qwen/Ollama server, then I re-run the full gate verification. Until then Phase 2's completion gate is **NOT PASSED** (machinery verified, live generation pending).
+
+## 6. Unresolved defects / open requirements (queued for P3+)
 
 1. Fit-score calibration semantics (adjacency when nothing missing; evidence influence; future-role floor).
 2. Resume claims → verified assessment pipeline (work samples, evidence review, contradiction handling).

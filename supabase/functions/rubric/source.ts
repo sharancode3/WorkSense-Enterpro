@@ -21,6 +21,7 @@ async function generateRubric(supabase, reqRow: { id: string; title: string; req
     json: true,
     temperature: 0.3,
     maxTokens: 1200,
+    task: "rubric",
     system: RUBRIC_SYSTEM,
     user: `Role: ${reqRow.title}. Competency: ${competency} (required proficiency ${target} of 5).\nProduce the 5-tier behavioral interview rubric as JSON.`,
   })) as {
@@ -30,6 +31,8 @@ async function generateRubric(supabase, reqRow: { id: string; title: string; req
     rubric?: Partial<Record<(typeof TIER_KEYS)[number], string>>;
   };
 
+  const valid = validateRubric(parsed);
+  if (!valid.ok) throw new QwenError("MODEL_OUTPUT_INVALID", `Rubric failed validation: ${valid.errors.join("; ")}`);
   return {
     competency: (parsed.competency ?? competency).replace(/\s*\(.*\)\s*$/, "").trim() || competency,
     question: parsed.question ?? `Tell me about your experience with ${competency}.`,

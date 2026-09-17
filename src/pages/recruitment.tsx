@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import {
   ArrowRight,
@@ -32,6 +33,7 @@ import {
 import {
   evaluateInterview,
   extractResume,
+  fetchModelJob,
   generateInterviewKit,
   recruiterDecision,
   requisitionCreate,
@@ -94,8 +96,26 @@ function SkillsChips({ skills }: { skills: { skill: string; target_proficiency: 
 export default function Recruitment() {
   const { role, user } = useAuth();
   const qc = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [recoveredJob, setRecoveredJob] = useState<{ id: string; status: string; task: string; error_message?: string | null } | null>(null);
   const [selected, setSelected] = useState<string>("");
   const [creating, setCreating] = useState(false);
+
+  // Refresh recovery: re-read a completed generation job from the URL.
+  useEffect(() => {
+    const jobParam = searchParams.get("job");
+    if (!jobParam) return;
+    void fetchModelJob(jobParam)
+      .then((res) =>
+        setRecoveredJob({
+          id: res.job.id,
+          status: res.job.status,
+          task: res.job.task,
+          error_message: res.job.error_message,
+        })
+      )
+      .catch(() => setRecoveredJob({ id: jobParam, status: "unavailable", task: "generation" }));
+  }, [searchParams]);
 
   // Create-requisition form
   const [title, setTitle] = useState("");
@@ -241,6 +261,7 @@ export default function Recruitment() {
     setExtractResult(null);
     try {
       const res = await extractResume(resumeTwin.id, resumeText, req.id);
+      setSearchParams({ job: res.job_id }, { replace: true });
       setExtractResult({
         skills: res.extracted_skills.map((s) => s.name),
         years: res.years_experience ?? 0,
@@ -305,6 +326,28 @@ export default function Recruitment() {
         </div>
 
         <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-3">
+          {recoveredJob && (
+            <div className="col-span-full rounded-lg bg-muted p-4 text-sm">
+              <span className="font-bold text-foreground">Recovered job #{recoveredJob.id.slice(0, 8)}</span>
+              <span className="ml-2 text-muted-foreground">
+                task: {recoveredJob.task} · status:{" "}
+                <b className={recoveredJob.status === "succeeded" ? "text-secondary" : "text-destructive"}>
+                  {recoveredJob.status}
+                </b>
+                {recoveredJob.error_message ? ` · ${recoveredJob.error_message.slice(0, 120)}` : ""}
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setRecoveredJob(null);
+                  setSearchParams({}, { replace: true });
+                }}
+                className="ml-3 text-xs font-semibold text-primary"
+              >
+                Dismiss
+              </button>
+            </div>
+          )}
           {/* Left: create + requisition list */}
           <div className="flex flex-col gap-6">
             <div className="rounded-lg bg-white p-5">

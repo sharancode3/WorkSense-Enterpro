@@ -1,0 +1,28 @@
+-- Phase 2: durable model-job records (honest constrained alternative to a background worker).
+-- Serverless has no worker/queue: jobs execute inline but persist full lifecycle,
+-- so refresh recovers status and duplicate submissions are rejected.
+create table public.model_jobs (
+  id uuid primary key default gen_random_uuid(),
+  org_id uuid not null references public.organizations(id),
+  actor_id uuid not null,
+  task text not null,
+  input_hash text not null,
+  schema_version text not null,
+  prompt_version text not null,
+  model text not null default '',
+  status text not null default 'queued' check (status in ('queued','running','succeeded','failed')),
+  retry_count integer not null default 0,
+  latency_ms integer,
+  tokens_in integer,
+  tokens_out integer,
+  error_code text,
+  error_message text,
+  output jsonb,
+  created_at timestamptz not null default now(),
+  started_at timestamptz,
+  finished_at timestamptz
+);
+create index model_jobs_dedup_idx on public.model_jobs (org_id, task, input_hash, status);
+create index model_jobs_actor_idx on public.model_jobs (actor_id, created_at desc);
+alter table public.model_jobs enable row level security;
+-- No client policies: job reads/writes go through backend functions only.

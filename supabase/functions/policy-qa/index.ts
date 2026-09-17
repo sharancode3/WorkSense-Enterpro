@@ -2,11 +2,10 @@
 // Edit supabase/functions/_shared/* and <fn>/source.ts, then re-run the bundler.
 
 // ---------------------------------------------------------------------------
-// WorkSense Qwen client — external OpenAI-compatible endpoint, called ONLY
-// from backend functions. The model never computes scores; it only extracts
-// structured data / writes rubric text. Resume text is treated as UNTRUSTED
-// input: instruction-like phrases are neutralized and the content is wrapped
-// in an explicit untrusted delimiter before any model call.
+// WorkSense Qwen gateway client — server-managed config, strict output
+// validation, one controlled repair attempt, sanitized telemetry.
+// Called ONLY from backend functions. The tunnel URL / credentials never
+// ship to the browser.
 // ---------------------------------------------------------------------------
 
 function getEnv(name: string, fallback: string): string {
@@ -18,19 +17,35 @@ function getEnv(name: string, fallback: string): string {
     /* node test env */
   }
   try {
-    const fromNode = (typeof process !== "undefined" ? process.env?.[name] : undefined) ?? fallback;
-    return fromNode;
+    return (typeof process !== "undefined" ? process.env?.[name] : undefined) ?? fallback;
   } catch {
     return fallback;
   }
 }
 
-export const QWEN_BASE_URL = getEnv(
-  "QWEN_BASE_URL",
-  "https://evolve-eternity-epidural.ngrok-free.dev/v1"
-).replace(/\/+$/, "");
+function getEnvInt(name: string, fallback: number): number {
+  const v = Number(getEnv(name, String(fallback)));
+  return Number.isFinite(v) && v > 0 ? Math.floor(v) : fallback;
+}
+
+// --- Server-managed settings (env with sane defaults) ----------------------
+export const QWEN_BASE_URL = getEnv("QWEN_BASE_URL", "https://evolve-eternity-epidural.ngrok-free.dev/v1").replace(/\/+$/, "");
 export const QWEN_MODEL = getEnv("QWEN_MODEL", "qwen3:4b-instruct-2507-q4_K_M");
 export const QWEN_API_KEY = getEnv("QWEN_API_KEY", "local");
+/** Optional real gateway auth (e.g. "Basic dXNlcjpwYXNz" or "Bearer x") for a protected tunnel. */
+export const QWEN_GATEWAY_AUTH = getEnv("QWEN_GATEWAY_AUTH", "");
+export const QWEN_TIMEOUT_MS = getEnvInt("QWEN_TIMEOUT_MS", 40000);
+export const QWEN_MAX_INPUT_CHARS = getEnvInt("QWEN_MAX_INPUT_CHARS", 8000);
+export const QWEN_MAX_TOKENS = getEnvInt("QWEN_MAX_TOKENS", 1600);
+
+export type QwenErrorCode = "MODEL_UNAVAILABLE" | "MODEL_OUTPUT_INVALID" | "VALIDATION_ERROR" | "INPUT_TOO_LARGE";
+
+export class QwenError extends Error {
+  constructor(public code: QwenErrorCode, message: string) {
+    super(message);
+    this.name = "QwenError";
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Untrusted-content handling (resume intake)
@@ -55,9 +70,7 @@ const INSTRUCTION_PATTERNS: RegExp[] = [
 /** Neutralize instruction-like phrases in untrusted resume text. */
 export function sanitizeUntrusted(text: string): string {
   let out = String(text ?? "");
-  for (const re of INSTRUCTION_PATTERNS) {
-    out = out.replace(re, "[redacted]");
-  }
+  for (const re of INSTRUCTION_PATTERNS) out = out.replace(re, "[redacted]");
   return out.trim();
 }
 
@@ -67,34 +80,63 @@ export function wrapUntrusted(text: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// OpenAI-compatible chat call
+// Strict JSON extraction — never salvage arbitrary brace substrings blindly.
 // ---------------------------------------------------------------------------
 
-export class QwenError extends Error {
-  constructor(
-    public code: "MODEL_UNAVAILABLE" | "MODEL_OUTPUT_INVALID",
-    message: string
-  ) {
-    super(message);
-    this.name = "QwenError";
-  }
+export function isHtmlInterstitial(content: string): boolean {
+  const head = String(content ?? "").slice(0, 400).trim().toLowerCase();
+  return /^<!doctype|^<html|ngrok|502 bad gateway|504 gateway time-out|cloudflare/.test(head);
 }
 
-function extractJson(content: string): unknown {
-  const trimmed = content.trim();
-  // Strip markdown fences if present.
-  const fenced = trimmed.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+export function extractJsonStrict(content: string): unknown {
+  const trimmed = String(content ?? "").trim();
+  if (!trimmed) throw new QwenError("MODEL_OUTPUT_INVALID", "qwen: empty completion");
+  if (isHtmlInterstitial(trimmed)) {
+    throw new QwenError("MODEL_UNAVAILABLE", "qwen: gateway returned an HTML/interstitial response (infrastructure error, not model output).");
+  }
+  // 1) strict full parse
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    /* fall through */
+  }
+  // 2) strip markdown fences
+  const fenced = trimmed.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+  try {
+    return JSON.parse(fenced);
+  } catch {
+    /* fall through */
+  }
+  // 3) balanced object extraction (only if the remainder is clearly a JSON object)
   const start = fenced.indexOf("{");
   const end = fenced.lastIndexOf("}");
-  if (start === -1 || end === -1 || end <= start) {
-    throw new QwenError("MODEL_OUTPUT_INVALID", `qwen: no JSON object in response: ${content.slice(0, 200)}`);
+  if (start !== -1 && end > start) {
+    const candidate = fenced.slice(start, end + 1);
+    // Reject if non-whitespace noise precedes the object or trails it.
+    const prefixNoise = fenced.slice(0, start).trim();
+    const suffixNoise = fenced.slice(end + 1).trim();
+    if (prefixNoise.length <= 40 && suffixNoise.length <= 40) {
+      try {
+        return JSON.parse(candidate);
+      } catch {
+        throw new QwenError("MODEL_OUTPUT_INVALID", "qwen: unbalanced JSON in response.");
+      }
+    }
   }
-  try {
-    return JSON.parse(fenced.slice(start, end + 1));
-  } catch {
-    throw new QwenError("MODEL_OUTPUT_INVALID", "qwen: response is not valid JSON.");
-  }
+  throw new QwenError("MODEL_OUTPUT_INVALID", `qwen: no valid JSON object in response (${trimmed.slice(0, 160)}…)`);
 }
+
+// ---------------------------------------------------------------------------
+// Sanitized telemetry — never log raw prompts.
+// ---------------------------------------------------------------------------
+
+function logMetric(entry: Record<string, string | number>) {
+  console.log(`[qwen] ${Object.entries(entry).map(([k, v]) => `${k}=${v}`).join(" ")}`);
+}
+
+// ---------------------------------------------------------------------------
+// OpenAI-compatible chat call
+// ---------------------------------------------------------------------------
 
 export async function callQwen(params: {
   system: string;
@@ -102,49 +144,95 @@ export async function callQwen(params: {
   json?: boolean;
   maxTokens?: number;
   temperature?: number;
+  task?: string;
 }): Promise<unknown> {
+  const task = params.task ?? "generic";
+  const started = Date.now();
+  const inputChars = String(params.user ?? "").length;
+
+  if (inputChars > QWEN_MAX_INPUT_CHARS) {
+    logMetric({ task, status: "rejected", reason: "input_too_large", input_chars: inputChars });
+    throw new QwenError("INPUT_TOO_LARGE", `Input exceeds the ${QWEN_MAX_INPUT_CHARS} character limit.`);
+  }
+
+  const messages: { role: string; content: string }[] = [
+    { role: "system", content: params.system },
+    { role: "user", content: params.user },
+  ];
   const body: Record<string, unknown> = {
     model: QWEN_MODEL,
-    messages: [
-      { role: "system", content: params.system },
-      { role: "user", content: params.user },
-    ],
+    messages,
     temperature: params.temperature ?? 0.2,
-    max_tokens: params.maxTokens ?? 1600,
+    max_tokens: params.maxTokens ?? QWEN_MAX_TOKENS,
     stream: false,
   };
-  if (params.json) {
-    body.response_format = { type: "json_object" };
-  }
+  if (params.json) body.response_format = { type: "json_object" };
 
-  let res: Response;
-  try {
-    res = await fetch(`${QWEN_BASE_URL}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${QWEN_API_KEY}`,
-      },
-      body: JSON.stringify(body),
-    });
-  } catch (err) {
-    throw new QwenError("MODEL_UNAVAILABLE", `qwen: network error (is the endpoint reachable?): ${err instanceof Error ? err.message : String(err)}`);
-  }
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${QWEN_API_KEY}`,
+  };
+  if (QWEN_GATEWAY_AUTH) headers["Authorization"] = QWEN_GATEWAY_AUTH;
 
-  if (!res.ok) {
-    const text = await res.text();
-    throw new QwenError("MODEL_UNAVAILABLE", `qwen: HTTP ${res.status}: ${text.slice(0, 300)}`);
-  }
+  const attempt = async (repairHint: boolean): Promise<unknown> => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), QWEN_TIMEOUT_MS);
+    let res: Response;
+    try {
+      res = await fetch(`${QWEN_BASE_URL}/chat/completions`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(repairHint ? { ...body, messages: [...messages, { role: "user", content: "IMPORTANT: respond with ONLY valid JSON and nothing else. No markdown fences, no prose." }] } : body),
+        signal: controller.signal,
+      });
+    } catch (err) {
+      const timedOut = err instanceof Error && err.name === "AbortError";
+      throw new QwenError("MODEL_UNAVAILABLE", timedOut ? `qwen: request timed out after ${QWEN_TIMEOUT_MS}ms` : `qwen: network error (is the endpoint reachable?): ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      clearTimeout(timer);
+    }
 
-  const data = await res.json();
-  const content = data?.choices?.[0]?.message?.content;
-  if (typeof content !== "string" || content.length === 0) {
-    throw new QwenError("MODEL_OUTPUT_INVALID", "qwen: empty completion");
-  }
-  if (params.json) {
-    return extractJson(content);
-  }
-  return content;
+    if (!res.ok) {
+      const text = await res.text();
+      if (isHtmlInterstitial(text)) {
+        throw new QwenError("MODEL_UNAVAILABLE", "qwen: gateway returned an HTML/interstitial response (infrastructure error).");
+      }
+      throw new QwenError("MODEL_UNAVAILABLE", `qwen: HTTP ${res.status}: ${text.slice(0, 300)}`);
+    }
+
+    const data = await res.json();
+    const content = data?.choices?.[0]?.message?.content;
+    if (typeof content !== "string" || content.length === 0) {
+      throw new QwenError("MODEL_OUTPUT_INVALID", "qwen: empty completion");
+    }
+    if (!params.json) return content;
+
+    const usage = data?.usage;
+    const latency = Date.now() - started;
+    try {
+      const parsed = extractJsonStrict(content);
+      logMetric({
+        task, status: "ok", latency_ms: latency,
+        model: QWEN_MODEL, out_chars: content.length,
+        tokens_in: usage?.prompt_tokens ?? 0, tokens_out: usage?.completion_tokens ?? 0,
+        input_chars: inputChars,
+      });
+      return parsed;
+    } catch (err) {
+      if (err instanceof QwenError) {
+        if (err.code === "MODEL_OUTPUT_INVALID" && !repairHint) {
+          // Exactly one controlled repair attempt.
+          logMetric({ task, status: "repair", latency_ms: latency, reason: err.message.slice(0, 80) });
+          return attempt(true);
+        }
+        logMetric({ task, status: "failed", latency_ms: latency, code: err.code });
+        throw err;
+      }
+      throw err;
+    }
+  };
+
+  return attempt(false);
 }
 
 
@@ -293,6 +381,135 @@ export function validateCitations(citations: Citation[] | undefined, chunks: Ret
 }
 
 
+// ---------------------------------------------------------------------------
+// Per-task runtime schema + semantic validation for Qwen outputs.
+// Runs AFTER generation regardless of provider structured-output support.
+// No invalid/partial model output becomes trusted domain data.
+// ---------------------------------------------------------------------------
+
+export type ValidationResult = { ok: true } | { ok: false; errors: string[] };
+
+const isStr = (v: unknown): v is string => typeof v === "string";
+const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+const isArr = (v: unknown): v is unknown[] => Array.isArray(v);
+const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+
+const TIERS = ["FOUNDATIONAL", "INTERMEDIATE", "ADVANCED", "EXPERT"];
+const EVAL_TIERS = ["Red Flag", "Developing", "Competent-Baseline", "Advanced", "Master-Architectural"];
+const EVAL_RECS = ["Select", "Move Forward", "Reject"];
+const POLICY_STATUS = ["grounded_response", "insufficient_evidence"];
+const TREND = ["up", "flat", "down"];
+const SIGNOFF = ["HR_EXECUTIVE", "MANAGER"];
+
+function fail(errors: string[]): ValidationResult {
+  return errors.length === 0 ? { ok: true } : { ok: false, errors };
+}
+
+// 1) Resume Evidence Extraction (6.1)
+export function validateResumeExtraction(d: unknown): ValidationResult {
+  const errors: string[] = [];
+  if (!isObj(d)) return { ok: false, errors: ["response is not an object"] };
+  if (!isStr(d.full_name) || d.full_name.trim().length === 0) errors.push("full_name must be a non-empty string");
+  if (!isNum(d.years_experience) || d.years_experience < 0 || d.years_experience > 60) errors.push("years_experience must be 0..60");
+  const skills = d.extracted_skills;
+  if (!isArr(skills)) errors.push("extracted_skills must be an array");
+  else {
+    for (const raw of skills) {
+      const s = isObj(raw) ? raw : null;
+      if (!s || !isStr(s.skill_name) || s.skill_name.trim().length === 0 || s.skill_name.length > 80) errors.push("skill_name missing/too long");
+      if (!s || !isNum(s.years) || s.years < 0 || s.years > 50) errors.push("skill years out of bounds");
+      if (!s || !isStr(s.proficiency_tier) || !TIERS.includes(s.proficiency_tier)) errors.push(`proficiency_tier must be one of ${TIERS.join(",")}`);
+      if (!s || !isStr(s.evidence_quote) || s.evidence_quote.length > 200) errors.push("evidence_quote must be a short string");
+    }
+  }
+  if (!isArr(d.verified_projects)) errors.push("verified_projects must be an array");
+  return fail(errors);
+}
+
+// 2) 5-Tier Interview Rubric (6.2)
+export function validateRubric(d: unknown): ValidationResult {
+  const errors: string[] = [];
+  if (!isObj(d)) return { ok: false, errors: ["response is not an object"] };
+  if (!isStr(d.competency) || d.competency.trim().length === 0) errors.push("competency missing");
+  if (!isStr(d.question) || d.question.trim().length === 0) errors.push("question missing");
+  if (!isArr(d.follow_up_probes) || d.follow_up_probes.length !== 2 || d.follow_up_probes.some((p) => !isStr(p) || p.length === 0)) {
+    errors.push("follow_up_probes must contain exactly 2 non-empty strings");
+  }
+  if (!isObj(d.rubric)) errors.push("rubric must be an object");
+  else {
+    for (let i = 1; i <= 5; i++) {
+      const k = `tier_${i}` as const;
+      if (!isStr(d.rubric[k]) || (d.rubric[k] as string).trim().length === 0) errors.push(`rubric.${k} must be a non-empty string`);
+    }
+  }
+  return fail(errors);
+}
+
+// 3) Assessment Evaluation
+export function validateEvaluation(d: unknown): ValidationResult {
+  const errors: string[] = [];
+  if (!isObj(d)) return { ok: false, errors: ["response is not an object"] };
+  if (!isArr(d.evaluations)) errors.push("evaluations must be an array");
+  else {
+    for (const raw of d.evaluations) {
+      const e = isObj(raw) ? raw : null;
+      if (!e) { errors.push("evaluation item not an object"); continue; }
+      if (!isStr(e.competency) || e.competency.trim().length === 0) errors.push("evaluation competency missing");
+      if (!isStr(e.tier) || !EVAL_TIERS.includes(e.tier)) errors.push(`tier must be one of ${EVAL_TIERS.join("|")}`);
+      if (!isNum(e.score) || e.score < 1 || e.score > 5 || !Number.isInteger(e.score)) errors.push("score must be an integer 1..5");
+      if (!isStr(e.evidence) || e.evidence.trim().length === 0) errors.push("evidence missing (assessment must be evidence-linked)");
+    }
+  }
+  if (!isStr(d.overall_recommendation) || !EVAL_RECS.includes(d.overall_recommendation)) errors.push(`overall_recommendation must be one of ${EVAL_RECS.join("|")}`);
+  return fail(errors);
+}
+
+// 4) Grounded Policy Answer (6.3)
+export function validatePolicyAnswer(d: unknown): ValidationResult {
+  const errors: string[] = [];
+  if (!isObj(d)) return { ok: false, errors: ["response is not an object"] };
+  if (!isStr(d.status) || !POLICY_STATUS.includes(d.status)) errors.push(`status must be one of ${POLICY_STATUS.join("|")}`);
+  if (!isStr(d.answer)) errors.push("answer must be a string");
+  if (!isArr(d.citations)) errors.push("citations must be an array");
+  else {
+    for (const raw of d.citations) {
+      const c = isObj(raw) ? raw : null;
+      if (!c) { errors.push("citation not an object"); continue; }
+      if (!isStr(c.doc_code) || !/^POL-/.test(c.doc_code)) errors.push("citation doc_code must start with POL-");
+      if (!isStr(c.section) || c.section.trim().length === 0) errors.push("citation section missing");
+      if (!isStr(c.exact_quote) || c.exact_quote.trim().length === 0) errors.push("citation exact_quote missing");
+    }
+  }
+  return fail(errors);
+}
+
+// 5) Performance Narrative
+export function validatePerformanceNarrative(d: unknown): ValidationResult {
+  const errors: string[] = [];
+  if (!isObj(d)) return { ok: false, errors: ["response is not an object"] };
+  if (!isStr(d.strengths) || d.strengths.trim().length === 0) errors.push("strengths missing");
+  if (!isStr(d.growth_areas) || d.growth_areas.trim().length === 0) errors.push("growth_areas missing");
+  if (!isStr(d.trend_direction) || !TREND.includes(d.trend_direction)) errors.push(`trend_direction must be one of ${TREND.join("|")}`);
+  if (!isNum(d.confidence) || d.confidence < 0 || d.confidence > 1) errors.push("confidence must be 0..1");
+  return fail(errors);
+}
+
+// 6) Recommendation Explanation (6.4)
+export function validateRecommendationExplanation(d: unknown): ValidationResult {
+  const errors: string[] = [];
+  if (!isObj(d)) return { ok: false, errors: ["response is not an object"] };
+  if (!isStr(d.title) || d.title.trim().length === 0) errors.push("title missing");
+  if (!isStr(d.executive_summary) || d.executive_summary.trim().length < 20) errors.push("executive_summary too short");
+  if (!isObj(d.proposed_action) || !isStr(d.proposed_action.action_type) || !isStr(d.proposed_action.target_entity_id)) {
+    errors.push("proposed_action.action_type/target_entity_id required");
+  }
+  if (!isStr(d.required_human_signoff_role) || !SIGNOFF.includes(d.required_human_signoff_role)) {
+    errors.push(`required_human_signoff_role must be one of ${SIGNOFF.join("|")}`);
+  }
+  return fail(errors);
+}
+
+
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
 
 
@@ -381,21 +598,20 @@ ${chunksText}
 </policy_chunks>
 
 Question (untrusted): ${wrapUntrusted(question)}`,
-  })) as {
-    status?: string;
-    answer?: string;
-    citations?: { doc_code?: string; section?: string; exact_quote?: string }[];
-  };
+  })) as unknown;
+  const valid = validatePolicyAnswer(parsed);
+  if (!valid.ok) throw new QwenError("MODEL_OUTPUT_INVALID", `Policy answer failed validation: ${valid.errors.join("; ")}`);
+  const typed = parsed as { status?: string; answer?: string; citations?: { doc_code?: string; section?: string; exact_quote?: string }[] };
 
   // Never let an ungrounded answer through: every exact_quote must exist
   // verbatim in a retrieved chunk. Dropped citations downgrade the state.
-  const { valid, droppedCount } = validateCitations(parsed.citations, retrieval);
-  const answer = String(parsed.answer ?? "").trim();
+  const { valid: validCits, droppedCount } = validateCitations(typed.citations, retrieval);
+  const answer = String(typed.answer ?? "").trim();
   let status: "grounded" | "partially_supported" | "insufficient_evidence" =
-    parsed.status === "grounded_response" ? "grounded" : "insufficient_evidence";
+    typed.status === "grounded_response" ? "grounded" : "insufficient_evidence";
 
   if (status === "grounded" && droppedCount > 0) status = "partially_supported";
-  if (answer.length === 0 || (valid.length === 0 && droppedCount > 0)) status = "insufficient_evidence";
+  if (answer.length === 0 || (validCits.length === 0 && droppedCount > 0)) status = "insufficient_evidence";
 
   if (status === "insufficient_evidence") {
     return json({
@@ -416,7 +632,7 @@ Question (untrusted): ${wrapUntrusted(question)}`,
     best_score: retrieval[0].score,
     threshold: ABSTENTION_THRESHOLD,
     answer,
-    citations: valid,
+    citations: validCits,
     retrieval,
   });
   } catch (err) {

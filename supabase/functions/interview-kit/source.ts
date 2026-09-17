@@ -34,6 +34,7 @@ function shapeRubric(parsed: { competency?: string; question?: string; follow_up
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  let jobId: string | null = null;
   try {
 
   const supabase = createClient(
@@ -80,26 +81,48 @@ Deno.serve(async (req) => {
   if (reqErr || !reqRow) return json({ error: "NOT_FOUND" }, 404);
   if (reqRow.org_id !== caller.org_id || reqRow.org_id !== twin.org_id) return json({ error: "FORBIDDEN" }, 403);
 
+  // Durable job lifecycle for the (expensive) kit generation.
+  const jobStartedAt = Date.now();
+  const inputHash = hashJobInput(`${twinId}|${reqId}`);
+  const open = await findOpenJob(supabase, caller.org_id, caller.id, "interview_kit", inputHash);
+  if (open) {
+    return json({ error: "CONFLICT", message: "An interview kit for this candidate and role is already being generated.", job_id: open.id }, 409);
+  }
+  const job = await createJob(supabase, {
+    orgId: caller.org_id, actorId: caller.id, task: "interview_kit", inputHash,
+    promptVersion: "interview-kit-v1", model: QWEN_MODEL,
+  });
+  jobId = job.id;
+  await markJobRunning(supabase, job.id);
+
   // 1) Reuse cached rubrics; generate any missing competencies (cached per role).
   const required = (reqRow.required_skills ?? []) as { skill: string; target_proficiency: number }[];
   let rubrics = (reqRow.rubrics ?? []) as { competency: string }[];
   const have = new Set(rubrics.map((r) => r.competency.toLowerCase()));
   const missing = [...required.map((r) => r.skill), "Collaboration"].filter((c) => !have.has(c.toLowerCase()));
-  for (const comp of missing) {
-    const target = required.find((r) => r.skill.toLowerCase() === comp.toLowerCase())?.target_proficiency ?? 3;
+
+  // Batch all missing competencies into ONE generation call (local 4B model:
+  // avoid numerous sequential generations unnecessarily).
+  if (missing.length > 0) {
     const parsed = (await callQwen({
       json: true,
       temperature: 0.3,
-      maxTokens: 1200,
+      maxTokens: 2400,
+      task: "interview_kit_rubrics",
       system:
-        'You are the WorkSense Interview Architect. For the given role and competency, generate one question, two follow-up probes, and a strict 5-tier OBSERVABLE behavioral rubric (concrete behaviors, not adjectives). Tier 1 = concrete red-flag behavior. Tier 3 = solid role-baseline behavior. Tier 5 = master/architectural-level behavior.\nRespond with JSON only:\n{"competency":"string","question":"string","follow_up_probes":["string","string"],"rubric":{"tier_1":"string","tier_2":"string","tier_3":"string","tier_4":"string","tier_5":"string"}}',
-      user: `Role: ${reqRow.title}. Competency: ${comp} (required proficiency ${target} of 5). Produce the rubric as JSON.`,
-    })) as { competency?: string; question?: string; follow_up_probes?: string[]; rubric?: Partial<Record<(typeof TIER_KEYS)[number], string>> };
-    const name = shapeRubric(parsed, comp).competency;
-    rubrics = rubrics.filter((r) => r.competency.toLowerCase() !== name.toLowerCase());
-    rubrics.push(shapeRubric(parsed, comp));
-  }
-  if (missing.length > 0) {
+        'You are the WorkSense Interview Architect. For each given competency, generate one question, two follow-up probes, and a strict 5-tier OBSERVABLE behavioral rubric (concrete behaviors, not adjectives). Tier 1 = concrete red-flag behavior. Tier 3 = solid role-baseline behavior. Tier 5 = master/architectural-level behavior.\nRespond with JSON only:\n{"rubrics":[{"competency":"string","question":"string","follow_up_probes":["string","string"],"rubric":{"tier_1":"string","tier_2":"string","tier_3":"string","tier_4":"string","tier_5":"string"}}]}',
+      user: `Role: ${reqRow.title}. Competencies: ${missing.join(", ")}. Produce the rubrics array as JSON.`,
+    })) as { rubrics?: unknown[] };
+
+    for (const item of parsed.rubrics ?? []) {
+      const valid = validateRubric(item);
+      if (!valid.ok) throw new QwenError("MODEL_OUTPUT_INVALID", `Rubric failed validation: ${valid.errors.join("; ")}`);
+      const r = item as { competency?: string; question?: string; follow_up_probes?: string[]; rubric: Record<string, string> };
+      const name = (r.competency ?? "").replace(/\s*\(.*\)\s*$/, "").trim();
+      if (!name) continue;
+      rubrics = rubrics.filter((x) => x.competency.toLowerCase() !== name.toLowerCase());
+      rubrics.push({ competency: name, question: r.question ?? "", follow_up_probes: (r.follow_up_probes ?? []).slice(0, 2), rubric: r.rubric });
+    }
     await supabase.from("job_requisitions").update({ rubrics }).eq("id", reqId);
   }
 
@@ -143,10 +166,13 @@ Deno.serve(async (req) => {
       json: true,
       temperature: 0.3,
       maxTokens: 900,
+      task: "interview_kit_probe",
       system: BIAS_SYSTEM,
       user: `Role: ${reqRow.title}. Candidate's Adjacent/Transferable/Gap items: ${focusItems.map((i) => i.skill).join(", ")}. Bias the question toward the top item and produce the rubric JSON.`,
-    })) as { competency?: string; question?: string; follow_up_probes?: string[]; rubric?: Partial<Record<(typeof TIER_KEYS)[number], string>> };
-    biasedProbe = shapeRubric(parsed, focusItems[0].skill);
+    })) as unknown;
+    const valid = validateRubric(parsed);
+    if (!valid.ok) throw new QwenError("MODEL_OUTPUT_INVALID", `Biased probe failed validation: ${valid.errors.join("; ")}`);
+    biasedProbe = shapeRubric(parsed as { competency?: string; question?: string; follow_up_probes?: string[]; rubric?: Partial<Record<(typeof TIER_KEYS)[number], string>> }, focusItems[0].skill);
   }
 
   const kit = {
@@ -173,8 +199,13 @@ Deno.serve(async (req) => {
     })
     .eq("id", twinId);
 
-  return json({ ok: true, kit });
+  await finishJob(supabase, job.id, { status: "succeeded", output: { score: fit.score, focus_items: kit.focus_items }, latencyMs: Date.now() - jobStartedAt });
+
+  return json({ ok: true, job_id: job.id, status: "succeeded", kit });
   } catch (err) {
+    if (jobId) {
+      await finishJob(supabase, jobId, { status: "failed", errorCode: err instanceof QwenError ? err.code : "INTERNAL", errorMessage: err instanceof Error ? err.message : "unknown" }).catch(() => undefined);
+    }
     return json({ error: err instanceof QwenError ? err.code : "INTERNAL", message: err instanceof Error ? err.message : "unknown" });
   }
 });

@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Briefcase, GitBranch, Layers, ListChecks, LogOut, MessageSquareText, RotateCcw, Settings, ShieldCheck } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 import { can, ROLE_BADGE_CLASS, ROLE_LABEL } from "@/lib/rbac";
-import { resetDemo } from "@/lib/api";
+import { fetchHealth, resetDemo } from "@/lib/api";
 import { BUILD_INFO } from "@/generated/build-info";
 import { Button } from "@/components/ui/button";
 import {
@@ -16,9 +17,45 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
+function HealthChip({
+  gateway,
+  modelReady,
+  authOk,
+  checking,
+}: {
+  gateway?: "reachable" | "unreachable";
+  modelReady?: boolean;
+  authOk?: boolean;
+  checking: boolean;
+}) {
+  let label = "AI gateway: checking…";
+  let cls = "bg-white/10 text-white/70";
+  if (!checking && gateway === "reachable" && modelReady) {
+    label = authOk ? "AI ready · authenticated" : "AI ready · tunnel not gateway-authenticated";
+    cls = authOk ? "bg-secondary text-white" : "bg-accent text-foreground";
+  } else if (!checking && gateway === "reachable" && !modelReady) {
+    label = "AI gateway up · model unavailable";
+    cls = "bg-accent text-foreground";
+  } else if (!checking) {
+    label = "AI gateway unreachable";
+    cls = "bg-destructive text-white";
+  }
+  return <span className={`rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${cls}`}>{label}</span>;
+}
+
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const { role, twin, signOut } = useAuth();
+  const { role, twin, signOut, user } = useAuth();
   const [resetting, setResetting] = useState(false);
+
+  // Limited AI-gateway health indicator (4 states): app backend ok (implicit),
+  // gateway reachable, model ready, generation failed is surfaced per job.
+  const health = useQuery({
+    queryKey: ["ai-health", user?.id ?? "anon"],
+    queryFn: fetchHealth,
+    refetchInterval: 60_000,
+    enabled: !!user,
+    retry: false,
+  });
 
   const handleReset = async () => {
     setResetting(true);
@@ -155,6 +192,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <span className="text-xs text-white/40">
             build {BUILD_INFO.commit} · {new Date(BUILD_INFO.builtAt).toLocaleString()} · schema {BUILD_INFO.schemaVersion}
           </span>
+          <HealthChip
+            gateway={health.data?.gateway}
+            modelReady={health.data?.model_ready}
+            authOk={health.data?.gateway_authenticated}
+            checking={health.isLoading}
+          />
         </div>
       </footer>
     </div>

@@ -86,21 +86,20 @@ ${chunksText}
 </policy_chunks>
 
 Question (untrusted): ${wrapUntrusted(question)}`,
-  })) as {
-    status?: string;
-    answer?: string;
-    citations?: { doc_code?: string; section?: string; exact_quote?: string }[];
-  };
+  })) as unknown;
+  const valid = validatePolicyAnswer(parsed);
+  if (!valid.ok) throw new QwenError("MODEL_OUTPUT_INVALID", `Policy answer failed validation: ${valid.errors.join("; ")}`);
+  const typed = parsed as { status?: string; answer?: string; citations?: { doc_code?: string; section?: string; exact_quote?: string }[] };
 
   // Never let an ungrounded answer through: every exact_quote must exist
   // verbatim in a retrieved chunk. Dropped citations downgrade the state.
-  const { valid, droppedCount } = validateCitations(parsed.citations, retrieval);
-  const answer = String(parsed.answer ?? "").trim();
+  const { valid: validCits, droppedCount } = validateCitations(typed.citations, retrieval);
+  const answer = String(typed.answer ?? "").trim();
   let status: "grounded" | "partially_supported" | "insufficient_evidence" =
-    parsed.status === "grounded_response" ? "grounded" : "insufficient_evidence";
+    typed.status === "grounded_response" ? "grounded" : "insufficient_evidence";
 
   if (status === "grounded" && droppedCount > 0) status = "partially_supported";
-  if (answer.length === 0 || (valid.length === 0 && droppedCount > 0)) status = "insufficient_evidence";
+  if (answer.length === 0 || (validCits.length === 0 && droppedCount > 0)) status = "insufficient_evidence";
 
   if (status === "insufficient_evidence") {
     return json({
@@ -121,7 +120,7 @@ Question (untrusted): ${wrapUntrusted(question)}`,
     best_score: retrieval[0].score,
     threshold: ABSTENTION_THRESHOLD,
     answer,
-    citations: valid,
+    citations: validCits,
     retrieval,
   });
   } catch (err) {

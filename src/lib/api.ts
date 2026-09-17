@@ -80,6 +80,8 @@ export async function fetchCandidateStatus(
 
 export interface ExtractResumeResult {
   ok: true;
+  job_id: string;
+  status: "succeeded" | "failed" | "queued" | "running";
   full_name: string;
   years_experience: number;
   extracted_skills: { name: string; proficiency: number; evidence_source: string; verification_rigor: string; evidence?: string; years: number }[];
@@ -297,3 +299,29 @@ export interface DashboardData {
 }
 
 export const fetchDashboard = () => invoke<DashboardData>("dashboard", {});
+
+// ---- Model gateway observability ----
+
+export interface ModelJobView {
+  id: string;
+  task: string;
+  status: "queued" | "running" | "succeeded" | "failed";
+  model: string;
+  latency_ms: number | null;
+  error_code: string | null;
+  error_message: string | null;
+  output: unknown;
+}
+
+export interface HealthView {
+  ok: true;
+  app_backend: string;
+  gateway: "reachable" | "unreachable";
+  model_ready: boolean;
+  gateway_authenticated: boolean;
+  model: string;
+}
+
+export const fetchModelJob = (jobId: string) => invoke<{ ok: true; job: ModelJobView }>("model-job", { job_id: jobId });
+
+export const fetchHealth = () => invoke<HealthView>("health", {});

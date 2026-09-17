@@ -129,11 +129,15 @@ Deno.serve(async (req) => {
     json: true,
     temperature: 0.2,
     maxTokens: 400,
+    task: "performance_narrative",
     system: SYNTHESIS_SYSTEM,
     user: `Employee: ${twin.name}
 Aggregates (JSON): ${JSON.stringify(agg)}
 Write the strengths/growth-areas narrative from these numbers only.`,
-  })) as { strengths?: string; growth_areas?: string; trend_direction?: string; confidence?: number };
+  })) as unknown;
+  const valid = validatePerformanceNarrative(parsed);
+  if (!valid.ok) throw new QwenError("MODEL_OUTPUT_INVALID", `Narrative failed validation: ${valid.errors.join("; ")}`);
+  const typed = parsed as { strengths?: string; growth_areas?: string; trend_direction?: string; confidence?: number };
 
   const synthesis = {
     goals_met_pct: agg.goalsMetPct,
@@ -141,10 +145,10 @@ Write the strengths/growth-areas narrative from these numbers only.`,
     trend: agg.trend,
     cycles: agg.cycles,
     narrative: {
-      strengths: parsed.strengths ?? "",
-      growth_areas: parsed.growth_areas ?? "",
-      trend_direction: parsed.trend_direction ?? agg.trend,
-      confidence: parsed.confidence ?? 0.5,
+      strengths: typed.strengths ?? "",
+      growth_areas: typed.growth_areas ?? "",
+      trend_direction: typed.trend_direction ?? agg.trend,
+      confidence: typed.confidence ?? 0.5,
     },
     generated_at: new Date().toISOString(),
   };

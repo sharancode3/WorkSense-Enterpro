@@ -1,6 +1,8 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
-import { callQwen, QwenError, sanitizeUntrusted, wrapUntrusted } from "../_shared/qwen.ts";
+import { callQwen, QwenError, QWEN_MODEL, sanitizeUntrusted, wrapUntrusted } from "../_shared/qwen.ts";
 import { computeFit } from "../_shared/skill-graph-engine.ts";
+import { createJob, findOpenJob, finishJob, hashInput as hashJobInput, markJobRunning } from "../_shared/jobs.ts";
+import { validateResumeExtraction } from "../_shared/validate.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -23,9 +25,25 @@ const TIER_PROFICIENCY: Record<string, number> = {
   EXPERT: 5,
 };
 
+async function isTeamMember(supabase, rootTwinId: string, checkTwinId: string): Promise<boolean> {
+  const { data } = await supabase.from("digital_twins").select("id, manager_id");
+  const children = new Map<string, string[]>();
+  for (const t of data ?? []) {
+    if (t.manager_id) children.set(t.manager_id, [...(children.get(t.manager_id) ?? []), t.id]);
+  }
+  const seen = new Set<string>();
+  const stack = [rootTwinId];
+  while (stack.length > 0) {
+    const cur = stack.pop()!;
+    if (seen.has(cur)) continue;
+    seen.add(cur);
+    for (const c of children.get(cur) ?? []) stack.push(c);
+  }
+  return seen.has(checkTwinId);
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
-  try {
 
   const supabase = createClient(
     Deno.env.get("SUPABASE_URL")!,
@@ -66,27 +84,53 @@ Deno.serve(async (req) => {
   if (twinErr || !twin || twin.role !== "candidate") {
     return json({ error: "NOT_FOUND", message: "Candidate not found." }, 404);
   }
-  if (twin.org_id !== caller.org_id) {
-    return json({ error: "FORBIDDEN" }, 403);
-  }
+  if (twin.org_id !== caller.org_id) return json({ error: "FORBIDDEN" }, 403);
 
-  // Untrusted intake: neutralize instruction-like phrases, then wrap explicitly.
   const sanitized = sanitizeUntrusted(raw);
   const wrapped = wrapUntrusted(sanitized);
+  const inputHash = hashJobInput(sanitized);
 
-  const parsed = (await callQwen({
-    json: true,
-    temperature: 0.1,
-    system: EXTRACTION_SYSTEM,
-    user: `Resume:\n${wrapped}`,
-  })) as {
+  // Durable job lifecycle: dedup open duplicates -> queued -> running -> done.
+  const open = await findOpenJob(supabase, caller.org_id, caller.id, "resume_extraction", inputHash);
+  if (open) {
+    return json({ error: "CONFLICT", message: "A generation for this exact resume is already in progress.", job_id: open.id }, 409);
+  }
+  const job = await createJob(supabase, {
+    orgId: caller.org_id, actorId: caller.id, task: "resume_extraction", inputHash,
+    promptVersion: "resume-extract-v1", model: QWEN_MODEL,
+  });
+  await markJobRunning(supabase, job.id);
+  const startedAt = Date.now();
+
+  let parsed: unknown;
+  try {
+    parsed = await callQwen({
+      json: true,
+      temperature: 0.1,
+      system: EXTRACTION_SYSTEM,
+      user: `Resume:\n${wrapped}`,
+      task: "resume_extraction",
+    });
+  } catch (err) {
+    const code = err instanceof QwenError ? err.code : "INTERNAL";
+    await finishJob(supabase, job.id, { status: "failed", errorCode: code, errorMessage: err instanceof Error ? err.message : "unknown", latencyMs: Date.now() - startedAt });
+    return json({ error: code, message: err instanceof Error ? err.message : "unknown", job_id: job.id }, code === "MODEL_OUTPUT_INVALID" ? 422 : 503);
+  }
+
+  const valid = validateResumeExtraction(parsed);
+  if (!valid.ok) {
+    await finishJob(supabase, job.id, { status: "failed", errorCode: "MODEL_OUTPUT_INVALID", errorMessage: valid.errors.join("; "), latencyMs: Date.now() - startedAt });
+    return json({ error: "MODEL_OUTPUT_INVALID", message: "Model output failed schema validation.", details: valid.errors, job_id: job.id }, 422);
+  }
+
+  const d = parsed as {
     full_name?: string;
     years_experience?: number;
     extracted_skills?: { skill_name?: string; years?: number; proficiency_tier?: string; evidence_quote?: string }[];
     verified_projects?: { project_name?: string; role?: string; tech_stack?: string[]; impact_metric?: string }[];
   };
 
-  const extractedSkills = (parsed.extracted_skills ?? [])
+  const extractedSkills = (d.extracted_skills ?? [])
     .map((s) => ({
       name: String(s.skill_name ?? "").trim(),
       proficiency: TIER_PROFICIENCY[String(s.proficiency_tier ?? "").toUpperCase()] ?? 2,
@@ -97,7 +141,6 @@ Deno.serve(async (req) => {
     }))
     .filter((s) => s.name.length > 0);
 
-  // Merge into verified_skills (keep existing entries; add new ones by name).
   const existing = (twin.verified_skills ?? []) as { name: string }[];
   const known = new Set(existing.map((s) => s.name.toLowerCase()));
   const merged = [...existing, ...extractedSkills.filter((s) => !known.has(s.name.toLowerCase()))];
@@ -105,12 +148,7 @@ Deno.serve(async (req) => {
   const now = new Date().toISOString();
   const audit = [
     ...(twin.audit_events ?? []),
-    {
-      actor: caller.email ?? uid,
-      action: "resume_extracted",
-      note: `Extracted ${extractedSkills.length} skills from resume for ${twin.name}.`,
-      timestamp: now,
-    },
+    { actor: caller.email ?? uid, action: "resume_extracted", note: `Extracted ${extractedSkills.length} skills from resume for ${twin.name}.`, timestamp: now },
   ];
 
   let fit = null;
@@ -145,34 +183,28 @@ Deno.serve(async (req) => {
           resume_text: sanitized,
           verified_skills: merged,
           computed_fits: [...fits, fit],
-          audit_events: [
-            ...audit,
-            { actor: caller.email ?? uid, action: "match_computed", note: `Match vs ${reqRow.title}: ${fit.score.toFixed(3)}`, timestamp: now },
-          ],
+          audit_events: [...audit, { actor: caller.email ?? uid, action: "match_computed", note: `Match vs ${reqRow.title}: ${fit.score.toFixed(3)}`, timestamp: now }],
         })
         .eq("id", twinId);
     }
   } else {
-    await supabase
-      .from("digital_twins")
-      .update({ resume_text: sanitized, verified_skills: merged, audit_events: audit })
-      .eq("id", twinId);
+    await supabase.from("digital_twins").update({ resume_text: sanitized, verified_skills: merged, audit_events: audit }).eq("id", twinId);
   }
 
-  return json({
-    ok: true,
-    full_name: parsed.full_name ?? twin.name,
-    years_experience: parsed.years_experience ?? 0,
+  const result = {
+    full_name: d.full_name ?? twin.name,
+    years_experience: d.years_experience ?? 0,
     extracted_skills: extractedSkills,
-    verified_projects: (parsed.verified_projects ?? []).map((p) => ({
+    verified_projects: (d.verified_projects ?? []).map((p) => ({
       project_name: p.project_name ?? "",
       role: p.role ?? "",
       tech_stack: p.tech_stack ?? [],
       impact_metric: p.impact_metric ?? "",
     })),
     fit,
-  });
-  } catch (err) {
-    return json({ error: err instanceof QwenError ? err.code : "INTERNAL", message: err instanceof Error ? err.message : "unknown" });
-  }
+  };
+
+  await finishJob(supabase, job.id, { status: "succeeded", output: result, latencyMs: Date.now() - startedAt });
+
+  return json({ ok: true, job_id: job.id, status: "succeeded", ...result });
 });

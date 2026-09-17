@@ -3509,6 +3509,79 @@ export type Database = {
           },
         ]
       }
+      model_jobs: {
+        Row: {
+          actor_id: string
+          created_at: string
+          error_code: string | null
+          error_message: string | null
+          finished_at: string | null
+          id: string
+          input_hash: string
+          latency_ms: number | null
+          model: string
+          org_id: string
+          output: Json | null
+          prompt_version: string
+          retry_count: number
+          schema_version: string
+          started_at: string | null
+          status: string
+          task: string
+          tokens_in: number | null
+          tokens_out: number | null
+        }
+        Insert: {
+          actor_id: string
+          created_at?: string
+          error_code?: string | null
+          error_message?: string | null
+          finished_at?: string | null
+          id?: string
+          input_hash: string
+          latency_ms?: number | null
+          model?: string
+          org_id: string
+          output?: Json | null
+          prompt_version: string
+          retry_count?: number
+          schema_version: string
+          started_at?: string | null
+          status?: string
+          task: string
+          tokens_in?: number | null
+          tokens_out?: number | null
+        }
+        Update: {
+          actor_id?: string
+          created_at?: string
+          error_code?: string | null
+          error_message?: string | null
+          finished_at?: string | null
+          id?: string
+          input_hash?: string
+          latency_ms?: number | null
+          model?: string
+          org_id?: string
+          output?: Json | null
+          prompt_version?: string
+          retry_count?: number
+          schema_version?: string
+          started_at?: string | null
+          status?: string
+          task?: string
+          tokens_in?: number | null
+          tokens_out?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "model_jobs_org_id_fkey"
+            columns: ["org_id"]
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       onboarding_journeys: {
         Row: {
           audit_events: Json

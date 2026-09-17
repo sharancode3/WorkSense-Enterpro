@@ -281,11 +281,10 @@ export function fitKey(record: { target_type: string; target_id: string; scenari
 
 
 // ---------------------------------------------------------------------------
-// WorkSense Qwen client — external OpenAI-compatible endpoint, called ONLY
-// from backend functions. The model never computes scores; it only extracts
-// structured data / writes rubric text. Resume text is treated as UNTRUSTED
-// input: instruction-like phrases are neutralized and the content is wrapped
-// in an explicit untrusted delimiter before any model call.
+// WorkSense Qwen gateway client — server-managed config, strict output
+// validation, one controlled repair attempt, sanitized telemetry.
+// Called ONLY from backend functions. The tunnel URL / credentials never
+// ship to the browser.
 // ---------------------------------------------------------------------------
 
 function getEnv(name: string, fallback: string): string {
@@ -297,19 +296,35 @@ function getEnv(name: string, fallback: string): string {
     /* node test env */
   }
   try {
-    const fromNode = (typeof process !== "undefined" ? process.env?.[name] : undefined) ?? fallback;
-    return fromNode;
+    return (typeof process !== "undefined" ? process.env?.[name] : undefined) ?? fallback;
   } catch {
     return fallback;
   }
 }
 
-export const QWEN_BASE_URL = getEnv(
-  "QWEN_BASE_URL",
-  "https://evolve-eternity-epidural.ngrok-free.dev/v1"
-).replace(/\/+$/, "");
+function getEnvInt(name: string, fallback: number): number {
+  const v = Number(getEnv(name, String(fallback)));
+  return Number.isFinite(v) && v > 0 ? Math.floor(v) : fallback;
+}
+
+// --- Server-managed settings (env with sane defaults) ----------------------
+export const QWEN_BASE_URL = getEnv("QWEN_BASE_URL", "https://evolve-eternity-epidural.ngrok-free.dev/v1").replace(/\/+$/, "");
 export const QWEN_MODEL = getEnv("QWEN_MODEL", "qwen3:4b-instruct-2507-q4_K_M");
 export const QWEN_API_KEY = getEnv("QWEN_API_KEY", "local");
+/** Optional real gateway auth (e.g. "Basic dXNlcjpwYXNz" or "Bearer x") for a protected tunnel. */
+export const QWEN_GATEWAY_AUTH = getEnv("QWEN_GATEWAY_AUTH", "");
+export const QWEN_TIMEOUT_MS = getEnvInt("QWEN_TIMEOUT_MS", 40000);
+export const QWEN_MAX_INPUT_CHARS = getEnvInt("QWEN_MAX_INPUT_CHARS", 8000);
+export const QWEN_MAX_TOKENS = getEnvInt("QWEN_MAX_TOKENS", 1600);
+
+export type QwenErrorCode = "MODEL_UNAVAILABLE" | "MODEL_OUTPUT_INVALID" | "VALIDATION_ERROR" | "INPUT_TOO_LARGE";
+
+export class QwenError extends Error {
+  constructor(public code: QwenErrorCode, message: string) {
+    super(message);
+    this.name = "QwenError";
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Untrusted-content handling (resume intake)
@@ -334,9 +349,7 @@ const INSTRUCTION_PATTERNS: RegExp[] = [
 /** Neutralize instruction-like phrases in untrusted resume text. */
 export function sanitizeUntrusted(text: string): string {
   let out = String(text ?? "");
-  for (const re of INSTRUCTION_PATTERNS) {
-    out = out.replace(re, "[redacted]");
-  }
+  for (const re of INSTRUCTION_PATTERNS) out = out.replace(re, "[redacted]");
   return out.trim();
 }
 
@@ -346,34 +359,63 @@ export function wrapUntrusted(text: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// OpenAI-compatible chat call
+// Strict JSON extraction — never salvage arbitrary brace substrings blindly.
 // ---------------------------------------------------------------------------
 
-export class QwenError extends Error {
-  constructor(
-    public code: "MODEL_UNAVAILABLE" | "MODEL_OUTPUT_INVALID",
-    message: string
-  ) {
-    super(message);
-    this.name = "QwenError";
-  }
+export function isHtmlInterstitial(content: string): boolean {
+  const head = String(content ?? "").slice(0, 400).trim().toLowerCase();
+  return /^<!doctype|^<html|ngrok|502 bad gateway|504 gateway time-out|cloudflare/.test(head);
 }
 
-function extractJson(content: string): unknown {
-  const trimmed = content.trim();
-  // Strip markdown fences if present.
-  const fenced = trimmed.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+export function extractJsonStrict(content: string): unknown {
+  const trimmed = String(content ?? "").trim();
+  if (!trimmed) throw new QwenError("MODEL_OUTPUT_INVALID", "qwen: empty completion");
+  if (isHtmlInterstitial(trimmed)) {
+    throw new QwenError("MODEL_UNAVAILABLE", "qwen: gateway returned an HTML/interstitial response (infrastructure error, not model output).");
+  }
+  // 1) strict full parse
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    /* fall through */
+  }
+  // 2) strip markdown fences
+  const fenced = trimmed.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+  try {
+    return JSON.parse(fenced);
+  } catch {
+    /* fall through */
+  }
+  // 3) balanced object extraction (only if the remainder is clearly a JSON object)
   const start = fenced.indexOf("{");
   const end = fenced.lastIndexOf("}");
-  if (start === -1 || end === -1 || end <= start) {
-    throw new QwenError("MODEL_OUTPUT_INVALID", `qwen: no JSON object in response: ${content.slice(0, 200)}`);
+  if (start !== -1 && end > start) {
+    const candidate = fenced.slice(start, end + 1);
+    // Reject if non-whitespace noise precedes the object or trails it.
+    const prefixNoise = fenced.slice(0, start).trim();
+    const suffixNoise = fenced.slice(end + 1).trim();
+    if (prefixNoise.length <= 40 && suffixNoise.length <= 40) {
+      try {
+        return JSON.parse(candidate);
+      } catch {
+        throw new QwenError("MODEL_OUTPUT_INVALID", "qwen: unbalanced JSON in response.");
+      }
+    }
   }
-  try {
-    return JSON.parse(fenced.slice(start, end + 1));
-  } catch {
-    throw new QwenError("MODEL_OUTPUT_INVALID", "qwen: response is not valid JSON.");
-  }
+  throw new QwenError("MODEL_OUTPUT_INVALID", `qwen: no valid JSON object in response (${trimmed.slice(0, 160)}…)`);
 }
+
+// ---------------------------------------------------------------------------
+// Sanitized telemetry — never log raw prompts.
+// ---------------------------------------------------------------------------
+
+function logMetric(entry: Record<string, string | number>) {
+  console.log(`[qwen] ${Object.entries(entry).map(([k, v]) => `${k}=${v}`).join(" ")}`);
+}
+
+// ---------------------------------------------------------------------------
+// OpenAI-compatible chat call
+// ---------------------------------------------------------------------------
 
 export async function callQwen(params: {
   system: string;
@@ -381,49 +423,344 @@ export async function callQwen(params: {
   json?: boolean;
   maxTokens?: number;
   temperature?: number;
+  task?: string;
 }): Promise<unknown> {
+  const task = params.task ?? "generic";
+  const started = Date.now();
+  const inputChars = String(params.user ?? "").length;
+
+  if (inputChars > QWEN_MAX_INPUT_CHARS) {
+    logMetric({ task, status: "rejected", reason: "input_too_large", input_chars: inputChars });
+    throw new QwenError("INPUT_TOO_LARGE", `Input exceeds the ${QWEN_MAX_INPUT_CHARS} character limit.`);
+  }
+
+  const messages: { role: string; content: string }[] = [
+    { role: "system", content: params.system },
+    { role: "user", content: params.user },
+  ];
   const body: Record<string, unknown> = {
     model: QWEN_MODEL,
-    messages: [
-      { role: "system", content: params.system },
-      { role: "user", content: params.user },
-    ],
+    messages,
     temperature: params.temperature ?? 0.2,
-    max_tokens: params.maxTokens ?? 1600,
+    max_tokens: params.maxTokens ?? QWEN_MAX_TOKENS,
     stream: false,
   };
-  if (params.json) {
-    body.response_format = { type: "json_object" };
-  }
+  if (params.json) body.response_format = { type: "json_object" };
 
-  let res: Response;
-  try {
-    res = await fetch(`${QWEN_BASE_URL}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${QWEN_API_KEY}`,
-      },
-      body: JSON.stringify(body),
-    });
-  } catch (err) {
-    throw new QwenError("MODEL_UNAVAILABLE", `qwen: network error (is the endpoint reachable?): ${err instanceof Error ? err.message : String(err)}`);
-  }
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${QWEN_API_KEY}`,
+  };
+  if (QWEN_GATEWAY_AUTH) headers["Authorization"] = QWEN_GATEWAY_AUTH;
 
-  if (!res.ok) {
-    const text = await res.text();
-    throw new QwenError("MODEL_UNAVAILABLE", `qwen: HTTP ${res.status}: ${text.slice(0, 300)}`);
-  }
+  const attempt = async (repairHint: boolean): Promise<unknown> => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), QWEN_TIMEOUT_MS);
+    let res: Response;
+    try {
+      res = await fetch(`${QWEN_BASE_URL}/chat/completions`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(repairHint ? { ...body, messages: [...messages, { role: "user", content: "IMPORTANT: respond with ONLY valid JSON and nothing else. No markdown fences, no prose." }] } : body),
+        signal: controller.signal,
+      });
+    } catch (err) {
+      const timedOut = err instanceof Error && err.name === "AbortError";
+      throw new QwenError("MODEL_UNAVAILABLE", timedOut ? `qwen: request timed out after ${QWEN_TIMEOUT_MS}ms` : `qwen: network error (is the endpoint reachable?): ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      clearTimeout(timer);
+    }
 
-  const data = await res.json();
-  const content = data?.choices?.[0]?.message?.content;
-  if (typeof content !== "string" || content.length === 0) {
-    throw new QwenError("MODEL_OUTPUT_INVALID", "qwen: empty completion");
+    if (!res.ok) {
+      const text = await res.text();
+      if (isHtmlInterstitial(text)) {
+        throw new QwenError("MODEL_UNAVAILABLE", "qwen: gateway returned an HTML/interstitial response (infrastructure error).");
+      }
+      throw new QwenError("MODEL_UNAVAILABLE", `qwen: HTTP ${res.status}: ${text.slice(0, 300)}`);
+    }
+
+    const data = await res.json();
+    const content = data?.choices?.[0]?.message?.content;
+    if (typeof content !== "string" || content.length === 0) {
+      throw new QwenError("MODEL_OUTPUT_INVALID", "qwen: empty completion");
+    }
+    if (!params.json) return content;
+
+    const usage = data?.usage;
+    const latency = Date.now() - started;
+    try {
+      const parsed = extractJsonStrict(content);
+      logMetric({
+        task, status: "ok", latency_ms: latency,
+        model: QWEN_MODEL, out_chars: content.length,
+        tokens_in: usage?.prompt_tokens ?? 0, tokens_out: usage?.completion_tokens ?? 0,
+        input_chars: inputChars,
+      });
+      return parsed;
+    } catch (err) {
+      if (err instanceof QwenError) {
+        if (err.code === "MODEL_OUTPUT_INVALID" && !repairHint) {
+          // Exactly one controlled repair attempt.
+          logMetric({ task, status: "repair", latency_ms: latency, reason: err.message.slice(0, 80) });
+          return attempt(true);
+        }
+        logMetric({ task, status: "failed", latency_ms: latency, code: err.code });
+        throw err;
+      }
+      throw err;
+    }
+  };
+
+  return attempt(false);
+}
+
+
+// ---------------------------------------------------------------------------
+// Durable model-job records — honest constrained alternative to a background
+// worker: the serverless runtime has no worker/queue, so jobs execute inline
+// but persist their full lifecycle. Refresh recovers status; a job stuck in
+// 'running' indicates an interrupted invocation and is re-runnable. Input
+// content is never stored — only a hash.
+// ---------------------------------------------------------------------------
+
+export const JOB_SCHEMA_VERSION = "v1";
+
+export interface JobRow {
+  id: string;
+  org_id: string;
+  actor_id: string;
+  task: string;
+  input_hash: string;
+  schema_version: string;
+  prompt_version: string;
+  model: string;
+  status: "queued" | "running" | "succeeded" | "failed";
+  retry_count: number;
+  latency_ms: number | null;
+  tokens_in: number | null;
+  tokens_out: number | null;
+  error_code: string | null;
+  error_message: string | null;
+  output: unknown;
+}
+
+/** Open duplicate for the same actor+task+input while still queued/running.
+ *  A 'running' job older than 5 minutes is treated as stale (an interrupted
+ *  serverless invocation) so a retry can proceed. */
+export async function findOpenJob(supabase, orgId: string, actorId: string, task: string, inputHash: string) {
+  const { data, error } = await supabase
+    .from("model_jobs")
+    .select("id, status, started_at")
+    .eq("org_id", orgId)
+    .eq("actor_id", actorId)
+    .eq("task", task)
+    .eq("input_hash", inputHash)
+    .in("status", ["queued", "running"])
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  if (data.status === "queued") return { id: data.id };
+  const started = data.started_at ? new Date(data.started_at).getTime() : 0;
+  if (started > 0 && Date.now() - started < 5 * 60 * 1000) return { id: data.id };
+  return null; // stale running -> allow a fresh attempt
+}
+
+export async function createJob(supabase, params: {
+  orgId: string;
+  actorId: string;
+  task: string;
+  inputHash: string;
+  promptVersion: string;
+  model: string;
+}) {
+  const { data, error } = await supabase
+    .from("model_jobs")
+    .insert({
+      org_id: params.orgId,
+      actor_id: params.actorId,
+      task: params.task,
+      input_hash: params.inputHash,
+      schema_version: JOB_SCHEMA_VERSION,
+      prompt_version: params.promptVersion,
+      model: params.model,
+      status: "queued",
+      retry_count: 0,
+    })
+    .select("id, created_at")
+    .single();
+  if (error) throw error;
+  return data as { id: string; created_at: string };
+}
+
+export async function markJobRunning(supabase, id: string) {
+  await supabase.from("model_jobs").update({ status: "running", started_at: new Date().toISOString() }).eq("id", id);
+}
+
+export async function finishJob(supabase, id: string, params: {
+  status: "succeeded" | "failed";
+  output?: unknown;
+  latencyMs?: number;
+  tokensIn?: number;
+  tokensOut?: number;
+  errorCode?: string;
+  errorMessage?: string;
+}) {
+  await supabase
+    .from("model_jobs")
+    .update({
+      status: params.status,
+      output: params.output ?? null,
+      latency_ms: params.latencyMs ?? null,
+      tokens_in: params.tokensIn ?? null,
+      tokens_out: params.tokensOut ?? null,
+      error_code: params.errorCode ?? null,
+      error_message: params.errorMessage ?? null,
+      finished_at: new Date().toISOString(),
+    })
+    .eq("id", id);
+}
+
+export async function getJob(supabase, id: string): Promise<JobRow | null> {
+  const { data, error } = await supabase.from("model_jobs").select("*").eq("id", id).maybeSingle();
+  if (error) throw error;
+  return (data as JobRow | null) ?? null;
+}
+
+/** Non-cryptographic input hash (deterministic, used only for dedup). */
+export function hashInput(text: string): string {
+  let h = 0;
+  const s = String(text ?? "");
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+  return (h >>> 0).toString(16);
+}
+
+
+// ---------------------------------------------------------------------------
+// Per-task runtime schema + semantic validation for Qwen outputs.
+// Runs AFTER generation regardless of provider structured-output support.
+// No invalid/partial model output becomes trusted domain data.
+// ---------------------------------------------------------------------------
+
+export type ValidationResult = { ok: true } | { ok: false; errors: string[] };
+
+const isStr = (v: unknown): v is string => typeof v === "string";
+const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+const isArr = (v: unknown): v is unknown[] => Array.isArray(v);
+const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+
+const TIERS = ["FOUNDATIONAL", "INTERMEDIATE", "ADVANCED", "EXPERT"];
+const EVAL_TIERS = ["Red Flag", "Developing", "Competent-Baseline", "Advanced", "Master-Architectural"];
+const EVAL_RECS = ["Select", "Move Forward", "Reject"];
+const POLICY_STATUS = ["grounded_response", "insufficient_evidence"];
+const TREND = ["up", "flat", "down"];
+const SIGNOFF = ["HR_EXECUTIVE", "MANAGER"];
+
+function fail(errors: string[]): ValidationResult {
+  return errors.length === 0 ? { ok: true } : { ok: false, errors };
+}
+
+// 1) Resume Evidence Extraction (6.1)
+export function validateResumeExtraction(d: unknown): ValidationResult {
+  const errors: string[] = [];
+  if (!isObj(d)) return { ok: false, errors: ["response is not an object"] };
+  if (!isStr(d.full_name) || d.full_name.trim().length === 0) errors.push("full_name must be a non-empty string");
+  if (!isNum(d.years_experience) || d.years_experience < 0 || d.years_experience > 60) errors.push("years_experience must be 0..60");
+  const skills = d.extracted_skills;
+  if (!isArr(skills)) errors.push("extracted_skills must be an array");
+  else {
+    for (const raw of skills) {
+      const s = isObj(raw) ? raw : null;
+      if (!s || !isStr(s.skill_name) || s.skill_name.trim().length === 0 || s.skill_name.length > 80) errors.push("skill_name missing/too long");
+      if (!s || !isNum(s.years) || s.years < 0 || s.years > 50) errors.push("skill years out of bounds");
+      if (!s || !isStr(s.proficiency_tier) || !TIERS.includes(s.proficiency_tier)) errors.push(`proficiency_tier must be one of ${TIERS.join(",")}`);
+      if (!s || !isStr(s.evidence_quote) || s.evidence_quote.length > 200) errors.push("evidence_quote must be a short string");
+    }
   }
-  if (params.json) {
-    return extractJson(content);
+  if (!isArr(d.verified_projects)) errors.push("verified_projects must be an array");
+  return fail(errors);
+}
+
+// 2) 5-Tier Interview Rubric (6.2)
+export function validateRubric(d: unknown): ValidationResult {
+  const errors: string[] = [];
+  if (!isObj(d)) return { ok: false, errors: ["response is not an object"] };
+  if (!isStr(d.competency) || d.competency.trim().length === 0) errors.push("competency missing");
+  if (!isStr(d.question) || d.question.trim().length === 0) errors.push("question missing");
+  if (!isArr(d.follow_up_probes) || d.follow_up_probes.length !== 2 || d.follow_up_probes.some((p) => !isStr(p) || p.length === 0)) {
+    errors.push("follow_up_probes must contain exactly 2 non-empty strings");
   }
-  return content;
+  if (!isObj(d.rubric)) errors.push("rubric must be an object");
+  else {
+    for (let i = 1; i <= 5; i++) {
+      const k = `tier_${i}` as const;
+      if (!isStr(d.rubric[k]) || (d.rubric[k] as string).trim().length === 0) errors.push(`rubric.${k} must be a non-empty string`);
+    }
+  }
+  return fail(errors);
+}
+
+// 3) Assessment Evaluation
+export function validateEvaluation(d: unknown): ValidationResult {
+  const errors: string[] = [];
+  if (!isObj(d)) return { ok: false, errors: ["response is not an object"] };
+  if (!isArr(d.evaluations)) errors.push("evaluations must be an array");
+  else {
+    for (const raw of d.evaluations) {
+      const e = isObj(raw) ? raw : null;
+      if (!e) { errors.push("evaluation item not an object"); continue; }
+      if (!isStr(e.competency) || e.competency.trim().length === 0) errors.push("evaluation competency missing");
+      if (!isStr(e.tier) || !EVAL_TIERS.includes(e.tier)) errors.push(`tier must be one of ${EVAL_TIERS.join("|")}`);
+      if (!isNum(e.score) || e.score < 1 || e.score > 5 || !Number.isInteger(e.score)) errors.push("score must be an integer 1..5");
+      if (!isStr(e.evidence) || e.evidence.trim().length === 0) errors.push("evidence missing (assessment must be evidence-linked)");
+    }
+  }
+  if (!isStr(d.overall_recommendation) || !EVAL_RECS.includes(d.overall_recommendation)) errors.push(`overall_recommendation must be one of ${EVAL_RECS.join("|")}`);
+  return fail(errors);
+}
+
+// 4) Grounded Policy Answer (6.3)
+export function validatePolicyAnswer(d: unknown): ValidationResult {
+  const errors: string[] = [];
+  if (!isObj(d)) return { ok: false, errors: ["response is not an object"] };
+  if (!isStr(d.status) || !POLICY_STATUS.includes(d.status)) errors.push(`status must be one of ${POLICY_STATUS.join("|")}`);
+  if (!isStr(d.answer)) errors.push("answer must be a string");
+  if (!isArr(d.citations)) errors.push("citations must be an array");
+  else {
+    for (const raw of d.citations) {
+      const c = isObj(raw) ? raw : null;
+      if (!c) { errors.push("citation not an object"); continue; }
+      if (!isStr(c.doc_code) || !/^POL-/.test(c.doc_code)) errors.push("citation doc_code must start with POL-");
+      if (!isStr(c.section) || c.section.trim().length === 0) errors.push("citation section missing");
+      if (!isStr(c.exact_quote) || c.exact_quote.trim().length === 0) errors.push("citation exact_quote missing");
+    }
+  }
+  return fail(errors);
+}
+
+// 5) Performance Narrative
+export function validatePerformanceNarrative(d: unknown): ValidationResult {
+  const errors: string[] = [];
+  if (!isObj(d)) return { ok: false, errors: ["response is not an object"] };
+  if (!isStr(d.strengths) || d.strengths.trim().length === 0) errors.push("strengths missing");
+  if (!isStr(d.growth_areas) || d.growth_areas.trim().length === 0) errors.push("growth_areas missing");
+  if (!isStr(d.trend_direction) || !TREND.includes(d.trend_direction)) errors.push(`trend_direction must be one of ${TREND.join("|")}`);
+  if (!isNum(d.confidence) || d.confidence < 0 || d.confidence > 1) errors.push("confidence must be 0..1");
+  return fail(errors);
+}
+
+// 6) Recommendation Explanation (6.4)
+export function validateRecommendationExplanation(d: unknown): ValidationResult {
+  const errors: string[] = [];
+  if (!isObj(d)) return { ok: false, errors: ["response is not an object"] };
+  if (!isStr(d.title) || d.title.trim().length === 0) errors.push("title missing");
+  if (!isStr(d.executive_summary) || d.executive_summary.trim().length < 20) errors.push("executive_summary too short");
+  if (!isObj(d.proposed_action) || !isStr(d.proposed_action.action_type) || !isStr(d.proposed_action.target_entity_id)) {
+    errors.push("proposed_action.action_type/target_entity_id required");
+  }
+  if (!isStr(d.required_human_signoff_role) || !SIGNOFF.includes(d.required_human_signoff_role)) {
+    errors.push(`required_human_signoff_role must be one of ${SIGNOFF.join("|")}`);
+  }
+  return fail(errors);
 }
 
 
@@ -463,6 +800,7 @@ function shapeRubric(parsed: { competency?: string; question?: string; follow_up
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  let jobId: string | null = null;
   try {
 
   const supabase = createClient(
@@ -509,26 +847,48 @@ Deno.serve(async (req) => {
   if (reqErr || !reqRow) return json({ error: "NOT_FOUND" }, 404);
   if (reqRow.org_id !== caller.org_id || reqRow.org_id !== twin.org_id) return json({ error: "FORBIDDEN" }, 403);
 
+  // Durable job lifecycle for the (expensive) kit generation.
+  const jobStartedAt = Date.now();
+  const inputHash = hashJobInput(`${twinId}|${reqId}`);
+  const open = await findOpenJob(supabase, caller.org_id, caller.id, "interview_kit", inputHash);
+  if (open) {
+    return json({ error: "CONFLICT", message: "An interview kit for this candidate and role is already being generated.", job_id: open.id }, 409);
+  }
+  const job = await createJob(supabase, {
+    orgId: caller.org_id, actorId: caller.id, task: "interview_kit", inputHash,
+    promptVersion: "interview-kit-v1", model: QWEN_MODEL,
+  });
+  jobId = job.id;
+  await markJobRunning(supabase, job.id);
+
   // 1) Reuse cached rubrics; generate any missing competencies (cached per role).
   const required = (reqRow.required_skills ?? []) as { skill: string; target_proficiency: number }[];
   let rubrics = (reqRow.rubrics ?? []) as { competency: string }[];
   const have = new Set(rubrics.map((r) => r.competency.toLowerCase()));
   const missing = [...required.map((r) => r.skill), "Collaboration"].filter((c) => !have.has(c.toLowerCase()));
-  for (const comp of missing) {
-    const target = required.find((r) => r.skill.toLowerCase() === comp.toLowerCase())?.target_proficiency ?? 3;
+
+  // Batch all missing competencies into ONE generation call (local 4B model:
+  // avoid numerous sequential generations unnecessarily).
+  if (missing.length > 0) {
     const parsed = (await callQwen({
       json: true,
       temperature: 0.3,
-      maxTokens: 1200,
+      maxTokens: 2400,
+      task: "interview_kit_rubrics",
       system:
-        'You are the WorkSense Interview Architect. For the given role and competency, generate one question, two follow-up probes, and a strict 5-tier OBSERVABLE behavioral rubric (concrete behaviors, not adjectives). Tier 1 = concrete red-flag behavior. Tier 3 = solid role-baseline behavior. Tier 5 = master/architectural-level behavior.\nRespond with JSON only:\n{"competency":"string","question":"string","follow_up_probes":["string","string"],"rubric":{"tier_1":"string","tier_2":"string","tier_3":"string","tier_4":"string","tier_5":"string"}}',
-      user: `Role: ${reqRow.title}. Competency: ${comp} (required proficiency ${target} of 5). Produce the rubric as JSON.`,
-    })) as { competency?: string; question?: string; follow_up_probes?: string[]; rubric?: Partial<Record<(typeof TIER_KEYS)[number], string>> };
-    const name = shapeRubric(parsed, comp).competency;
-    rubrics = rubrics.filter((r) => r.competency.toLowerCase() !== name.toLowerCase());
-    rubrics.push(shapeRubric(parsed, comp));
-  }
-  if (missing.length > 0) {
+        'You are the WorkSense Interview Architect. For each given competency, generate one question, two follow-up probes, and a strict 5-tier OBSERVABLE behavioral rubric (concrete behaviors, not adjectives). Tier 1 = concrete red-flag behavior. Tier 3 = solid role-baseline behavior. Tier 5 = master/architectural-level behavior.\nRespond with JSON only:\n{"rubrics":[{"competency":"string","question":"string","follow_up_probes":["string","string"],"rubric":{"tier_1":"string","tier_2":"string","tier_3":"string","tier_4":"string","tier_5":"string"}}]}',
+      user: `Role: ${reqRow.title}. Competencies: ${missing.join(", ")}. Produce the rubrics array as JSON.`,
+    })) as { rubrics?: unknown[] };
+
+    for (const item of parsed.rubrics ?? []) {
+      const valid = validateRubric(item);
+      if (!valid.ok) throw new QwenError("MODEL_OUTPUT_INVALID", `Rubric failed validation: ${valid.errors.join("; ")}`);
+      const r = item as { competency?: string; question?: string; follow_up_probes?: string[]; rubric: Record<string, string> };
+      const name = (r.competency ?? "").replace(/\s*\(.*\)\s*$/, "").trim();
+      if (!name) continue;
+      rubrics = rubrics.filter((x) => x.competency.toLowerCase() !== name.toLowerCase());
+      rubrics.push({ competency: name, question: r.question ?? "", follow_up_probes: (r.follow_up_probes ?? []).slice(0, 2), rubric: r.rubric });
+    }
     await supabase.from("job_requisitions").update({ rubrics }).eq("id", reqId);
   }
 
@@ -572,10 +932,13 @@ Deno.serve(async (req) => {
       json: true,
       temperature: 0.3,
       maxTokens: 900,
+      task: "interview_kit_probe",
       system: BIAS_SYSTEM,
       user: `Role: ${reqRow.title}. Candidate's Adjacent/Transferable/Gap items: ${focusItems.map((i) => i.skill).join(", ")}. Bias the question toward the top item and produce the rubric JSON.`,
-    })) as { competency?: string; question?: string; follow_up_probes?: string[]; rubric?: Partial<Record<(typeof TIER_KEYS)[number], string>> };
-    biasedProbe = shapeRubric(parsed, focusItems[0].skill);
+    })) as unknown;
+    const valid = validateRubric(parsed);
+    if (!valid.ok) throw new QwenError("MODEL_OUTPUT_INVALID", `Biased probe failed validation: ${valid.errors.join("; ")}`);
+    biasedProbe = shapeRubric(parsed as { competency?: string; question?: string; follow_up_probes?: string[]; rubric?: Partial<Record<(typeof TIER_KEYS)[number], string>> }, focusItems[0].skill);
   }
 
   const kit = {
@@ -602,8 +965,13 @@ Deno.serve(async (req) => {
     })
     .eq("id", twinId);
 
-  return json({ ok: true, kit });
+  await finishJob(supabase, job.id, { status: "succeeded", output: { score: fit.score, focus_items: kit.focus_items }, latencyMs: Date.now() - jobStartedAt });
+
+  return json({ ok: true, job_id: job.id, status: "succeeded", kit });
   } catch (err) {
+    if (jobId) {
+      await finishJob(supabase, jobId, { status: "failed", errorCode: err instanceof QwenError ? err.code : "INTERNAL", errorMessage: err instanceof Error ? err.message : "unknown" }).catch(() => undefined);
+    }
     return json({ error: err instanceof QwenError ? err.code : "INTERNAL", message: err instanceof Error ? err.message : "unknown" });
   }
 });

@@ -92,12 +92,12 @@ Deno.serve(async (req) => {
       evidence_ledger: c.evidence_ledger,
       proposed_action: {
         ...c.proposed_action,
-        title: parsed.title ?? c.proposed_action.title,
-        executive_summary: parsed.executive_summary ?? "",
+        title: typed.title ?? c.proposed_action.title,
+        executive_summary: typed.executive_summary ?? "",
         action_type: c.category,
         target_entity_id: c.twin_id,
       },
-      executive_summary: parsed.executive_summary ?? "",
+      executive_summary: typed.executive_summary ?? "",
       status: "needs_review",
       // Sign-off comes from the deterministic engine — the model is not deciding.
       required_signoff_role: c.required_signoff_role,

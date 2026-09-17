@@ -84,6 +84,7 @@ Deno.serve(async (req) => {
     json: true,
     temperature: 0.1,
     maxTokens: 1600,
+    task: "interview_evaluation",
     system: EVAL_SYSTEM,
     user: `Role: ${reqRow.title}
 Rubric:
@@ -93,13 +94,12 @@ ${rubricText}
 Interview notes:
 ${notes}
 </untrusted_input>`,
-  })) as {
-    evaluations?: { competency?: string; tier?: string; score?: number; evidence?: string; strengths?: string[]; concerns?: string[] }[];
-    overall_recommendation?: string;
-    summary?: string;
-  };
+  })) as unknown;
+  const valid = validateEvaluation(parsed);
+  if (!valid.ok) throw new QwenError("MODEL_OUTPUT_INVALID", `Evaluation failed validation: ${valid.errors.join("; ")}`);
+  const typed = parsed as { evaluations?: { competency?: string; tier?: string; score?: number; evidence?: string; strengths?: string[]; concerns?: string[] }[]; overall_recommendation?: string; summary?: string };
 
-  const evaluations = (parsed.evaluations ?? []).map((e) => ({
+  const evaluations = (typed.evaluations ?? []).map((e) => ({
     competency: e.competency ?? "",
     tier: e.tier ?? "Competent-Baseline",
     score: Math.min(5, Math.max(1, Math.round(Number(e.score) || 3))),
@@ -114,8 +114,8 @@ ${notes}
     req_title: reqRow.title,
     candidate_name: twin.name,
     evaluations,
-    overall_recommendation: parsed.overall_recommendation ?? "Move Forward",
-    summary: parsed.summary ?? "",
+    overall_recommendation: typed.overall_recommendation ?? "Move Forward",
+    summary: typed.summary ?? "",
     evaluated_at: new Date().toISOString(),
     evaluator: caller.email ?? uid,
   };
