@@ -3,6 +3,7 @@ import { callQwen, QwenError, QWEN_MODEL, sanitizeUntrusted, wrapUntrusted } fro
 import { computeFit } from "../_shared/skill-graph-engine.ts";
 import { createJob, findOpenJob, finishJob, hashInput, markJobRunning } from "../_shared/jobs.ts";
 import { validateResumeExtraction } from "../_shared/validate.ts";
+import { resolveSkillClaims, resolveSkillId } from "../_shared/evidence.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -134,6 +135,7 @@ Deno.serve(async (req) => {
     .map((s) => ({
       name: String(s.skill_name ?? "").trim(),
       proficiency: TIER_PROFICIENCY[String(s.proficiency_tier ?? "").toUpperCase()] ?? 2,
+      tier: String(s.proficiency_tier ?? "").toUpperCase(),
       evidence_source: "resume_extraction",
       verification_rigor: "low" as const,
       evidence: String(s.evidence_quote ?? "").slice(0, 200),
@@ -141,14 +143,65 @@ Deno.serve(async (req) => {
     }))
     .filter((s) => s.name.length > 0);
 
-  const existing = (twin.verified_skills ?? []) as { name: string }[];
-  const known = new Set(existing.map((s) => s.name.toLowerCase()));
-  const merged = [...existing, ...extractedSkills.filter((s) => !known.has(s.name.toLowerCase()))];
-
   const now = new Date().toISOString();
+  const sourceId = `resume:${job.id}`;
+
+  // Replace any prior resume-extracted record for this twin, so a re-extraction
+  // overwrites (never duplicates) the extracted evidence + assertions. Resume
+  // claims are written as 'extracted' assertions with low rigor — they never
+  // touch digital_twins.verified_skills (confirmed skills) or inflate the fit
+  // evidence score.
+  const { data: priorAssertions } = await supabase
+    .from("skill_assertions")
+    .select("id, evidence_ids")
+    .eq("twin_id", twinId)
+    .eq("review_state", "extracted");
+  const priorIds = (priorAssertions ?? []).map((r: { id: string }) => r.id);
+  const priorEvIds = (priorAssertions ?? []).flatMap((r: { evidence_ids?: string[] }) => r.evidence_ids ?? []);
+  if (priorEvIds.length > 0) {
+    await supabase.from("evidence_items").delete().in("id", priorEvIds);
+  }
+  if (priorIds.length > 0) {
+    await supabase.from("skill_assertions").delete().in("id", priorIds);
+  }
+
+  // One evidence item per extracted skill (quote + provenance), then one
+  // 'extracted' assertion per skill referencing that evidence.
+  const skillIdByName = new Map<string, string>();
+  for (const s of extractedSkills) {
+    skillIdByName.set(s.name, await resolveSkillId(supabase, twin.org_id, s.name));
+  }
+  const evidenceRows = extractedSkills.map((s) => ({
+    org_id: twin.org_id,
+    twin_id: twinId,
+    source_type: "resume_document",
+    source_id: sourceId,
+    captured_at: now,
+    quote: s.evidence ? s.evidence.slice(0, 300) : null,
+    review_state: "extracted",
+    metadata: { skill_name: s.name, years: s.years },
+  }));
+  const { data: insertedEv, error: evErr } = await supabase
+    .from("evidence_items")
+    .insert(evidenceRows)
+    .select("id");
+  if (evErr) throw evErr;
+
+  const assertionRows = extractedSkills.map((s, i) => ({
+    org_id: twin.org_id,
+    twin_id: twinId,
+    skill_id: skillIdByName.get(s.name)!,
+    claimed_proficiency: s.proficiency,
+    proficiency_tier: s.tier,
+    review_state: "extracted",
+    evidence_ids: [insertedEv[i].id],
+  }));
+  const { error: assertErr } = await supabase.from("skill_assertions").insert(assertionRows);
+  if (assertErr) throw assertErr;
+
   const audit = [
     ...(twin.audit_events ?? []),
-    { actor: caller.email ?? uid, action: "resume_extracted", note: `Extracted ${extractedSkills.length} skills from resume for ${twin.name}.`, timestamp: now },
+    { actor: caller.email ?? uid, action: "resume_extracted", note: `Extracted ${extractedSkills.length} skills from resume for ${twin.name} (evidence + extracted assertions; verified skills untouched).`, timestamp: now },
   ];
 
   let fit = null;
@@ -160,12 +213,13 @@ Deno.serve(async (req) => {
       .eq("id", reqId)
       .maybeSingle();
     if (reqRow) {
+      const claims = await resolveSkillClaims(supabase, { id: twinId, verified_skills: twin.verified_skills });
       const { data: graphRows } = await supabase
         .from("skill_graph")
         .select("skill, category, outgoing_edges")
         .eq("org_id", twin.org_id);
       fit = computeFit({
-        candidateSkills: merged,
+        candidateSkills: claims,
         candidateLevel: twin.seniority_level ?? 3,
         requiredSkills: reqRow.required_skills ?? [],
         roleLevel: reqRow.seniority_level ?? 3,
@@ -181,14 +235,13 @@ Deno.serve(async (req) => {
         .from("digital_twins")
         .update({
           resume_text: sanitized,
-          verified_skills: merged,
           computed_fits: [...fits, fit],
           audit_events: [...audit, { actor: caller.email ?? uid, action: "match_computed", note: `Match vs ${reqRow.title}: ${fit.score.toFixed(3)}`, timestamp: now }],
         })
         .eq("id", twinId);
     }
   } else {
-    await supabase.from("digital_twins").update({ resume_text: sanitized, verified_skills: merged, audit_events: audit }).eq("id", twinId);
+    await supabase.from("digital_twins").update({ resume_text: sanitized, audit_events: audit }).eq("id", twinId);
   }
 
   const result = {

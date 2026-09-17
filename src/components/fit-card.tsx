@@ -1,5 +1,5 @@
-import { ArrowLeftRight, BadgeCheck, RefreshCw, XCircle } from "lucide-react";
-import { fitBand, type FitItem, type FitRecord } from "@/lib/skill-graph";
+import { ArrowLeftRight, BadgeCheck, FileText, RefreshCw, XCircle } from "lucide-react";
+import { fitBand, type EvidenceItem, type FitItem, type FitLineage, type FitRecord } from "@/lib/skill-graph";
 
 const CLASS_META: Record<
   FitItem["classification"],
@@ -10,6 +10,19 @@ const CLASS_META: Record<
   transferable: { label: "Transferable", icon: RefreshCw, chip: "bg-muted text-foreground", iconClass: "text-secondary/80" },
   gap: { label: "Gap", icon: XCircle, chip: "bg-muted text-foreground", iconClass: "text-muted-foreground" },
 };
+
+const STATE_META: Record<string, { label: string; chip: string }> = {
+  reviewer_confirmed: { label: "Reviewer confirmed", chip: "bg-primary text-white" },
+  assessment_supported: { label: "Assessment supported", chip: "bg-secondary text-white" },
+  extracted: { label: "Extracted (unverified)", chip: "bg-muted text-foreground" },
+  claimed: { label: "Self-reported", chip: "bg-muted text-foreground" },
+  expired: { label: "Expired", chip: "bg-muted text-muted-foreground" },
+  disputed: { label: "Disputed", chip: "bg-muted text-muted-foreground" },
+  superseded: { label: "Superseded", chip: "bg-muted text-muted-foreground" },
+};
+
+const stateMeta = (state: string) =>
+  STATE_META[state] ?? { label: state.replaceAll("_", " "), chip: "bg-muted text-foreground" };
 
 const pct = (n: number) => `${Math.round(n * 100)}`;
 
@@ -91,11 +104,57 @@ function ItemGroup({ title, items, hint }: { title: string; items: FitItem[]; hi
   );
 }
 
+function EvidenceLineagePanel({ lineage }: { lineage: FitLineage }) {
+  const byId = new Map(lineage.evidence.map((e) => [e.id, e]));
+  return (
+    <div className="border-t-2 border-border pt-3">
+      <div className="flex items-baseline justify-between">
+        <h4 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-muted-foreground">
+          <FileText className="h-3.5 w-3.5" /> Evidence lineage
+        </h4>
+        <span className="text-xs text-muted-foreground">fit → assertion → evidence</span>
+      </div>
+      {lineage.assertions.length === 0 ? (
+        <p className="mt-2 text-xs text-muted-foreground">No skill assertions recorded for this person yet.</p>
+      ) : (
+        <ul className="mt-2 divide-y divide-border">
+          {lineage.assertions.map((a) => {
+            const meta = stateMeta(a.review_state);
+            const evidence = (a.evidence_ids ?? []).map((id) => byId.get(id)).filter((e): e is EvidenceItem => Boolean(e));
+            return (
+              <li key={a.id} className="py-2.5">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm font-bold text-foreground">{a.skill_name}</span>
+                  <span className={`rounded-md px-2 py-0.5 text-[11px] font-bold uppercase tracking-wider ${meta.chip}`}>{meta.label}</span>
+                  <span className="text-xs text-muted-foreground">level {a.claimed_proficiency}</span>
+                  <span className="ml-auto text-xs text-muted-foreground">{evidence.length} evidence</span>
+                </div>
+                {evidence.map((e) => (
+                  <div key={e.id} className="mt-1.5 rounded-md bg-muted px-3 py-2">
+                    <p className="font-mono text-xs leading-relaxed text-foreground/80">“{e.quote}”</p>
+                    <p className="mt-1 text-[11px] text-muted-foreground">
+                      {e.source_type.replaceAll("_", " ")} · {e.source_id ?? "no source id"} · {new Date(e.captured_at).toLocaleDateString()}
+                    </p>
+                  </div>
+                ))}
+                {evidence.length === 0 && (
+                  <p className="mt-1 text-xs text-muted-foreground">No linked evidence item.</p>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 /**
  * The reusable FIT card — used unmodified by Recruitment, Onboarding, the
- * Recommendation Hub and the Skill Graph Explorer.
+ * Recommendation Hub and the Skill Graph Explorer. Pass `lineage` (from the
+ * skill-match response) to render the evidence lineage panel.
  */
-export function FitCard({ fit }: { fit: FitRecord }) {
+export function FitCard({ fit, lineage }: { fit: FitRecord; lineage?: FitLineage }) {
   const { sections } = fit;
   return (
     <div className="flex flex-col gap-4 rounded-lg bg-white p-6">
@@ -123,6 +182,8 @@ export function FitCard({ fit }: { fit: FitRecord }) {
         <ItemGroup title="Transferable skills" items={fit.classification.transferable} hint="edge or same category" />
         <ItemGroup title="Gaps" items={fit.classification.gaps} />
       </div>
+
+      {lineage && <EvidenceLineagePanel lineage={lineage} />}
     </div>
   );
 }

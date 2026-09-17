@@ -3360,6 +3360,174 @@ export type Database = {
   }
   public: {
     Tables: {
+      action_tasks: {
+        Row: {
+          created_at: string
+          due_at: string | null
+          id: string
+          org_id: string
+          outcome: Json
+          owner_twin_id: string
+          recommendation_id: string | null
+          status: string
+          title: string
+        }
+        Insert: {
+          created_at?: string
+          due_at?: string | null
+          id?: string
+          org_id: string
+          outcome?: Json
+          owner_twin_id: string
+          recommendation_id?: string | null
+          status?: string
+          title: string
+        }
+        Update: {
+          created_at?: string
+          due_at?: string | null
+          id?: string
+          org_id?: string
+          outcome?: Json
+          owner_twin_id?: string
+          recommendation_id?: string | null
+          status?: string
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "action_tasks_org_id_fkey"
+            columns: ["org_id"]
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "action_tasks_owner_twin_id_fkey"
+            columns: ["owner_twin_id"]
+            referencedRelation: "digital_twins"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "action_tasks_recommendation_id_fkey"
+            columns: ["recommendation_id"]
+            referencedRelation: "recommendations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      applications: {
+        Row: {
+          application_code: string
+          applied_at: string
+          candidate_twin_id: string
+          created_at: string
+          id: string
+          org_id: string
+          requisition_id: string
+          stage: string
+        }
+        Insert: {
+          application_code: string
+          applied_at?: string
+          candidate_twin_id: string
+          created_at?: string
+          id?: string
+          org_id: string
+          requisition_id: string
+          stage?: string
+        }
+        Update: {
+          application_code?: string
+          applied_at?: string
+          candidate_twin_id?: string
+          created_at?: string
+          id?: string
+          org_id?: string
+          requisition_id?: string
+          stage?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "applications_candidate_twin_id_fkey"
+            columns: ["candidate_twin_id"]
+            referencedRelation: "digital_twins"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "applications_org_id_fkey"
+            columns: ["org_id"]
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "applications_requisition_id_fkey"
+            columns: ["requisition_id"]
+            referencedRelation: "job_requisitions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      assessments: {
+        Row: {
+          created_at: string
+          id: string
+          org_id: string
+          requisition_id: string | null
+          result: Json
+          reviewed_at: string | null
+          reviewed_by: string | null
+          twin_id: string
+          type: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          org_id: string
+          requisition_id?: string | null
+          result?: Json
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          twin_id: string
+          type: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          org_id?: string
+          requisition_id?: string | null
+          result?: Json
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          twin_id?: string
+          type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "assessments_org_id_fkey"
+            columns: ["org_id"]
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "assessments_requisition_id_fkey"
+            columns: ["requisition_id"]
+            referencedRelation: "job_requisitions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "assessments_reviewed_by_fkey"
+            columns: ["reviewed_by"]
+            referencedRelation: "digital_twins"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "assessments_twin_id_fkey"
+            columns: ["twin_id"]
+            referencedRelation: "digital_twins"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       digital_twins: {
         Row: {
           attendance: Json
@@ -3453,6 +3621,76 @@ export type Database = {
             foreignKeyName: "digital_twins_org_id_fkey"
             columns: ["org_id"]
             referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      evidence_items: {
+        Row: {
+          captured_at: string
+          created_at: string
+          id: string
+          metadata: Json
+          org_id: string
+          quote: string | null
+          review_state: string
+          reviewed_at: string | null
+          reviewed_by: string | null
+          source_id: string | null
+          source_type: string
+          source_version: string | null
+          span: string | null
+          twin_id: string | null
+        }
+        Insert: {
+          captured_at?: string
+          created_at?: string
+          id?: string
+          metadata?: Json
+          org_id: string
+          quote?: string | null
+          review_state?: string
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          source_id?: string | null
+          source_type: string
+          source_version?: string | null
+          span?: string | null
+          twin_id?: string | null
+        }
+        Update: {
+          captured_at?: string
+          created_at?: string
+          id?: string
+          metadata?: Json
+          org_id?: string
+          quote?: string | null
+          review_state?: string
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          source_id?: string | null
+          source_type?: string
+          source_version?: string | null
+          span?: string | null
+          twin_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "evidence_items_org_id_fkey"
+            columns: ["org_id"]
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "evidence_items_reviewed_by_fkey"
+            columns: ["reviewed_by"]
+            referencedRelation: "digital_twins"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "evidence_items_twin_id_fkey"
+            columns: ["twin_id"]
+            referencedRelation: "digital_twins"
             referencedColumns: ["id"]
           },
         ]
@@ -3635,22 +3873,71 @@ export type Database = {
         Row: {
           created_at: string
           id: string
+          learning_options: Json
           name: string
           policies: Json
+          staffing_projects: Json
         }
         Insert: {
           created_at?: string
           id?: string
+          learning_options?: Json
           name: string
           policies?: Json
+          staffing_projects?: Json
         }
         Update: {
           created_at?: string
           id?: string
+          learning_options?: Json
           name?: string
           policies?: Json
+          staffing_projects?: Json
         }
         Relationships: []
+      }
+      policy_documents: {
+        Row: {
+          category: string | null
+          created_at: string
+          doc_code: string
+          effective_from: string
+          id: string
+          org_id: string
+          sections: Json
+          title: string
+          version: number
+        }
+        Insert: {
+          category?: string | null
+          created_at?: string
+          doc_code: string
+          effective_from: string
+          id?: string
+          org_id: string
+          sections?: Json
+          title: string
+          version?: number
+        }
+        Update: {
+          category?: string | null
+          created_at?: string
+          doc_code?: string
+          effective_from?: string
+          id?: string
+          org_id?: string
+          sections?: Json
+          title?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "policy_documents_org_id_fkey"
+            columns: ["org_id"]
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       recommendations: {
         Row: {
@@ -3716,8 +4003,64 @@ export type Database = {
           },
         ]
       }
+      skill_assertions: {
+        Row: {
+          claimed_proficiency: number
+          created_at: string
+          evidence_ids: Json
+          id: string
+          org_id: string
+          proficiency_tier: string | null
+          review_state: string
+          skill_id: string
+          twin_id: string
+        }
+        Insert: {
+          claimed_proficiency: number
+          created_at?: string
+          evidence_ids?: Json
+          id?: string
+          org_id: string
+          proficiency_tier?: string | null
+          review_state?: string
+          skill_id: string
+          twin_id: string
+        }
+        Update: {
+          claimed_proficiency?: number
+          created_at?: string
+          evidence_ids?: Json
+          id?: string
+          org_id?: string
+          proficiency_tier?: string | null
+          review_state?: string
+          skill_id?: string
+          twin_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "skill_assertions_org_id_fkey"
+            columns: ["org_id"]
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "skill_assertions_skill_id_fkey"
+            columns: ["skill_id"]
+            referencedRelation: "skill_graph"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "skill_assertions_twin_id_fkey"
+            columns: ["twin_id"]
+            referencedRelation: "digital_twins"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       skill_graph: {
         Row: {
+          aliases: Json
           category: string | null
           created_at: string
           id: string
@@ -3726,6 +4069,7 @@ export type Database = {
           skill: string
         }
         Insert: {
+          aliases?: Json
           category?: string | null
           created_at?: string
           id?: string
@@ -3734,6 +4078,7 @@ export type Database = {
           skill: string
         }
         Update: {
+          aliases?: Json
           category?: string | null
           created_at?: string
           id?: string
@@ -3746,6 +4091,55 @@ export type Database = {
             foreignKeyName: "skill_graph_org_id_fkey"
             columns: ["org_id"]
             referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      workforce_observations: {
+        Row: {
+          created_at: string
+          id: string
+          metric: string
+          missing: boolean
+          org_id: string
+          period_end: string
+          period_start: string
+          twin_id: string
+          value: number | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          metric: string
+          missing?: boolean
+          org_id: string
+          period_end: string
+          period_start: string
+          twin_id: string
+          value?: number | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          metric?: string
+          missing?: boolean
+          org_id?: string
+          period_end?: string
+          period_start?: string
+          twin_id?: string
+          value?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "workforce_observations_org_id_fkey"
+            columns: ["org_id"]
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "workforce_observations_twin_id_fkey"
+            columns: ["twin_id"]
+            referencedRelation: "digital_twins"
             referencedColumns: ["id"]
           },
         ]

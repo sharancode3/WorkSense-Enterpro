@@ -190,7 +190,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </p>
           </div>
           <span className="text-xs text-white/40">
-            build {BUILD_INFO.commit} · {new Date(BUILD_INFO.builtAt).toLocaleString()} · schema {BUILD_INFO.schemaVersion}
+            Demonstration data is fictional. build {BUILD_INFO.commit} · {new Date(BUILD_INFO.builtAt).toLocaleString()} · schema {BUILD_INFO.schemaVersion}
           </span>
           <HealthChip
             gateway={health.data?.gateway}

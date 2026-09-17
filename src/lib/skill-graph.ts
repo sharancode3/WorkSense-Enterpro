@@ -35,9 +35,35 @@ export interface FitRecord {
   computed_at: string;
 }
 
+export interface SkillAssertion {
+  id: string;
+  skill_name: string | null;
+  claimed_proficiency: number;
+  proficiency_tier: string | null;
+  review_state: string;
+  evidence_ids: string[];
+  created_at: string;
+}
+
+export interface EvidenceItem {
+  id: string;
+  source_type: string;
+  source_id: string | null;
+  quote: string | null;
+  captured_at: string;
+  review_state: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface FitLineage {
+  assertions: SkillAssertion[];
+  evidence: EvidenceItem[];
+}
+
 export interface SkillMatchResult {
   cached: boolean;
   fit: FitRecord;
+  lineage?: FitLineage;
 }
 
 export interface GraphNode {

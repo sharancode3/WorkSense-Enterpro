@@ -11,6 +11,9 @@ import { SEED_JOURNEY_TASKS } from "./generated-seed-journey.ts";
 
 export const DEMO_ORG_ID = "11111111-1111-1111-1111-111111111111";
 
+/** Second org: an isolation fixture — org-B data must never leak into org-A. */
+export const SECOND_ORG_ID = "99999999-9999-9999-9999-999999999999";
+
 export const DEMO_ACCOUNTS = [
   { email: "dana@worksense.demo", password: "WorkSenseDemo!2026", name: "Dana Whitmore", twinId: "22222222-2222-2222-2222-222222222201" },
   { email: "riley@worksense.demo", password: "WorkSenseDemo!2026", name: "Riley Morgan", twinId: "22222222-2222-2222-2222-222222222208" },
@@ -18,6 +21,7 @@ export const DEMO_ACCOUNTS = [
   { email: "chris@worksense.demo", password: "WorkSenseDemo!2026", name: "Chris Okafor", twinId: "22222222-2222-2222-2222-222222222209" },
   { email: "alex@worksense.demo", password: "WorkSenseDemo!2026", name: "Alex Chen", twinId: "22222222-2222-2222-2222-222222222203" },
   { email: "sam@worksense.demo", password: "WorkSenseDemo!2026", name: "Samira Patel", twinId: "22222222-2222-2222-2222-222222222204" },
+  { email: "isabelle@worksense.demo", password: "WorkSenseDemo!2026", name: "Isabelle Moreau", twinId: "99999999-9999-9999-9999-999999999998" },
 ];
 
 export const POLICIES = [

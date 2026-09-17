@@ -1,0 +1,146 @@
+-- Phase 3: normalized evidence model. Reuses existing entities (digital_twins =
+-- person, skill_graph = skill concepts, job_requisitions = roles). Adds normalized
+-- records with org ownership, FKs, and reads-only RLS (writes via backend functions).
+
+-- 1) Skill aliases -> canonical skill (skill_graph.skill is the canonical id)
+alter table public.skill_graph add column aliases jsonb not null default '[]'::jsonb;
+
+-- 2) Evidence items: claimed/extracted/assessment_supported/reviewer_confirmed/expired/disputed/superseded
+create table public.evidence_items (
+  id uuid primary key default gen_random_uuid(),
+  org_id uuid not null references public.organizations(id) on delete cascade,
+  twin_id uuid references public.digital_twins(id) on delete cascade,
+  source_type text not null check (source_type in ('resume_document','assessment','interview','work_sample','certification','reference','performance_review','observation','policy')),
+  source_id text,
+  source_version text,
+  captured_at timestamptz not null default now(),
+  quote text,
+  span text,
+  review_state text not null default 'claimed' check (review_state in ('claimed','extracted','assessment_supported','reviewer_confirmed','expired','disputed','superseded')),
+  reviewed_by uuid references public.digital_twins(id),
+  reviewed_at timestamptz,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+create index evidence_org_idx on public.evidence_items (org_id, twin_id);
+create index evidence_state_idx on public.evidence_items (org_id, review_state);
+
+-- 3) Skill assertions: claimed proficiency + evidence references (multiple per twin+skill;
+-- conflicting evidence stays visible, never overwritten)
+create table public.skill_assertions (
+  id uuid primary key default gen_random_uuid(),
+  org_id uuid not null references public.organizations(id) on delete cascade,
+  twin_id uuid not null references public.digital_twins(id) on delete cascade,
+  skill_id uuid not null references public.skill_graph(id),
+  claimed_proficiency integer not null check (claimed_proficiency between 1 and 5),
+  proficiency_tier text check (proficiency_tier in ('FOUNDATIONAL','INTERMEDIATE','ADVANCED','EXPERT')),
+  review_state text not null default 'claimed' check (review_state in ('claimed','extracted','assessment_supported','reviewer_confirmed','expired','disputed','superseded')),
+  evidence_ids jsonb not null default '[]'::jsonb,
+  created_at timestamptz not null default now(),
+  unique (org_id, twin_id, skill_id, review_state, claimed_proficiency)
+);
+create index skill_assertions_twin_idx on public.skill_assertions (org_id, twin_id);
+create index skill_assertions_skill_idx on public.skill_assertions (org_id, skill_id);
+
+-- 4) Applications: candidate -> versioned requisition
+create table public.applications (
+  id uuid primary key default gen_random_uuid(),
+  org_id uuid not null references public.organizations(id) on delete cascade,
+  candidate_twin_id uuid not null references public.digital_twins(id) on delete cascade,
+  requisition_id uuid not null references public.job_requisitions(id) on delete cascade,
+  stage text not null default 'screening' check (stage in ('screening','technical_interview','final_round','selected','rejected')),
+  application_code text not null unique,
+  applied_at timestamptz not null default now(),
+  created_at timestamptz not null default now(),
+  unique (org_id, candidate_twin_id, requisition_id)
+);
+create index applications_org_idx on public.applications (org_id, requisition_id, stage);
+
+-- 5) Assessments: interview / work sample results with human review
+create table public.assessments (
+  id uuid primary key default gen_random_uuid(),
+  org_id uuid not null references public.organizations(id) on delete cascade,
+  twin_id uuid not null references public.digital_twins(id) on delete cascade,
+  requisition_id uuid references public.job_requisitions(id) on delete cascade,
+  type text not null check (type in ('interview','work_sample','assessment')),
+  result jsonb not null default '{}'::jsonb,
+  reviewed_by uuid references public.digital_twins(id),
+  reviewed_at timestamptz,
+  created_at timestamptz not null default now()
+);
+create index assessments_org_idx on public.assessments (org_id, twin_id);
+
+-- 6) Workforce observations: period-scoped metrics with explicit missingness
+create table public.workforce_observations (
+  id uuid primary key default gen_random_uuid(),
+  org_id uuid not null references public.organizations(id) on delete cascade,
+  twin_id uuid not null references public.digital_twins(id) on delete cascade,
+  metric text not null check (metric in ('attendance','engagement','delivery','availability')),
+  period_start date not null,
+  period_end date not null,
+  value numeric,
+  missing boolean not null default false,
+  created_at timestamptz not null default now(),
+  check (period_end >= period_start)
+);
+create index observations_org_idx on public.workforce_observations (org_id, twin_id, period_start);
+
+-- 7) Policy documents: versioned
+create table public.policy_documents (
+  id uuid primary key default gen_random_uuid(),
+  org_id uuid not null references public.organizations(id) on delete cascade,
+  doc_code text not null,
+  version integer not null default 1,
+  title text not null,
+  category text,
+  sections jsonb not null default '[]'::jsonb,
+  effective_from date not null,
+  created_at timestamptz not null default now(),
+  unique (org_id, doc_code, version)
+);
+create index policy_docs_idx on public.policy_documents (org_id, doc_code);
+
+-- 8) Action tasks: assigned work from dispatched recommendations, with owners/deadlines/outcomes
+create table public.action_tasks (
+  id uuid primary key default gen_random_uuid(),
+  org_id uuid not null references public.organizations(id) on delete cascade,
+  recommendation_id uuid references public.recommendations(id) on delete set null,
+  owner_twin_id uuid not null references public.digital_twins(id) on delete cascade,
+  title text not null,
+  status text not null default 'open' check (status in ('open','in_progress','done','cancelled')),
+  due_at timestamptz,
+  outcome jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+create index action_tasks_org_idx on public.action_tasks (org_id, owner_twin_id, status);
+
+-- RLS: reads org-scoped for authenticated twins; NO client write policies (functions only).
+alter table public.evidence_items enable row level security;
+alter table public.skill_assertions enable row level security;
+alter table public.applications enable row level security;
+alter table public.assessments enable row level security;
+alter table public.workforce_observations enable row level security;
+alter table public.policy_documents enable row level security;
+alter table public.action_tasks enable row level security;
+
+create policy evidence_read on public.evidence_items for select using (
+  exists (select 1 from public.current_twin() ct where ct.org_id = public.evidence_items.org_id)
+);
+create policy assertions_read on public.skill_assertions for select using (
+  exists (select 1 from public.current_twin() ct where ct.org_id = public.skill_assertions.org_id)
+);
+create policy applications_read on public.applications for select using (
+  exists (select 1 from public.current_twin() ct where ct.org_id = public.applications.org_id)
+);
+create policy assessments_read on public.assessments for select using (
+  exists (select 1 from public.current_twin() ct where ct.org_id = public.assessments.org_id)
+);
+create policy observations_read on public.workforce_observations for select using (
+  exists (select 1 from public.current_twin() ct where ct.org_id = public.workforce_observations.org_id)
+);
+create policy policy_docs_read on public.policy_documents for select using (
+  exists (select 1 from public.current_twin() ct where ct.org_id = public.policy_documents.org_id)
+);
+create policy action_tasks_read on public.action_tasks for select using (
+  exists (select 1 from public.current_twin() ct where ct.org_id = public.action_tasks.org_id)
+);

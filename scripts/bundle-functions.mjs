@@ -13,7 +13,12 @@ const write = (p, c) => writeFileSync(`${root}${p}`, c);
 // Shared modules only ever import from other shared modules — drop all imports.
 const stripAllImports = (src) => src.replace(/^import .*;$/gm, "");
 // Function bodies import only from ../_shared/ — drop those, keep esm.sh etc.
-const stripSharedImports = (src) => src.replace(/^import .* from "\.\.\/_shared\/.*";$/gm, "");
+// Handles single-line AND multi-line named imports (a multi-line import would
+// otherwise survive and break the bundle at deploy time).
+const stripSharedImports = (src) =>
+  src
+    .replace(/import\s*\{[^}]*\}\s*from\s*"\.\.\/_shared\/[^"]+";/gs, "")
+    .replace(/^import .* from "\.\.\/_shared\/.*";$/gm, "");
 
 const engine = stripAllImports(read("supabase/functions/_shared/skill-graph-engine.ts"));
 const onboarding = stripAllImports(read("supabase/functions/_shared/onboarding-engine.ts"));
@@ -23,17 +28,19 @@ const signal = stripAllImports(read("supabase/functions/_shared/workforce-signal
 const recEngine = stripAllImports(read("supabase/functions/_shared/recommendation-engine.ts"));
 const jobs = stripAllImports(read("supabase/functions/_shared/jobs.ts"));
 const validate = stripAllImports(read("supabase/functions/_shared/validate.ts"));
+const evidence = stripAllImports(read("supabase/functions/_shared/evidence.ts"));
 const generated = stripAllImports(read("supabase/functions/_shared/generated-seed-fits.ts"));
 const journey = stripAllImports(read("supabase/functions/_shared/generated-seed-journey.ts"));
+const fixtures = stripAllImports(read("supabase/functions/_shared/generated-demo-fixtures.ts"));
 const seed = stripAllImports(read("supabase/functions/_shared/seed-data.ts"));
 
-const SHARED = { engine, onboarding, qwen, policy, signal, recEngine, jobs, validate, generated, journey, seed };
+const SHARED = { engine, onboarding, qwen, policy, signal, recEngine, jobs, validate, evidence, generated, journey, fixtures, seed };
 
 // Function -> shared dependencies (in import order) it needs inlined.
 const FNS = {
-  "reset-demo": ["generated", "journey", "seed"],
-  "skill-match": ["engine"],
-  "extract-resume": ["engine", "qwen", "jobs", "validate"],
+  "reset-demo": ["generated", "journey", "seed", "fixtures"],
+  "skill-match": ["engine", "evidence"],
+  "extract-resume": ["engine", "qwen", "jobs", "validate", "evidence"],
   "rubric": ["qwen", "validate"],
   "interview-kit": ["engine", "qwen", "jobs", "validate"],
   "evaluate-interview": ["qwen", "validate"],

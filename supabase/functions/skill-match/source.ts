@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
 import { computeFit, fitKey, DEFAULT_EVIDENCE_THRESHOLD, type FitRecord } from "../_shared/skill-graph-engine.ts";
+import { resolveLineage, resolveSkillClaims } from "../_shared/evidence.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -118,7 +119,8 @@ Deno.serve(async (req) => {
     ) || false;
 
   if (cached && !body.force && !stale) {
-    return jsonResponse({ ok: true, cached: true, fit: cached });
+    const lineage = await resolveLineage(supabase, targetTwin.id);
+    return jsonResponse({ ok: true, cached: true, fit: cached, lineage });
   }
 
   const { data: graphRows, error: graphErr } = await supabase
@@ -128,8 +130,9 @@ Deno.serve(async (req) => {
   if (graphErr) throw graphErr;
 
   const now = new Date().toISOString();
+  const claims = await resolveSkillClaims(supabase, { id: targetTwin.id, verified_skills: targetTwin.verified_skills });
   const fit = computeFit({
-    candidateSkills: targetTwin.verified_skills ?? [],
+    candidateSkills: claims,
     candidateLevel: targetTwin.seniority_level ?? 3,
     requiredSkills: requiredSkills ?? [],
     roleLevel: reqRow.seniority_level ?? 3,
@@ -158,5 +161,6 @@ Deno.serve(async (req) => {
     .eq("id", targetTwin.id);
   if (updateErr) throw updateErr;
 
-  return jsonResponse({ ok: true, cached: false, fit });
+  const lineage = await resolveLineage(supabase, targetTwin.id);
+  return jsonResponse({ ok: true, cached: false, fit, lineage });
 });

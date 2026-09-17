@@ -77,6 +77,10 @@ export default function Landing() {
             </p>
           </div>
 
+          <p className="mb-6 inline-flex items-center gap-2 rounded-md bg-muted px-3 py-1.5 text-xs font-semibold text-muted-foreground">
+            <ShieldCheck className="h-3.5 w-3.5" /> All demonstration data is fictional, seeded for this demo — no real workforce records.
+          </p>
+
           <DemoQuickAccess />
         </div>
       </section>

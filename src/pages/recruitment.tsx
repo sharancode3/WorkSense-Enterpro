@@ -28,6 +28,7 @@ import {
 import { can } from "@/lib/rbac";
 import {
   computeSkillFit,
+  type FitLineage,
   type FitRecord,
 } from "@/lib/skill-graph";
 import {
@@ -126,6 +127,7 @@ export default function Recruitment() {
 
   // Per-action state
   const [fit, setFit] = useState<FitRecord | null>(null);
+  const [fitLineage, setFitLineage] = useState<FitLineage | null>(null);
   const [kit, setKit] = useState<InterviewKit | null>(null);
   const [evalRes, setEvalRes] = useState<InterviewEvaluation | null>(null);
   const [busyAction, setBusyAction] = useState<string | null>(null);
@@ -226,9 +228,11 @@ export default function Recruitment() {
     if (!req) return;
     setBusyAction(`fit-${c.id}`);
     setFit(null);
+    setFitLineage(null);
     try {
       const res = await computeSkillFit({ twin_id: c.id, target_id: req.id, scenario: "current" });
       setFit(res.fit);
+      setFitLineage(res.lineage ?? null);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Fit failed");
     } finally {
@@ -509,12 +513,12 @@ export default function Recruitment() {
       </div>
 
       {/* Fit modal */}
-      <Dialog open={!!fit} onOpenChange={(o) => !o && setFit(null)}>
+      <Dialog open={!!fit} onOpenChange={(o) => !o && (setFit(null), setFitLineage(null))}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Skill Intelligence Graph — fit</DialogTitle>
           </DialogHeader>
-          {fit && <FitCard fit={fit} />}
+          {fit && <FitCard fit={fit} lineage={fitLineage ?? undefined} />}
         </DialogContent>
       </Dialog>
 

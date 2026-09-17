@@ -5,7 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/auth-context";
 import { AppShell } from "@/components/app-shell";
 import { FitCard } from "@/components/fit-card";
-import { computeSkillFit, type FitRecord, type GraphNode } from "@/lib/skill-graph";
+import { computeSkillFit, type FitLineage, type FitRecord, type GraphNode } from "@/lib/skill-graph";
 import { can } from "@/lib/rbac";
 import { Button } from "@/components/ui/button";
 
@@ -22,6 +22,7 @@ export default function SkillGraph() {
   const [reqId, setReqId] = useState("");
   const [current, setCurrent] = useState<FitRecord | null>(null);
   const [future, setFuture] = useState<FitRecord | null>(null);
+  const [lineage, setLineage] = useState<FitLineage | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -74,6 +75,7 @@ export default function SkillGraph() {
       ]);
       setCurrent(cur.fit);
       setFuture(fut.fit);
+      setLineage(cur.lineage ?? fut.lineage ?? null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Skill match failed");
     } finally {
@@ -162,9 +164,9 @@ export default function SkillGraph() {
         )}
 
         {current && future && (
-          <div className="mt-8 grid grid-cols-1 gap-6 xl:grid-cols-2">
-            <FitCard fit={current} />
-            <FitCard fit={future} />
+          <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-2">
+            <FitCard fit={current} lineage={lineage ?? undefined} />
+            <FitCard fit={future} lineage={lineage ?? undefined} />
           </div>
         )}
 

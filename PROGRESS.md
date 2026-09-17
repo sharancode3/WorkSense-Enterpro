@@ -14,7 +14,7 @@ Bounded repair loop: max 3 attempts per external blocker, then stop + report evi
 | AUDIT-FIX | Recruiter fit 403; RLS org-scoping; RPC lockdown; onboarding completion gate; seed consistency; 403 UX; escalation state | ✅ Verified live | curl checks + build |
 | PHASE-1 | Foundation: build/deploy provenance, authorization, session safety, error contract | ✅ Gate passed (below) | See §9 |
 | PHASE-2 | Qwen gateway: config, capability handling, validated generation, durable jobs, UI, observability | ✅ **Gate passed** (constrained flow documented) | See §10 |
-| P3+ | *(awaiting user prompts, one at a time)* | ⏳ Not started | — |
+| PHASE-3 | Evidence model + demo fixtures (assertion wiring, lineage UI, fixture generator) | 🚧 In progress (foundation + assertion slice + lineage + fixtures **verified**; compact mode + authenticated visual click-through pending) | See §11 |
 
 ## 9. Phase 1 — Foundation (completion gate)
 
@@ -67,6 +67,31 @@ Bounded repair loop: max 3 attempts per external blocker, then stop + report evi
 - ✅ Per-competency rubric generation completes live with validation.
 - ✅ No partial/invalid model output becomes trusted data (validators gate persistence; unit-verified for HTML/malformed/out-of-enum).
 - ⚠️ Tunnel-down / wrong-model live responses: code paths + unit tests cover them; not re-tested live by design (bounded loop). Gateway should be protected with basic auth (`ngrok http --basic-auth …`) + `QWEN_GATEWAY_AUTH` — currently unauthenticated (health reports `gateway_authenticated: false`).
+
+## 11. Phase 3 — Evidence model + demo fixtures (status: foundation + assertion wiring + lineage + fixtures verified; compact mode + authed visual click-through pending)
+
+**Evidence model (schema, applied + live)**
+- Migration `155419000` (earlier in phase): `evidence_items`, `skill_assertions`, `applications`, `assessments`, `workforce_observations`, `policy_documents`, `action_tasks` + `skill_graph.aliases`; all org-owned with FK/indexes and **reads-only** RLS (`current_twin()` org check; no client writes).
+- Migration `161000000` (this slice): `organizations.staffing_projects` + `organizations.learning_options` (org jsonb for the flagship HIRE/MOVE/UPSKILL workflow).
+
+**Assertion wiring (extract-resume + scoring) — deployed + live-verified**
+- New `_shared/evidence.ts`: `buildSkillClaims` (per-skill dedup by strongest review state; invalidated states excluded from scoring), `resolveSkillClaims` (assertions-first with legacy `verified_skills` fallback), `resolveLineage` (assertions + evidence), `resolveSkillId` (grow the canonical skill graph), rigor map `reviewer_confirmed→high / assessment_supported→medium / extracted+claimed→low`.
+- `extract-resume` now writes one `evidence_items` row per skill (`resume_document`, quote, `resume:<job_id>` source) + one `skill_assertions` row (`extracted`, tier, evidence ref). It **replaces** prior extracted records for the twin (no duplicates) and never touches `verified_skills`. Verified live: after extraction Dev Sharma has 4 `extracted` assertions + 4 evidence rows; `verified_skills` byte-identical to seed; fit `evidence` section = 0 (unverified claims don't inflate it).
+- Scoring path: `skill-match` (+ `extract-resume`'s own fit) uses `resolveSkillClaims` — confirmed assertions when present, legacy jsonb otherwise. Returns `lineage` (assertions + evidence) with the fit.
+- Invalid model output stayed rejected (`MODEL_OUTPUT_INVALID`, 2×) and nothing was persisted — the Phase-2 validation contract holds.
+
+**Evidence lineage UI — wired, browser click-through pending**
+- `FitCard` gains an optional lineage panel (fit → assertion → evidence → source: state chip, level, quote, source id/type, capture date). Wired in Recruitment fit modal and Skill Graph Explorer (both current/future cards).
+
+**Deterministic fixture generator — reproducible + validated + live-seeded**
+- `scripts/generate-demo-fixtures.test.ts` → `_shared/generated-demo-fixtures.ts` (~280KB static JSON). Fixed mulberry32 seed; dates relative to demo clock `2026-09-15`. Self-validating: target counts, FK integrity (manager/skill/requisition/scenario refs), UUID well-formedness, chronology (nothing after the clock), and **computed claims recomputed by the engines** (applicant `match_score` ≡ `computeFit`; employee signals ≡ `computeWorkforceSignal`).
+- Footprint: 2 orgs (demo + `9999…` isolation org w/ own admin `isabelle@worksense.demo`), 60 employees / 6 depts (9 golden personas preserved with exact ids), 24 candidates, 6 requisitions, 96 canonical skills with aliases + typed edges, 14 versioned policy docs, 720 workforce observations (12 mo), 5 onboarding journeys (not-started/in-progress/blocked/completed), 4 staffing projects + 6 learning options, 10 demo scenarios encoded, engine-consistent `match_score`s.
+- `reset-demo` rewired to seed the fixture footprint (2 orgs, derived assertions/evidence/applications/observations/assessments, verified_skills derived from confirmed assertions only). Still bootstrap-or-HR-exec gated and org-scoped.
+- **Live gate passed**: reset twice → identical counts (orgs 2, twins 88, skills 106, reqs 7, policies 14, journeys 5, recs 3, evidence 393, assertions 393, apps 19, observations 720). RLS isolation: dana sees 0 org-2 twins; isabelle sees only org-2 rows. Samira signal = 72 (engine-computed). Skill-match lineage regression: Priya 0.655 with 4 assertions + evidence.
+
+**Tests**: 83 (73 baseline + 9 evidence + 1 fixture generator). `pnpm check` green (lint, tsc app, tsc functions, tests) + build green. Bundler hardened: strips **multi-line** `../_shared` imports (a real deploy-time failure was found + fixed).
+
+**Pending for Phase-3 completion**: compact-mode generator option; authenticated browser click-through of the lineage panel; `action_tasks` seeding (dispatch workflow); policy-qa reading `policy_documents` (still uses `organizations.policies` jsonb).
 
 ## 6. Unresolved defects / open requirements (queued for P3+)
 
