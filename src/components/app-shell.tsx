@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
-import { Briefcase, GitBranch, ListChecks, LogOut, RotateCcw, Settings, ShieldCheck } from "lucide-react";
+import { Briefcase, GitBranch, ListChecks, LogOut, MessageSquareText, RotateCcw, Settings, ShieldCheck } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 import { can, ROLE_BADGE_CLASS, ROLE_LABEL } from "@/lib/rbac";
 import { resetDemo } from "@/lib/api";
@@ -51,6 +51,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               >
                 <Briefcase className="h-4 w-4 text-secondary" />
                 Recruitment
+              </Link>
+            )}
+            {role && can(role, "use_policy_studio") && (
+              <Link
+                to="/policy"
+                className="hidden items-center gap-1.5 rounded-md px-3 py-2 text-sm font-semibold text-foreground transition-colors hover:bg-muted md:flex"
+              >
+                <MessageSquareText className="h-4 w-4 text-primary" />
+                Policy Studio
               </Link>
             )}
             {role && can(role, "view_onboarding") && (

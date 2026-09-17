@@ -5,6 +5,7 @@ import RoleHome from "./pages/role-home";
 import SkillGraph from "./pages/skill-graph";
 import Recruitment from "./pages/recruitment";
 import Onboarding from "./pages/onboarding";
+import PolicyStudio from "./pages/policy-studio";
 import NotFound from "./pages/NotFound";
 import { ProtectedRoute } from "./components/protected-route";
 
@@ -57,6 +58,15 @@ export const routers = [
     element: (
       <ProtectedRoute>
         <Onboarding />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: "/policy",
+    name: "policy-studio",
+    element: (
+      <ProtectedRoute>
+        <PolicyStudio />
       </ProtectedRoute>
     ),
   },

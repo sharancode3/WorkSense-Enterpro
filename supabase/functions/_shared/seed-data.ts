@@ -24,73 +24,161 @@ export const POLICIES = [
     id: "pol-01",
     title: "Remote Work Policy",
     category: "Workplace",
+    doc_code: "POL-RMT",
     effective_date: "2025-01-01",
     summary: "Hybrid model: 2 in-office days per week baseline; full remote requires manager + People Ops approval.",
-    full_text:
-      "WorkSense operates on a hybrid model. Employees are expected in office two days per week (Tuesday and Thursday baseline) unless their role is designated remote-first. Requests for full-time remote work require written approval from the reporting manager and People Operations. Re-approval is required every six months or when role or team changes. Failure to obtain approval before changing work location may result in loss of remote eligibility.",
+    sections: [
+      {
+        code: "s1",
+        heading: "Hybrid baseline",
+        text: "WorkSense operates on a hybrid model. Employees are expected in office two days per week (Tuesday and Thursday baseline) unless their role is designated remote-first. Requests for full-time remote work require written approval from the reporting manager and People Operations.",
+      },
+      {
+        code: "s2",
+        heading: "Re-approval and compliance",
+        text: "Re-approval is required every six months or when role or team changes. Failure to obtain approval before changing work location may result in loss of remote eligibility.",
+      },
+    ],
   },
   {
     id: "pol-02",
     title: "Leave & Time Off Policy",
     category: "Benefits",
+    doc_code: "POL-LVE",
     effective_date: "2025-01-01",
     summary: "24 days annual paid leave, accrued monthly; 10+ consecutive days requires 4 weeks notice.",
-    full_text:
-      "Employees accrue 24 days of paid annual leave per year on a monthly basis. Leave requests of ten or more consecutive days must be submitted at least four weeks in advance and require manager approval. Unused leave carries over up to five days per year. Emergency leave does not require advance notice but must be logged on the first working day.",
+    sections: [
+      {
+        code: "s1",
+        heading: "Accrual and notice",
+        text: "Employees accrue 24 days of paid annual leave per year on a monthly basis. Leave requests of ten or more consecutive days must be submitted at least four weeks in advance and require manager approval.",
+      },
+      {
+        code: "s2",
+        heading: "Carryover and emergency leave",
+        text: "Unused leave carries over up to five days per year. Emergency leave does not require advance notice but must be logged on the first working day.",
+      },
+    ],
   },
   {
     id: "pol-03",
     title: "Learning & Development Reimbursement",
     category: "Development",
+    doc_code: "POL-LND",
     effective_date: "2025-01-01",
     summary: "Up to 2,500 per year for role-relevant training; certifications tied to roadmap priorities.",
-    full_text:
-      "Employees may claim reimbursement up to 2,500 per calendar year for role-relevant courses, certifications, and conferences. Claims must include proof of completion and a one-paragraph relevance statement. Certifications aligned with the current quarter's skill roadmap are prioritized in review. Pre-approval is required for expenses above 1,000.",
+    sections: [
+      {
+        code: "s1",
+        heading: "Reimbursement budget",
+        text: "Employees may claim reimbursement up to 2,500 per calendar year for role-relevant courses, certifications, and conferences. Claims must include proof of completion and a one-paragraph relevance statement.",
+      },
+      {
+        code: "s2",
+        heading: "Prioritization and pre-approval",
+        text: "Certifications aligned with the current quarter's skill roadmap are prioritized in review. Pre-approval is required for expenses above 1,000.",
+      },
+    ],
   },
   {
     id: "pol-04",
     title: "Internal Mobility Policy",
     category: "Career",
+    doc_code: "POL-MOB",
     effective_date: "2025-01-01",
     summary: "Eligible after 12 months in role; must inform manager before applying; 30-day transition.",
-    full_text:
-      "Employees are eligible to apply for internal roles after completing twelve months in their current role, unless a documented exception is approved by both managers. Candidates must inform their current manager before applying. The transition window is thirty days unless both managers agree on a shorter handover. A rejected internal application carries no negative record.",
+    sections: [
+      {
+        code: "s1",
+        heading: "Eligibility",
+        text: "Employees are eligible to apply for internal roles after completing twelve months in their current role, unless a documented exception is approved by both managers.",
+      },
+      {
+        code: "s2",
+        heading: "Process and transition",
+        text: "Candidates must inform their current manager before applying. The transition window is thirty days unless both managers agree on a shorter handover. A rejected internal application carries no negative record.",
+      },
+    ],
   },
   {
     id: "pol-05",
     title: "Performance Review Cycle",
     category: "Performance",
+    doc_code: "POL-PERF",
     effective_date: "2025-01-01",
     summary: "Two review cycles per year; calibration sessions ensure cross-team fairness.",
-    full_text:
-      "Performance reviews run twice per year (mid-year and end-of-year). Each cycle includes manager assessment, peer feedback, and a calibration session to align ratings across teams. Employees may submit self-assessment two weeks before the review meeting. Ratings use a five-level scale from 'Needs Improvement' to 'Exceptional'.",
+    sections: [
+      {
+        code: "s1",
+        heading: "Review cadence",
+        text: "Performance reviews run twice per year (mid-year and end-of-year). Each cycle includes manager assessment, peer feedback, and a self-assessment submitted two weeks before the review meeting.",
+      },
+      {
+        code: "s2",
+        heading: "Calibration and ratings",
+        text: "A calibration session aligns ratings across teams. Ratings use a five-level scale from 'Needs Improvement' to 'Exceptional'.",
+      },
+    ],
   },
   {
     id: "pol-06",
     title: "Parental Leave Policy",
     category: "Benefits",
+    doc_code: "POL-PAR",
     effective_date: "2025-01-01",
     summary: "16 weeks fully paid for primary caregivers; 6 weeks for secondary; return-to-work support.",
-    full_text:
-      "Primary caregivers receive sixteen weeks of fully paid parental leave; secondary caregivers receive six weeks. Leave may be taken in one continuous block or, with manager approval, split. Return-to-work support includes a phased schedule for the first two weeks back and access to an internal parenting community.",
+    sections: [
+      {
+        code: "s1",
+        heading: "Leave entitlement",
+        text: "Primary caregivers receive sixteen weeks of fully paid parental leave; secondary caregivers receive six weeks. Leave may be taken in one continuous block or, with manager approval, split.",
+      },
+      {
+        code: "s2",
+        heading: "Return-to-work support",
+        text: "Return-to-work support includes a phased schedule for the first two weeks back and access to an internal parenting community.",
+      },
+    ],
   },
   {
     id: "pol-07",
     title: "Equipment & Security Policy",
     category: "Security",
+    doc_code: "POL-SEC",
     effective_date: "2025-01-01",
     summary: "Company-issued devices only; MFA mandatory; annual security training required.",
-    full_text:
-      "Work must be performed on company-issued devices. Multi-factor authentication is mandatory on all accounts. Annual security training is required for continued system access; non-completion within 60 days of the due date suspends access. Lost devices must be reported within 24 hours.",
+    sections: [
+      {
+        code: "s1",
+        heading: "Devices and authentication",
+        text: "Work must be performed on company-issued devices. Multi-factor authentication is mandatory on all accounts.",
+      },
+      {
+        code: "s2",
+        heading: "Training and loss reporting",
+        text: "Annual security training is required for continued system access; non-completion within 60 days of the due date suspends access. Lost devices must be reported within 24 hours.",
+      },
+    ],
   },
   {
     id: "pol-08",
     title: "Overtime & Comp Time Policy",
     category: "Workplace",
+    doc_code: "POL-OVT",
     effective_date: "2025-01-01",
     summary: "Overtime requires manager pre-approval; compensated as time-off on a 1:1 basis.",
-    full_text:
-      "Overtime requires manager pre-approval unless responding to a declared incident. Approved overtime is compensated as equivalent time off on a 1:1 basis, to be taken within 90 days. Employees are expected to track overtime in the time system the same week it is worked.",
+    sections: [
+      {
+        code: "s1",
+        heading: "Pre-approval",
+        text: "Overtime requires manager pre-approval unless responding to a declared incident.",
+      },
+      {
+        code: "s2",
+        heading: "Compensation",
+        text: "Approved overtime is compensated as equivalent time off on a 1:1 basis, to be taken within 90 days. Employees are expected to track overtime in the time system the same week it is worked.",
+      },
+    ],
   },
 ];
 

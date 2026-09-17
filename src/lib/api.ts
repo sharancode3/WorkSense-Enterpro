@@ -208,3 +208,38 @@ export const onboardingTask = (
     "onboarding-task",
     { journey_id: journeyId, task_id: taskId, action, note }
   );
+
+// ---- Policy Studio ----
+
+export interface PolicyCitation {
+  claim: string;
+  doc_code: string;
+  section: string;
+  quote: string;
+}
+
+export interface PolicyRetrievedChunk {
+  doc_code: string;
+  doc_title: string;
+  section_code: string;
+  heading: string;
+  text: string;
+  score: number;
+}
+
+export interface PolicyAnswer {
+  status: "grounded" | "partially_supported" | "insufficient_evidence";
+  abstained: boolean;
+  best_score: number;
+  threshold: number;
+  answer: string;
+  citations: PolicyCitation[];
+  retrieval: PolicyRetrievedChunk[];
+  note?: string;
+}
+
+export const policyAsk = (question: string) =>
+  invoke<PolicyAnswer>("policy-qa", { question });
+
+export const escalatePolicy = (question: string, status: string, bestScore: number) =>
+  invoke<{ ok: true; recommendation_id: string }>("escalate", { question, status, best_score: bestScore });
