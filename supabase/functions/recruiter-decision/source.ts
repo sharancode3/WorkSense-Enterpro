@@ -29,7 +29,7 @@ Deno.serve(async (req) => {
   const authHeader = req.headers.get("Authorization") ?? "";
   const { data: userData } = await supabase.auth.getUser(authHeader.replace("Bearer ", ""));
   const uid = userData?.user?.id;
-  if (!uid) return json({ error: "UNAUTHORIZED" }, 401);
+  if (!uid) return json({ error: "UNAUTHENTICATED" }, 401);
 
   const { data: caller } = await supabase
     .from("digital_twins")
@@ -51,7 +51,7 @@ Deno.serve(async (req) => {
   const reqId = (body.req_id ?? "").trim();
   const decision = body.decision ?? "";
   if (!twinId || !reqId || !["move_forward", "reject", "select"].includes(decision)) {
-    return json({ error: "BAD_REQUEST", message: "twin_id, req_id and decision (move_forward|reject|select) are required." }, 400);
+    return json({ error: "VALIDATION_ERROR", message: "twin_id, req_id and decision (move_forward|reject|select) are required." }, 400);
   }
 
   const { data: twin, error: twinErr } = await supabase
@@ -86,7 +86,7 @@ Deno.serve(async (req) => {
       p_twin_id: twinId,
       p_req_id: reqId,
     });
-    if (convErr) return json({ error: "CONVERSION_FAILED", message: convErr.message }, 500);
+    if (convErr) return json({ error: "INTERNAL", message: convErr.message }, 500);
 
     // Requirement: on conversion, compute the Fit against the role's required
     // AND future skills, persist into computed_fits[] + audit.
@@ -144,7 +144,7 @@ Deno.serve(async (req) => {
   } else {
     const next = nextStage(applicants[idx].stage);
     if (!next) {
-      return json({ error: "BAD_REQUEST", message: "Candidate is already in the final round; select or reject instead." }, 400);
+      return json({ error: "VALIDATION_ERROR", message: "Candidate is already in the final round; select or reject instead." }, 400);
     }
     newStage = next;
     note = body.note ?? `Moved forward to ${newStage.replace(/_/g, " ")}.`;
@@ -160,7 +160,7 @@ Deno.serve(async (req) => {
     .from("job_requisitions")
     .update({ applicants: nextApplicants, audit_events: nextAudit })
     .eq("id", reqId);
-  if (updateErr) return json({ error: "UPDATE_FAILED", message: updateErr.message }, 500);
+  if (updateErr) return json({ error: "INTERNAL", message: updateErr.message }, 500);
 
   return json({ ok: true, decision, applicant: { twin_id: twinId, stage: newStage }, note });
 });

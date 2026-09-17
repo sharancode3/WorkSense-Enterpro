@@ -1,5 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
-import { callQwen, sanitizeUntrusted, wrapUntrusted } from "../_shared/qwen.ts";
+import { callQwen, QwenError, sanitizeUntrusted, wrapUntrusted } from "../_shared/qwen.ts";
 import { computeFit } from "../_shared/skill-graph-engine.ts";
 
 const corsHeaders = {
@@ -25,6 +25,7 @@ const TIER_PROFICIENCY: Record<string, number> = {
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  try {
 
   const supabase = createClient(
     Deno.env.get("SUPABASE_URL")!,
@@ -34,7 +35,7 @@ Deno.serve(async (req) => {
   const authHeader = req.headers.get("Authorization") ?? "";
   const { data: userData } = await supabase.auth.getUser(authHeader.replace("Bearer ", ""));
   const uid = userData?.user?.id;
-  if (!uid) return json({ error: "UNAUTHORIZED" }, 401);
+  if (!uid) return json({ error: "UNAUTHENTICATED" }, 401);
 
   const { data: caller } = await supabase
     .from("digital_twins")
@@ -54,7 +55,7 @@ Deno.serve(async (req) => {
   const twinId = (body.twin_id ?? "").trim();
   const raw = String(body.resume_text ?? "");
   if (!twinId || raw.trim().length < 20) {
-    return json({ error: "BAD_REQUEST", message: "twin_id and a resume of at least 20 characters are required." }, 400);
+    return json({ error: "VALIDATION_ERROR", message: "twin_id and a resume of at least 20 characters are required." }, 400);
   }
 
   const { data: twin, error: twinErr } = await supabase
@@ -171,4 +172,7 @@ Deno.serve(async (req) => {
     })),
     fit,
   });
+  } catch (err) {
+    return json({ error: err instanceof QwenError ? err.code : "INTERNAL", message: err instanceof Error ? err.message : "unknown" });
+  }
 });

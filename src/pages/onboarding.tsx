@@ -169,7 +169,7 @@ export default function Onboarding() {
   const canView = role ? can(role, "view_onboarding") : false;
 
   const employees = useQuery({
-    queryKey: ["onb-employees"],
+    queryKey: ["onb-employees", user?.id ?? "anon"],
     enabled: canView && role !== "employee",
     queryFn: async () => {
       const { data } = await supabase.from("digital_twins").select("id, name, role, job_title").in("role", ["employee"]).order("name");
@@ -183,7 +183,7 @@ export default function Onboarding() {
   }, [role, twin, selected]);
 
   const journey = useQuery({
-    queryKey: ["journey", selected],
+    queryKey: ["journey", user?.id ?? "anon", selected],
     enabled: !!selected && canView,
     queryFn: async () => {
       const { data } = await supabase.from("onboarding_journeys").select("*").eq("twin_id", selected).maybeSingle();
@@ -198,13 +198,13 @@ export default function Onboarding() {
       void (async () => {
         try {
           await onboardingPlan(selected);
-          void qc.invalidateQueries({ queryKey: ["journey", selected] });
+          void qc.invalidateQueries({ queryKey: ["journey", user?.id ?? "anon", selected] });
         } catch (err) {
           toast.error(err instanceof Error ? err.message : "Plan generation failed");
         }
       })();
     }
-  }, [needGen, selected, qc]);
+  }, [needGen, selected, user?.id, qc]);
 
   const generate = async () => {
     if (!selected) return;
@@ -212,7 +212,7 @@ export default function Onboarding() {
     try {
       await onboardingPlan(selected);
       toast.success("Onboarding plan generated — awaiting dual approval.");
-      void qc.invalidateQueries({ queryKey: ["journey", selected] });
+      void qc.invalidateQueries({ queryKey: ["journey", user?.id ?? "anon", selected] });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Generation failed");
     } finally {
@@ -226,7 +226,7 @@ export default function Onboarding() {
     try {
       const res = await onboardingApprove(journey.data.id);
       toast.success(res.status === "active" ? "Plan active — both approvals received." : "Approval recorded.");
-      void qc.invalidateQueries({ queryKey: ["journey", selected] });
+      void qc.invalidateQueries({ queryKey: ["journey", user?.id ?? "anon", selected] });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Approval failed");
     } finally {
@@ -241,7 +241,7 @@ export default function Onboarding() {
       await onboardingTask(journey.data.id, taskId, action, note);
       toast.success(action === "block" ? "Blocker reported — downstream dates recomputed." : "Task updated.");
       setBlockerState({ taskId: "", open: false, text: "" });
-      void qc.invalidateQueries({ queryKey: ["journey", selected] });
+      void qc.invalidateQueries({ queryKey: ["journey", user?.id ?? "anon", selected] });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Update failed");
     } finally {

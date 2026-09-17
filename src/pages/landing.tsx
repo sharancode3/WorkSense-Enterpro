@@ -51,7 +51,7 @@ export default function Landing() {
 
           <div className="mt-10 flex flex-wrap gap-4">
             <a href="#demo">
-              <Button variant="hero" size="hero">
+              <Button size="hero">
                 Enter the demo <ArrowDown className="h-5 w-5" />
               </Button>
             </a>

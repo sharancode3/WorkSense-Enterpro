@@ -1,5 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
-import { callQwen } from "../_shared/qwen.ts";
+import { callQwen, QwenError } from "../_shared/qwen.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -73,6 +73,7 @@ function aggregate(history: PerfCycle[]) {
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  try {
 
   const supabase = createClient(
     Deno.env.get("SUPABASE_URL")!,
@@ -82,14 +83,14 @@ Deno.serve(async (req) => {
   const authHeader = req.headers.get("Authorization") ?? "";
   const { data: userData } = await supabase.auth.getUser(authHeader.replace("Bearer ", ""));
   const uid = userData?.user?.id;
-  if (!uid) return json({ error: "UNAUTHORIZED" }, 401);
+  if (!uid) return json({ error: "UNAUTHENTICATED" }, 401);
 
   const { data: caller } = await supabase
     .from("digital_twins")
     .select("id, role, org_id")
     .eq("auth_user_id", uid)
     .maybeSingle();
-  if (!caller) return json({ error: "UNAUTHORIZED" }, 401);
+  if (!caller) return json({ error: "UNAUTHENTICATED" }, 401);
 
   let body: { twin_id?: string; force?: boolean } = {};
   try {
@@ -98,7 +99,7 @@ Deno.serve(async (req) => {
     /* empty */
   }
   const twinId = (body.twin_id ?? "").trim();
-  if (!twinId) return json({ error: "BAD_REQUEST", message: "twin_id is required." }, 400);
+  if (!twinId) return json({ error: "VALIDATION_ERROR", message: "twin_id is required." }, 400);
 
   const { data: twin, error: twinErr } = await supabase
     .from("digital_twins")
@@ -160,4 +161,7 @@ Write the strengths/growth-areas narrative from these numbers only.`,
     .eq("id", twinId);
 
   return json({ ok: true, cached: false, synthesis });
+  } catch (err) {
+    return json({ error: err instanceof QwenError ? err.code : "INTERNAL", message: err instanceof Error ? err.message : "unknown" });
+  }
 });

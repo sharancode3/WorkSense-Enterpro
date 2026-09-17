@@ -1,5 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
-import { callQwen, sanitizeUntrusted, wrapUntrusted } from "../_shared/qwen.ts";
+import { callQwen, QwenError, sanitizeUntrusted, wrapUntrusted } from "../_shared/qwen.ts";
 import { ABSTENTION_THRESHOLD, retrieveChunks, validateCitations, type PolicyDoc } from "../_shared/policy-retrieval.ts";
 
 const corsHeaders = {
@@ -16,6 +16,7 @@ Respond with JSON only:
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  try {
 
   const supabase = createClient(
     Deno.env.get("SUPABASE_URL")!,
@@ -25,14 +26,14 @@ Deno.serve(async (req) => {
   const authHeader = req.headers.get("Authorization") ?? "";
   const { data: userData } = await supabase.auth.getUser(authHeader.replace("Bearer ", ""));
   const uid = userData?.user?.id;
-  if (!uid) return json({ error: "UNAUTHORIZED" }, 401);
+  if (!uid) return json({ error: "UNAUTHENTICATED" }, 401);
 
   const { data: caller } = await supabase
     .from("digital_twins")
     .select("id, org_id")
     .eq("auth_user_id", uid)
     .maybeSingle();
-  if (!caller) return json({ error: "UNAUTHORIZED" }, 401);
+  if (!caller) return json({ error: "UNAUTHENTICATED" }, 401);
 
   let body: { question?: string } = {};
   try {
@@ -41,7 +42,7 @@ Deno.serve(async (req) => {
     /* empty */
   }
   const raw = String(body.question ?? "").trim();
-  if (raw.length < 5) return json({ error: "BAD_REQUEST", message: "Ask a real question (min 5 characters)." }, 400);
+  if (raw.length < 5) return json({ error: "VALIDATION_ERROR", message: "Ask a real question (min 5 characters)." }, 400);
 
   // Untrusted input handling: neutralize instruction-like phrases.
   const question = sanitizeUntrusted(raw);
@@ -123,4 +124,7 @@ Question (untrusted): ${wrapUntrusted(question)}`,
     citations: valid,
     retrieval,
   });
+  } catch (err) {
+    return json({ error: err instanceof QwenError ? err.code : "INTERNAL", message: err instanceof Error ? err.message : "unknown" });
+  }
 });

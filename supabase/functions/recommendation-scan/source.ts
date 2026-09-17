@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
 import { scanForRecommendations, type RecCandidate } from "../_shared/recommendation-engine.ts";
-import { callQwen } from "../_shared/qwen.ts";
+import { callQwen, QwenError } from "../_shared/qwen.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -16,6 +16,7 @@ Respond with JSON only:
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  try {
 
   const supabase = createClient(
     Deno.env.get("SUPABASE_URL")!,
@@ -25,7 +26,7 @@ Deno.serve(async (req) => {
   const authHeader = req.headers.get("Authorization") ?? "";
   const { data: userData } = await supabase.auth.getUser(authHeader.replace("Bearer ", ""));
   const uid = userData?.user?.id;
-  if (!uid) return json({ error: "UNAUTHORIZED" }, 401);
+  if (!uid) return json({ error: "UNAUTHENTICATED" }, 401);
 
   const { data: caller } = await supabase
     .from("digital_twins")
@@ -103,9 +104,12 @@ Deno.serve(async (req) => {
       reviewer_rationale: {},
       audit_events: [{ actor: caller.email ?? uid, action: "created", note: `Triggered by intelligence scan (${c.category}).`, timestamp: now }],
     });
-    if (error) return json({ error: "INSERT_FAILED", message: error.message }, 500);
+    if (error) return json({ error: "INTERNAL", message: error.message }, 500);
     created.push(c);
   }
 
   return json({ ok: true, scanned_candidates: candidates.length, created: created.length, created_ids: created.map((c) => c.category) });
+  } catch (err) {
+    return json({ error: err instanceof QwenError ? err.code : "INTERNAL", message: err instanceof Error ? err.message : "unknown" });
+  }
 });

@@ -334,21 +334,21 @@ Deno.serve(async (req) => {
   const targetId = (body.target_id ?? "").trim();
   const scenario = body.scenario === "future" ? "future" : "current";
   if (!twinId || !targetId) {
-    return jsonResponse({ error: "BAD_REQUEST", message: "twin_id and target_id are required." }, 400);
+    return jsonResponse({ error: "VALIDATION_ERROR", message: "twin_id and target_id are required." }, 400);
   }
 
   // Identity + role check (server-side; never decided on the client).
   const authHeader = req.headers.get("Authorization") ?? "";
   const { data: userData } = await supabase.auth.getUser(authHeader.replace("Bearer ", ""));
   const uid = userData?.user?.id;
-  if (!uid) return jsonResponse({ error: "UNAUTHORIZED" }, 401);
+  if (!uid) return jsonResponse({ error: "UNAUTHENTICATED" }, 401);
 
   const { data: caller, error: callerErr } = await supabase
     .from("digital_twins")
     .select("id, org_id, role")
     .eq("auth_user_id", uid)
     .maybeSingle();
-  if (callerErr || !caller) return jsonResponse({ error: "UNAUTHORIZED" }, 401);
+  if (callerErr || !caller) return jsonResponse({ error: "UNAUTHENTICATED" }, 401);
 
   const { data: targetTwin, error: twinErr } = await supabase
     .from("digital_twins")

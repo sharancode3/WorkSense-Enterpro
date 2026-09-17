@@ -5,6 +5,7 @@ import { Briefcase, GitBranch, Layers, ListChecks, LogOut, MessageSquareText, Ro
 import { useAuth } from "@/contexts/auth-context";
 import { can, ROLE_BADGE_CLASS, ROLE_LABEL } from "@/lib/rbac";
 import { resetDemo } from "@/lib/api";
+import { BUILD_INFO } from "@/generated/build-info";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -152,7 +153,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </p>
           </div>
           <span className="text-xs text-white/40">
-            WorkSense — evidence-backed workforce decisions, moved through human-approved workflows.
+            build {BUILD_INFO.commit} · {new Date(BUILD_INFO.builtAt).toLocaleString()} · schema {BUILD_INFO.schemaVersion}
           </span>
         </div>
       </footer>

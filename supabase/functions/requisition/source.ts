@@ -29,7 +29,7 @@ Deno.serve(async (req) => {
   const authHeader = req.headers.get("Authorization") ?? "";
   const { data: userData } = await supabase.auth.getUser(authHeader.replace("Bearer ", ""));
   const uid = userData?.user?.id;
-  if (!uid) return json({ error: "UNAUTHORIZED" }, 401);
+  if (!uid) return json({ error: "UNAUTHENTICATED" }, 401);
 
   const { data: caller } = await supabase
     .from("digital_twins")
@@ -62,7 +62,7 @@ Deno.serve(async (req) => {
     const title = (body.title ?? "").trim();
     const department = (body.department ?? "").trim();
     if (!title || !department || !Array.isArray(body.required_skills) || body.required_skills.length === 0) {
-      return json({ error: "BAD_REQUEST", message: "title, department and required_skills are required." }, 400);
+      return json({ error: "VALIDATION_ERROR", message: "title, department and required_skills are required." }, 400);
     }
     const { data, error } = await supabase
       .from("job_requisitions")
@@ -78,14 +78,14 @@ Deno.serve(async (req) => {
       })
       .select()
       .single();
-    if (error) return json({ error: "INSERT_FAILED", message: error.message }, 500);
+    if (error) return json({ error: "INTERNAL", message: error.message }, 500);
     return json({ ok: true, requisition: data });
   }
 
   if (action === "apply") {
     const reqId = (body.req_id ?? "").trim();
     const twinId = (body.twin_id ?? "").trim();
-    if (!reqId || !twinId) return json({ error: "BAD_REQUEST", message: "req_id and twin_id are required." }, 400);
+    if (!reqId || !twinId) return json({ error: "VALIDATION_ERROR", message: "req_id and twin_id are required." }, 400);
 
     const [reqRes, twinRes] = await Promise.all([
       supabase.from("job_requisitions").select("id, org_id, applicants, audit_events").eq("id", reqId).maybeSingle(),
@@ -106,13 +106,13 @@ Deno.serve(async (req) => {
         audit_events: [...(reqRes.data.audit_events ?? []), { actor: caller.email ?? uid, action: "applicant_added", note: "Candidate applied.", timestamp: now }],
       })
       .eq("id", reqId);
-    if (error) return json({ error: "UPDATE_FAILED", message: error.message }, 500);
+    if (error) return json({ error: "INTERNAL", message: error.message }, 500);
     return json({ ok: true, applicant });
   }
 
   if (action === "update") {
     const reqId = (body.req_id ?? "").trim();
-    if (!reqId) return json({ error: "BAD_REQUEST", message: "req_id is required." }, 400);
+    if (!reqId) return json({ error: "VALIDATION_ERROR", message: "req_id is required." }, 400);
 
     const { data: existing, error: getErr } = await supabase
       .from("job_requisitions")
@@ -145,9 +145,9 @@ Deno.serve(async (req) => {
     patch.audit_events = audit;
 
     const { data, error } = await supabase.from("job_requisitions").update(patch).eq("id", reqId).select().single();
-    if (error) return json({ error: "UPDATE_FAILED", message: error.message }, 500);
+    if (error) return json({ error: "INTERNAL", message: error.message }, 500);
     return json({ ok: true, requisition: data });
   }
 
-  return json({ error: "BAD_REQUEST", message: "action must be create, update or apply." }, 400);
+  return json({ error: "VALIDATION_ERROR", message: "action must be create, update or apply." }, 400);
 });

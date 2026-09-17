@@ -32,14 +32,14 @@ Deno.serve(async (req) => {
   const authHeader = req.headers.get("Authorization") ?? "";
   const { data: userData } = await supabase.auth.getUser(authHeader.replace("Bearer ", ""));
   const uid = userData?.user?.id;
-  if (!uid) return json({ error: "UNAUTHORIZED" }, 401);
+  if (!uid) return json({ error: "UNAUTHENTICATED" }, 401);
 
   const { data: caller } = await supabase
     .from("digital_twins")
     .select("id, role, email, org_id")
     .eq("auth_user_id", uid)
     .maybeSingle();
-  if (!caller) return json({ error: "UNAUTHORIZED" }, 401);
+  if (!caller) return json({ error: "UNAUTHENTICATED" }, 401);
 
   let body: { journey_id?: string; task_id?: string; action?: string; note?: string } = {};
   try {
@@ -51,7 +51,7 @@ Deno.serve(async (req) => {
   const taskId = (body.task_id ?? "").trim();
   const action = body.action ?? "";
   if (!journeyId || !taskId || !["complete", "block", "resolve"].includes(action)) {
-    return json({ error: "BAD_REQUEST", message: "journey_id, task_id and action (complete|block|resolve) are required." }, 400);
+    return json({ error: "VALIDATION_ERROR", message: "journey_id, task_id and action (complete|block|resolve) are required." }, 400);
   }
 
   const { data: journey, error: journeyErr } = await supabase
@@ -93,17 +93,17 @@ Deno.serve(async (req) => {
     // Workflow gate: completing a task requires an ACTIVE (dual-approved) plan,
     // a task that is not waived, and all prerequisites already done.
     if (journey.status !== "active") {
-      return json({ error: "PLAN_NOT_ACTIVE", message: "The plan must be approved by the Manager and HR Executive before tasks can be completed." }, 400);
+      return json({ error: "CONFLICT", message: "The plan must be approved by the Manager and HR Executive before tasks can be completed." }, 400);
     }
     if (target.waived) {
-      return json({ error: "TASK_WAIVED", message: `"${target.title}" is waived by verified skill — nothing to complete.` }, 400);
+      return json({ error: "CONFLICT", message: `"${target.title}" is waived by verified skill — nothing to complete.` }, 400);
     }
     const unmet = (target.depends_on ?? []).filter((d) => {
       const dep = tasks.find((t) => t.id === d);
       return !dep || dep.status !== "done";
     });
     if (unmet.length > 0) {
-      return json({ error: "PREREQUISITES_NOT_MET", message: `Prerequisites not complete: ${unmet.join(", ")}.` }, 400);
+      return json({ error: "CONFLICT", message: `Prerequisites not complete: ${unmet.join(", ")}.` }, 400);
     }
     nextTasks = tasks.map((t) => (t.id === taskId ? { ...t, status: "done" as const } : t));
     auditAction = "task_completed";

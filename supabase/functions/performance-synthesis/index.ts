@@ -70,6 +70,16 @@ export function wrapUntrusted(text: string): string {
 // OpenAI-compatible chat call
 // ---------------------------------------------------------------------------
 
+export class QwenError extends Error {
+  constructor(
+    public code: "MODEL_UNAVAILABLE" | "MODEL_OUTPUT_INVALID",
+    message: string
+  ) {
+    super(message);
+    this.name = "QwenError";
+  }
+}
+
 function extractJson(content: string): unknown {
   const trimmed = content.trim();
   // Strip markdown fences if present.
@@ -77,9 +87,13 @@ function extractJson(content: string): unknown {
   const start = fenced.indexOf("{");
   const end = fenced.lastIndexOf("}");
   if (start === -1 || end === -1 || end <= start) {
-    throw new Error(`qwen: no JSON object in response: ${content.slice(0, 200)}`);
+    throw new QwenError("MODEL_OUTPUT_INVALID", `qwen: no JSON object in response: ${content.slice(0, 200)}`);
   }
-  return JSON.parse(fenced.slice(start, end + 1));
+  try {
+    return JSON.parse(fenced.slice(start, end + 1));
+  } catch {
+    throw new QwenError("MODEL_OUTPUT_INVALID", "qwen: response is not valid JSON.");
+  }
 }
 
 export async function callQwen(params: {
@@ -114,18 +128,18 @@ export async function callQwen(params: {
       body: JSON.stringify(body),
     });
   } catch (err) {
-    throw new Error(`qwen: network error (is the endpoint reachable?): ${err instanceof Error ? err.message : String(err)}`);
+    throw new QwenError("MODEL_UNAVAILABLE", `qwen: network error (is the endpoint reachable?): ${err instanceof Error ? err.message : String(err)}`);
   }
 
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`qwen: HTTP ${res.status}: ${text.slice(0, 300)}`);
+    throw new QwenError("MODEL_UNAVAILABLE", `qwen: HTTP ${res.status}: ${text.slice(0, 300)}`);
   }
 
   const data = await res.json();
   const content = data?.choices?.[0]?.message?.content;
   if (typeof content !== "string" || content.length === 0) {
-    throw new Error("qwen: empty completion");
+    throw new QwenError("MODEL_OUTPUT_INVALID", "qwen: empty completion");
   }
   if (params.json) {
     return extractJson(content);
@@ -209,6 +223,7 @@ function aggregate(history: PerfCycle[]) {
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  try {
 
   const supabase = createClient(
     Deno.env.get("SUPABASE_URL")!,
@@ -218,14 +233,14 @@ Deno.serve(async (req) => {
   const authHeader = req.headers.get("Authorization") ?? "";
   const { data: userData } = await supabase.auth.getUser(authHeader.replace("Bearer ", ""));
   const uid = userData?.user?.id;
-  if (!uid) return json({ error: "UNAUTHORIZED" }, 401);
+  if (!uid) return json({ error: "UNAUTHENTICATED" }, 401);
 
   const { data: caller } = await supabase
     .from("digital_twins")
     .select("id, role, org_id")
     .eq("auth_user_id", uid)
     .maybeSingle();
-  if (!caller) return json({ error: "UNAUTHORIZED" }, 401);
+  if (!caller) return json({ error: "UNAUTHENTICATED" }, 401);
 
   let body: { twin_id?: string; force?: boolean } = {};
   try {
@@ -234,7 +249,7 @@ Deno.serve(async (req) => {
     /* empty */
   }
   const twinId = (body.twin_id ?? "").trim();
-  if (!twinId) return json({ error: "BAD_REQUEST", message: "twin_id is required." }, 400);
+  if (!twinId) return json({ error: "VALIDATION_ERROR", message: "twin_id is required." }, 400);
 
   const { data: twin, error: twinErr } = await supabase
     .from("digital_twins")
@@ -296,4 +311,7 @@ Write the strengths/growth-areas narrative from these numbers only.`,
     .eq("id", twinId);
 
   return json({ ok: true, cached: false, synthesis });
+  } catch (err) {
+    return json({ error: err instanceof QwenError ? err.code : "INTERNAL", message: err instanceof Error ? err.message : "unknown" });
+  }
 });

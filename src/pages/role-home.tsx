@@ -122,7 +122,7 @@ export default function RoleHome() {
   });
 
   const myJourney = useQuery({
-    queryKey: ["my-journey"],
+    queryKey: ["my-journey", twin?.id ?? "anon"],
     enabled: role === "employee",
     queryFn: async () => {
       if (!twin) return null;
@@ -136,7 +136,7 @@ export default function RoleHome() {
   });
 
   const myRecs = useQuery({
-    queryKey: ["my-recs"],
+    queryKey: ["my-recs", twin?.id ?? "anon"],
     enabled: role === "employee",
     queryFn: async () => {
       const { count } = await supabase
@@ -147,7 +147,7 @@ export default function RoleHome() {
   });
 
   const recruiterData = useQuery({
-    queryKey: ["recruiter"],
+    queryKey: ["recruiter", twin?.id ?? "anon"],
     enabled: role === "recruiter",
     queryFn: async () => {
       const [reqsRes, candidatesRes] = await Promise.all([

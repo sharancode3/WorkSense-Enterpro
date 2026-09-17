@@ -22,7 +22,7 @@ Deno.serve(async (req) => {
   const authHeader = req.headers.get("Authorization") ?? "";
   const { data: userData } = await supabase.auth.getUser(authHeader.replace("Bearer ", ""));
   const uid = userData?.user?.id;
-  if (!uid) return json({ error: "UNAUTHORIZED" }, 401);
+  if (!uid) return json({ error: "UNAUTHENTICATED" }, 401);
 
   const { data: caller } = await supabase
     .from("digital_twins")
@@ -40,7 +40,7 @@ Deno.serve(async (req) => {
     /* empty */
   }
   const journeyId = (body.journey_id ?? "").trim();
-  if (!journeyId) return json({ error: "BAD_REQUEST", message: "journey_id is required." }, 400);
+  if (!journeyId) return json({ error: "VALIDATION_ERROR", message: "journey_id is required." }, 400);
 
   const { data: journey, error: journeyErr } = await supabase
     .from("onboarding_journeys")

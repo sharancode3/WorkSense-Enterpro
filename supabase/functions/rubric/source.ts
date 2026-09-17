@@ -1,5 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
-import { callQwen } from "../_shared/qwen.ts";
+import { callQwen, QwenError } from "../_shared/qwen.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -46,6 +46,7 @@ async function generateRubric(supabase, reqRow: { id: string; title: string; req
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  try {
 
   const supabase = createClient(
     Deno.env.get("SUPABASE_URL")!,
@@ -55,7 +56,7 @@ Deno.serve(async (req) => {
   const authHeader = req.headers.get("Authorization") ?? "";
   const { data: userData } = await supabase.auth.getUser(authHeader.replace("Bearer ", ""));
   const uid = userData?.user?.id;
-  if (!uid) return json({ error: "UNAUTHORIZED" }, 401);
+  if (!uid) return json({ error: "UNAUTHENTICATED" }, 401);
 
   const { data: caller } = await supabase
     .from("digital_twins")
@@ -73,7 +74,7 @@ Deno.serve(async (req) => {
     /* empty */
   }
   const reqId = (body.req_id ?? "").trim();
-  if (!reqId) return json({ error: "BAD_REQUEST", message: "req_id is required." }, 400);
+  if (!reqId) return json({ error: "VALIDATION_ERROR", message: "req_id is required." }, 400);
 
   const { data: reqRow, error: reqErr } = await supabase
     .from("job_requisitions")
@@ -118,4 +119,7 @@ Deno.serve(async (req) => {
     .eq("id", reqId);
 
   return json({ ok: true, rubrics });
+  } catch (err) {
+    return json({ error: err instanceof QwenError ? err.code : "INTERNAL", message: err instanceof Error ? err.message : "unknown" });
+  }
 });

@@ -105,7 +105,7 @@ Deno.serve(async (req) => {
     const authHeader = req.headers.get("Authorization") ?? "";
     const { data: userData } = await supabase.auth.getUser(authHeader.replace("Bearer ", ""));
     const uid = userData?.user?.id;
-    if (!uid) return jsonResponse({ error: "UNAUTHORIZED" }, 401);
+    if (!uid) return jsonResponse({ error: "UNAUTHENTICATED" }, 401);
 
     const { data: twin } = await supabase
       .from("digital_twins")

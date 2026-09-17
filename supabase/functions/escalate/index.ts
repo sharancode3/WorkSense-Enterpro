@@ -22,14 +22,14 @@ Deno.serve(async (req) => {
   const authHeader = req.headers.get("Authorization") ?? "";
   const { data: userData } = await supabase.auth.getUser(authHeader.replace("Bearer ", ""));
   const uid = userData?.user?.id;
-  if (!uid) return json({ error: "UNAUTHORIZED" }, 401);
+  if (!uid) return json({ error: "UNAUTHENTICATED" }, 401);
 
   const { data: caller } = await supabase
     .from("digital_twins")
     .select("id, org_id, name, email")
     .eq("auth_user_id", uid)
     .maybeSingle();
-  if (!caller) return json({ error: "UNAUTHORIZED" }, 401);
+  if (!caller) return json({ error: "UNAUTHENTICATED" }, 401);
 
   let body: { question?: string; status?: string; best_score?: number } = {};
   try {
@@ -38,7 +38,7 @@ Deno.serve(async (req) => {
     /* empty */
   }
   const question = String(body.question ?? "").trim();
-  if (!question) return json({ error: "BAD_REQUEST", message: "question is required." }, 400);
+  if (!question) return json({ error: "VALIDATION_ERROR", message: "question is required." }, 400);
 
   const now = new Date().toISOString();
   const { data, error } = await supabase
@@ -68,7 +68,7 @@ Deno.serve(async (req) => {
     })
     .select("id")
     .single();
-  if (error) return json({ error: "INSERT_FAILED", message: error.message }, 500);
+  if (error) return json({ error: "INTERNAL", message: error.message }, 500);
 
   return json({ ok: true, recommendation_id: data.id });
 });

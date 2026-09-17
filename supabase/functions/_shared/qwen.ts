@@ -67,6 +67,16 @@ export function wrapUntrusted(text: string): string {
 // OpenAI-compatible chat call
 // ---------------------------------------------------------------------------
 
+export class QwenError extends Error {
+  constructor(
+    public code: "MODEL_UNAVAILABLE" | "MODEL_OUTPUT_INVALID",
+    message: string
+  ) {
+    super(message);
+    this.name = "QwenError";
+  }
+}
+
 function extractJson(content: string): unknown {
   const trimmed = content.trim();
   // Strip markdown fences if present.
@@ -74,9 +84,13 @@ function extractJson(content: string): unknown {
   const start = fenced.indexOf("{");
   const end = fenced.lastIndexOf("}");
   if (start === -1 || end === -1 || end <= start) {
-    throw new Error(`qwen: no JSON object in response: ${content.slice(0, 200)}`);
+    throw new QwenError("MODEL_OUTPUT_INVALID", `qwen: no JSON object in response: ${content.slice(0, 200)}`);
   }
-  return JSON.parse(fenced.slice(start, end + 1));
+  try {
+    return JSON.parse(fenced.slice(start, end + 1));
+  } catch {
+    throw new QwenError("MODEL_OUTPUT_INVALID", "qwen: response is not valid JSON.");
+  }
 }
 
 export async function callQwen(params: {
@@ -111,18 +125,18 @@ export async function callQwen(params: {
       body: JSON.stringify(body),
     });
   } catch (err) {
-    throw new Error(`qwen: network error (is the endpoint reachable?): ${err instanceof Error ? err.message : String(err)}`);
+    throw new QwenError("MODEL_UNAVAILABLE", `qwen: network error (is the endpoint reachable?): ${err instanceof Error ? err.message : String(err)}`);
   }
 
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`qwen: HTTP ${res.status}: ${text.slice(0, 300)}`);
+    throw new QwenError("MODEL_UNAVAILABLE", `qwen: HTTP ${res.status}: ${text.slice(0, 300)}`);
   }
 
   const data = await res.json();
   const content = data?.choices?.[0]?.message?.content;
   if (typeof content !== "string" || content.length === 0) {
-    throw new Error("qwen: empty completion");
+    throw new QwenError("MODEL_OUTPUT_INVALID", "qwen: empty completion");
   }
   if (params.json) {
     return extractJson(content);

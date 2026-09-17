@@ -314,7 +314,7 @@ export interface ScanInputs {
     status: string;
     signals: { type?: string; value?: unknown; trend?: string; factors?: unknown }[];
     performance_history: { cycle: string; rating: string; goals_met?: number }[];
-    verified_skills?: { name: string; proficiency: number }[];
+    verified_skills?: { name: string; proficiency: number; evidence_source?: string; verification_rigor?: string }[];
     seniority_level?: number;
     job_title?: string;
   }[];
@@ -382,9 +382,17 @@ export function scanForRecommendations(inputs: ScanInputs): RecCandidate[] {
     // 2) INTERNAL_MOBILITY — signal > 65 AND strong/stable performance AND the
     //    Skill Graph shows >=70% adjacent/transferable fit to an OPEN req.
     if (signal > 65 && (RATING_ORDER[latestRating(twin.performance_history)] ?? 0) >= 4) {
+      // Domain mapping: the scan may carry partial skill claims; the engine
+      // requires full SkillClaim records, so fill defaults explicitly.
+      const candidateSkills: import("./skill-graph-engine.ts").SkillClaim[] = (twin.verified_skills ?? []).map((s) => ({
+        name: s.name,
+        proficiency: s.proficiency,
+        evidence_source: s.evidence_source ?? "skill_scan",
+        verification_rigor: (s.verification_rigor as "low" | "medium" | "high") ?? "low",
+      }));
       for (const req of inputs.requisitions) {
         const fit = computeFit({
-          candidateSkills: (twin.verified_skills ?? []) as { name: string; proficiency: number }[],
+          candidateSkills,
           candidateLevel: twin.seniority_level ?? 3,
           requiredSkills: req.required_skills,
           roleLevel: req.seniority_level,
@@ -525,6 +533,16 @@ export function wrapUntrusted(text: string): string {
 // OpenAI-compatible chat call
 // ---------------------------------------------------------------------------
 
+export class QwenError extends Error {
+  constructor(
+    public code: "MODEL_UNAVAILABLE" | "MODEL_OUTPUT_INVALID",
+    message: string
+  ) {
+    super(message);
+    this.name = "QwenError";
+  }
+}
+
 function extractJson(content: string): unknown {
   const trimmed = content.trim();
   // Strip markdown fences if present.
@@ -532,9 +550,13 @@ function extractJson(content: string): unknown {
   const start = fenced.indexOf("{");
   const end = fenced.lastIndexOf("}");
   if (start === -1 || end === -1 || end <= start) {
-    throw new Error(`qwen: no JSON object in response: ${content.slice(0, 200)}`);
+    throw new QwenError("MODEL_OUTPUT_INVALID", `qwen: no JSON object in response: ${content.slice(0, 200)}`);
   }
-  return JSON.parse(fenced.slice(start, end + 1));
+  try {
+    return JSON.parse(fenced.slice(start, end + 1));
+  } catch {
+    throw new QwenError("MODEL_OUTPUT_INVALID", "qwen: response is not valid JSON.");
+  }
 }
 
 export async function callQwen(params: {
@@ -569,18 +591,18 @@ export async function callQwen(params: {
       body: JSON.stringify(body),
     });
   } catch (err) {
-    throw new Error(`qwen: network error (is the endpoint reachable?): ${err instanceof Error ? err.message : String(err)}`);
+    throw new QwenError("MODEL_UNAVAILABLE", `qwen: network error (is the endpoint reachable?): ${err instanceof Error ? err.message : String(err)}`);
   }
 
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`qwen: HTTP ${res.status}: ${text.slice(0, 300)}`);
+    throw new QwenError("MODEL_UNAVAILABLE", `qwen: HTTP ${res.status}: ${text.slice(0, 300)}`);
   }
 
   const data = await res.json();
   const content = data?.choices?.[0]?.message?.content;
   if (typeof content !== "string" || content.length === 0) {
-    throw new Error("qwen: empty completion");
+    throw new QwenError("MODEL_OUTPUT_INVALID", "qwen: empty completion");
   }
   if (params.json) {
     return extractJson(content);
@@ -607,6 +629,7 @@ Respond with JSON only:
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  try {
 
   const supabase = createClient(
     Deno.env.get("SUPABASE_URL")!,
@@ -616,7 +639,7 @@ Deno.serve(async (req) => {
   const authHeader = req.headers.get("Authorization") ?? "";
   const { data: userData } = await supabase.auth.getUser(authHeader.replace("Bearer ", ""));
   const uid = userData?.user?.id;
-  if (!uid) return json({ error: "UNAUTHORIZED" }, 401);
+  if (!uid) return json({ error: "UNAUTHENTICATED" }, 401);
 
   const { data: caller } = await supabase
     .from("digital_twins")
@@ -694,9 +717,12 @@ Deno.serve(async (req) => {
       reviewer_rationale: {},
       audit_events: [{ actor: caller.email ?? uid, action: "created", note: `Triggered by intelligence scan (${c.category}).`, timestamp: now }],
     });
-    if (error) return json({ error: "INSERT_FAILED", message: error.message }, 500);
+    if (error) return json({ error: "INTERNAL", message: error.message }, 500);
     created.push(c);
   }
 
   return json({ ok: true, scanned_candidates: candidates.length, created: created.length, created_ids: created.map((c) => c.category) });
+  } catch (err) {
+    return json({ error: err instanceof QwenError ? err.code : "INTERNAL", message: err instanceof Error ? err.message : "unknown" });
+  }
 });

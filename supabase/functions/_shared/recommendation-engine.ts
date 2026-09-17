@@ -32,7 +32,7 @@ export interface ScanInputs {
     status: string;
     signals: { type?: string; value?: unknown; trend?: string; factors?: unknown }[];
     performance_history: { cycle: string; rating: string; goals_met?: number }[];
-    verified_skills?: { name: string; proficiency: number }[];
+    verified_skills?: { name: string; proficiency: number; evidence_source?: string; verification_rigor?: string }[];
     seniority_level?: number;
     job_title?: string;
   }[];
@@ -100,9 +100,17 @@ export function scanForRecommendations(inputs: ScanInputs): RecCandidate[] {
     // 2) INTERNAL_MOBILITY — signal > 65 AND strong/stable performance AND the
     //    Skill Graph shows >=70% adjacent/transferable fit to an OPEN req.
     if (signal > 65 && (RATING_ORDER[latestRating(twin.performance_history)] ?? 0) >= 4) {
+      // Domain mapping: the scan may carry partial skill claims; the engine
+      // requires full SkillClaim records, so fill defaults explicitly.
+      const candidateSkills: import("./skill-graph-engine.ts").SkillClaim[] = (twin.verified_skills ?? []).map((s) => ({
+        name: s.name,
+        proficiency: s.proficiency,
+        evidence_source: s.evidence_source ?? "skill_scan",
+        verification_rigor: (s.verification_rigor as "low" | "medium" | "high") ?? "low",
+      }));
       for (const req of inputs.requisitions) {
         const fit = computeFit({
-          candidateSkills: (twin.verified_skills ?? []) as { name: string; proficiency: number }[],
+          candidateSkills,
           candidateLevel: twin.seniority_level ?? 3,
           requiredSkills: req.required_skills,
           roleLevel: req.seniority_level,

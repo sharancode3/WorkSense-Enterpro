@@ -12,7 +12,47 @@ Bounded repair loop: max 3 attempts per external blocker, then stop + report evi
 |---|---|---|---|
 | P0–P8 (original build) | Design system, RBAC, Skill Graph, Recruitment, Onboarding, Policy, Signal/Perf, Hub, Dashboard, Section-11 prompts | ✅ Baseline (pre-contract, live-verified) | 62 tests, lint, tsc, build, API matrix |
 | AUDIT-FIX | Recruiter fit 403; RLS org-scoping; RPC lockdown; onboarding completion gate; seed consistency; 403 UX; escalation state | ✅ Verified live | curl checks + build |
-| P1+ | *(awaiting user prompts, one at a time)* | ⏳ Not started | — |
+| PHASE-1 | Foundation: build/deploy provenance, authorization, session safety, error contract | ✅ Gate passed (below) | See §9 |
+| P2+ | *(awaiting user prompts, one at a time)* | ⏳ Not started | — |
+
+## 9. Phase 1 — Foundation (completion gate)
+
+**Build & deploy**
+- pnpm pinned to `10.34.5` (`packageManager`), removed the bogus `pnpm: 8.6.12` devDependency; lockfile regenerated; `pnpm install --frozen-lockfile` ✅.
+- `pnpm check` now runs: ESLint + app `tsc --noEmit` + **functions/shared `tsc -p tsconfig.functions.json`** + tests → exit 0 (62 tests / 10 files).
+- `tsconfig.functions.json` type-checks the deterministic shared engines; it surfaced + fixed a real contract gap (`recommendation-engine` fed partial skills into `computeFit` — now explicit domain mapping, no casts).
+- Build identifier: `scripts/write-build-info.mjs` → `src/generated/build-info.ts` (commit, builtAt, schema v1); `prebuild` hook regenerates it; footer shows it; verified the marker ships in the dist bundle.
+
+**Authorization**
+- RLS audited → final set is **11 SELECT-only, org-scoped policies**; all client write paths removed (approvals, dispatch, scores, verification, audit, conversion, journeys, requisitions, skills). Mutations only via backend functions (service role).
+- `convert_candidate_to_employee` RPC: revoked from public/anon/authenticated, granted service_role only (anon → 403).
+- SECURITY DEFINER functions reviewed: `search_path = public` fixed; conversion gated by the calling edge function's actor/state checks.
+
+**Session safety**
+- React-query keys scoped by actor id (`user.id`) across all data pages; `queryClient.clear()` on sign-out; stale-`fetchMe` guard (uid ref); `ProtectedRoute` waits for resolved identity **and** permissions (`resolving`).
+
+**Error contract**
+- Canonical codes applied across all functions: `UNAUTHENTICATED / FORBIDDEN / NOT_FOUND / VALIDATION_ERROR / CONFLICT / INTERNAL`; `QwenError` → `MODEL_UNAVAILABLE` / `MODEL_OUTPUT_INVALID` surfaced in responses.
+
+**Gate checks (live)**
+- ✅ Frozen install; ✅ `pnpm check` (lint/tsc app/tsc functions/tests); ✅ build.
+- ✅ Recruiter fit works (66/100) for permitted candidates; ✅ recruiter sees only candidates (no employee records).
+- ✅ Two-org isolation: org-A admin reading org-B twin → empty; ✅ employee direct journey write blocked; ✅ manager direct recommendation write blocked (0 rows).
+- ✅ Unauthorized candidate conversion (REST) → 403.
+- ✅ Canonical codes: candidate protected → `FORBIDDEN`, onboarding-on-pending → `CONFLICT`.
+- ⏳ Persona-switch cache + live build-id drift: code-level guarantees verified; browser click-through pending a logged-in session / post-commit preview rebuild.
+
+## 6. Unresolved defects / open requirements (queued for P2+)
+
+1. Fit-score calibration semantics (adjacency when nothing missing; evidence influence; future-role floor).
+2. Resume claims → verified assessment pipeline (work samples, evidence review, contradiction handling).
+3. Interview evaluation maturity: work-sample lifecycle, no missing-score defaults, benchmark.
+4. Dispatch → assigned work with owners, deadlines, completion evidence, outcomes.
+5. Signal reframing documentation (heuristic ≠ probability) + UI wording audit.
+6. Remove remaining `as any` casts (seed/generator boundaries); reconcile any residual lockfile notes.
+7. Flagship workflow: HIRE / MOVE / UPSKILL / COMBINE comparison across demand, time, cost, capacity, skill evidence, policy constraints → evidence-backed recommendation → human approval → tasks → readiness/outcome tracking.
+8. Policy citation robustness (tie quotes to the specific doc+section, not any chunk).
+9. `me` edge case: unauthenticated invoke without an apikey header returns a gateway-level response (not the function's `UNAUTHENTICATED`) — low risk, document only.
 
 ## 2. Contract non-negotiables — current standing
 

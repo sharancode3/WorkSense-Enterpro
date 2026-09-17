@@ -121,7 +121,7 @@ export default function Recruitment() {
   const [evalBusy, setEvalBusy] = useState(false);
 
   const reqs = useQuery({
-    queryKey: ["recruiter-reqs"],
+    queryKey: ["recruiter-reqs", user?.id ?? "anon"],
     queryFn: async () => {
       const { data } = await supabase.from("job_requisitions").select("*").order("created_at", { ascending: false });
       return (data ?? []) as ReqRow[];
@@ -129,7 +129,7 @@ export default function Recruitment() {
   });
 
   const candidates = useQuery({
-    queryKey: ["recruiter-candidates"],
+    queryKey: ["recruiter-candidates", user?.id ?? "anon"],
     queryFn: async () => {
       const { data } = await supabase
         .from("digital_twins")
@@ -144,8 +144,8 @@ export default function Recruitment() {
   const req = reqs.data?.find((r) => r.id === selected) ?? null;
 
   const invalidate = () => {
-    void qc.invalidateQueries({ queryKey: ["recruiter-reqs"] });
-    void qc.invalidateQueries({ queryKey: ["recruiter-candidates"] });
+    void qc.invalidateQueries({ queryKey: ["recruiter-reqs", user?.id ?? "anon"] });
+    void qc.invalidateQueries({ queryKey: ["recruiter-candidates", user?.id ?? "anon"] });
   };
 
   const handleCreate = async () => {

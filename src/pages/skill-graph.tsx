@@ -26,7 +26,7 @@ export default function SkillGraph() {
   const [error, setError] = useState<string | null>(null);
 
   const twins = useQuery({
-    queryKey: ["graph-twins"],
+    queryKey: ["graph-twins", user?.id ?? "anon"],
     queryFn: async () => {
       const { data } = await supabase
         .from("digital_twins")
@@ -37,7 +37,7 @@ export default function SkillGraph() {
   });
 
   const reqs = useQuery({
-    queryKey: ["graph-reqs"],
+    queryKey: ["graph-reqs", user?.id ?? "anon"],
     queryFn: async () => {
       const { data } = await supabase
         .from("job_requisitions")
@@ -48,7 +48,7 @@ export default function SkillGraph() {
   });
 
   const graph = useQuery({
-    queryKey: ["graph-nodes"],
+    queryKey: ["graph-nodes", user?.id ?? "anon"],
     queryFn: async () => {
       const { data } = await supabase.from("skill_graph").select("id, skill, category, outgoing_edges");
       return (data ?? []) as GraphNode[];

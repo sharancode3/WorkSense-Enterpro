@@ -209,7 +209,7 @@ export default function RecommendationHub() {
   const [scanning, setScanning] = useState(false);
 
   const recs = useQuery({
-    queryKey: ["hub-recs"],
+    queryKey: ["hub-recs", user?.id ?? "anon"],
     queryFn: async () => {
       const { data } = await supabase.from("recommendations").select("*").order("created_at", { ascending: false }).limit(20);
       return (data ?? []) as RecommendationRow[];
@@ -253,7 +253,7 @@ export default function RecommendationHub() {
           ? `Scan created ${res.created} new recommendation(s): ${res.created_ids.join(", ")}`
           : "Scan found no new recommendations (all candidates already tracked)."
       );
-      void qc.invalidateQueries({ queryKey: ["hub-recs"] });
+      void qc.invalidateQueries({ queryKey: ["hub-recs", user?.id ?? "anon"] });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Scan failed");
     } finally {
@@ -273,7 +273,7 @@ export default function RecommendationHub() {
       );
       setDialog(null);
       setRationale("");
-      void qc.invalidateQueries({ queryKey: ["hub-recs"] });
+      void qc.invalidateQueries({ queryKey: ["hub-recs", user?.id ?? "anon"] });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Decision failed");
     } finally {

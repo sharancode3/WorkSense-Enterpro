@@ -11,7 +11,7 @@ Deno.serve(async (req) => {
 
   const authHeader = req.headers.get("Authorization") ?? "";
   if (!authHeader) {
-    return new Response(JSON.stringify({ error: "UNAUTHORIZED" }), {
+    return new Response(JSON.stringify({ error: "UNAUTHENTICATED" }), {
       status: 401,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
@@ -24,7 +24,7 @@ Deno.serve(async (req) => {
 
   const { data: userData, error: userErr } = await supabase.auth.getUser(authHeader.replace("Bearer ", ""));
   if (userErr || !userData.user) {
-    return new Response(JSON.stringify({ error: "UNAUTHORIZED" }), {
+    return new Response(JSON.stringify({ error: "UNAUTHENTICATED" }), {
       status: 401,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

@@ -1,5 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
-import { callQwen } from "../_shared/qwen.ts";
+import { callQwen, QwenError } from "../_shared/qwen.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -18,6 +18,7 @@ score is 1-5 matching the tier index (Red Flag=1, Master-Architectural=5). Base 
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  try {
 
   const supabase = createClient(
     Deno.env.get("SUPABASE_URL")!,
@@ -27,7 +28,7 @@ Deno.serve(async (req) => {
   const authHeader = req.headers.get("Authorization") ?? "";
   const { data: userData } = await supabase.auth.getUser(authHeader.replace("Bearer ", ""));
   const uid = userData?.user?.id;
-  if (!uid) return json({ error: "UNAUTHORIZED" }, 401);
+  if (!uid) return json({ error: "UNAUTHENTICATED" }, 401);
 
   const { data: caller } = await supabase
     .from("digital_twins")
@@ -48,7 +49,7 @@ Deno.serve(async (req) => {
   const reqId = (body.req_id ?? "").trim();
   const notes = String(body.notes ?? "");
   if (!twinId || !reqId || notes.trim().length < 10) {
-    return json({ error: "BAD_REQUEST", message: "twin_id, req_id and interview notes (min 10 chars) are required." }, 400);
+    return json({ error: "VALIDATION_ERROR", message: "twin_id, req_id and interview notes (min 10 chars) are required." }, 400);
   }
 
   const { data: twin, error: twinErr } = await supabase
@@ -74,7 +75,7 @@ Deno.serve(async (req) => {
   }[];
   const kit = rubrics.find((r) => r.type === "interview_kit" && r.req_id === reqId);
   if (!kit) {
-    return json({ error: "NO_KIT", message: "Generate the interview kit first." }, 400);
+    return json({ error: "CONFLICT", message: "Generate the interview kit first." }, 400);
   }
 
   const rubricText = JSON.stringify(kit.competencies ?? []);
@@ -132,4 +133,7 @@ ${notes}
     .eq("id", twinId);
 
   return json({ ok: true, evaluation: result });
+  } catch (err) {
+    return json({ error: err instanceof QwenError ? err.code : "INTERNAL", message: err instanceof Error ? err.message : "unknown" });
+  }
 });

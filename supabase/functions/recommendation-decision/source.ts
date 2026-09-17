@@ -36,14 +36,14 @@ Deno.serve(async (req) => {
   const authHeader = req.headers.get("Authorization") ?? "";
   const { data: userData } = await supabase.auth.getUser(authHeader.replace("Bearer ", ""));
   const uid = userData?.user?.id;
-  if (!uid) return json({ error: "UNAUTHORIZED" }, 401);
+  if (!uid) return json({ error: "UNAUTHENTICATED" }, 401);
 
   const { data: caller } = await supabase
     .from("digital_twins")
     .select("id, role, org_id, email")
     .eq("auth_user_id", uid)
     .maybeSingle();
-  if (!caller) return json({ error: "UNAUTHORIZED" }, 401);
+  if (!caller) return json({ error: "UNAUTHENTICATED" }, 401);
 
   let body: { rec_id?: string; decision?: string; rationale?: string } = {};
   try {
@@ -55,10 +55,10 @@ Deno.serve(async (req) => {
   const decision = body.decision ?? "";
   const rationale = String(body.rationale ?? "").trim();
   if (!recId || !["approve", "reject", "request_more_review", "dispatch", "complete"].includes(decision)) {
-    return json({ error: "BAD_REQUEST", message: "rec_id and decision are required." }, 400);
+    return json({ error: "VALIDATION_ERROR", message: "rec_id and decision are required." }, 400);
   }
   if (rationale.length < 5) {
-    return json({ error: "RATIONALE_REQUIRED", message: "A short written rationale is required before the state can change." }, 400);
+    return json({ error: "VALIDATION_ERROR", message: "A short written rationale is required before the state can change." }, 400);
   }
 
   const { data: rec, error: recErr } = await supabase
@@ -89,7 +89,7 @@ Deno.serve(async (req) => {
   };
   const t = transitions[decision];
   if (!t.from.includes(rec.status)) {
-    return json({ error: "INVALID_TRANSITION", message: `Cannot ${decision} a recommendation in state ${rec.status}.` }, 400);
+    return json({ error: "CONFLICT", message: `Cannot ${decision} a recommendation in state ${rec.status}.` }, 400);
   }
 
   const now = new Date().toISOString();

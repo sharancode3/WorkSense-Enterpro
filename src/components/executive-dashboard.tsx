@@ -60,9 +60,9 @@ function heatColor(pct: number): string {
 }
 
 export function ExecutiveDashboard() {
-  const { role } = useAuth();
+  const { role, user } = useAuth();
   const dash = useQuery({
-    queryKey: ["dashboard", role],
+    queryKey: ["dashboard", user?.id ?? "anon", role],
     queryFn: fetchDashboard,
   });
 

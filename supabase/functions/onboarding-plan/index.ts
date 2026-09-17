@@ -518,14 +518,14 @@ Deno.serve(async (req) => {
   const authHeader = req.headers.get("Authorization") ?? "";
   const { data: userData } = await supabase.auth.getUser(authHeader.replace("Bearer ", ""));
   const uid = userData?.user?.id;
-  if (!uid) return json({ error: "UNAUTHORIZED" }, 401);
+  if (!uid) return json({ error: "UNAUTHENTICATED" }, 401);
 
   const { data: caller } = await supabase
     .from("digital_twins")
     .select("id, role, email, org_id")
     .eq("auth_user_id", uid)
     .maybeSingle();
-  if (!caller) return json({ error: "UNAUTHORIZED" }, 401);
+  if (!caller) return json({ error: "UNAUTHENTICATED" }, 401);
 
   let body: { twin_id?: string; req_id?: string; start_date?: string } = {};
   try {
@@ -534,7 +534,7 @@ Deno.serve(async (req) => {
     /* empty */
   }
   const twinId = (body.twin_id ?? "").trim();
-  if (!twinId) return json({ error: "BAD_REQUEST", message: "twin_id is required." }, 400);
+  if (!twinId) return json({ error: "VALIDATION_ERROR", message: "twin_id is required." }, 400);
 
   const { data: twin, error: twinErr } = await supabase
     .from("digital_twins")
@@ -633,7 +633,7 @@ Deno.serve(async (req) => {
     });
   } catch (err) {
     if (err instanceof CycleError) {
-      return json({ error: "CYCLE", message: err.message }, 400);
+      return json({ error: "VALIDATION_ERROR", message: err.message }, 400);
     }
     throw err;
   }
@@ -668,7 +668,7 @@ Deno.serve(async (req) => {
       .insert({ org_id: twin.org_id, twin_id: twinId, tasks: scheduled, status: "pending", plan, audit_events: audit })
       .select("id")
       .single();
-    if (insErr) return json({ error: "INSERT_FAILED", message: insErr.message }, 500);
+    if (insErr) return json({ error: "INTERNAL", message: insErr.message }, 500);
     journeyId = inserted.id;
   }
 

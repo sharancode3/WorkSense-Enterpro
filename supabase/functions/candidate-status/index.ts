@@ -27,7 +27,7 @@ Deno.serve(async (req) => {
   const code = (body.application_code ?? "").trim();
   if (!code) {
     return new Response(
-      JSON.stringify({ error: "BAD_REQUEST", message: "application_code is required." }),
+      JSON.stringify({ error: "VALIDATION_ERROR", message: "application_code is required." }),
       { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
@@ -67,7 +67,7 @@ Deno.serve(async (req) => {
   if (forbidden.length > 0) {
     return new Response(
       JSON.stringify({
-        error: "FORBIDDEN_FIELD",
+        error: "FORBIDDEN",
         message: "Scores, rubrics, notes and internal evaluation fields are not available to candidates.",
         fields: forbidden,
       }),

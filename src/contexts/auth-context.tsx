@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -11,6 +12,7 @@ import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { fetchMe, type Twin } from "@/lib/api";
 import { DEMO_ACCOUNTS } from "@/lib/demo-accounts";
+import { queryClient } from "@/lib/query-client";
 import type { Role } from "@/lib/rbac";
 
 interface AuthContextValue {
@@ -19,6 +21,7 @@ interface AuthContextValue {
   twin: Twin | null;
   role: Role | null;
   loading: boolean;
+  resolving: boolean;
   signInDemo: (role: Exclude<Role, "candidate">) => Promise<void>;
   signInWithEmail: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string, name: string) => Promise<void>;
@@ -32,34 +35,47 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [twin, setTwin] = useState<Twin | null>(null);
   const [loading, setLoading] = useState(true);
+  const [resolving, setResolving] = useState(true);
+  // Guards against a stale fetchMe resolving after the user switched.
+  const currentUidRef = useRef<string | null>(null);
 
-  // Register the listener BEFORE checking the existing session, otherwise the
-  // initial session restore races the listener. Never pass an async callback;
-  // defer any supabase client call inside it with setTimeout(..., 0).
   useEffect(() => {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       setSession(nextSession);
       setUser(nextSession?.user ?? null);
+      currentUidRef.current = nextSession?.user?.id ?? null;
 
       if (nextSession?.user) {
+        setResolving(true);
         setTimeout(() => {
+          const uid = nextSession.user!.id;
           void fetchMe()
-            .then((me) => setTwin(me.twin))
+            .then((me) => {
+              // Only apply if the user is still the one who initiated this call.
+              if (currentUidRef.current === uid) {
+                setTwin(me.twin);
+              }
+            })
             .catch((err) => {
               console.error("auth: failed to resolve twin", err);
-              setTwin(null);
+              if (currentUidRef.current === uid) setTwin(null);
+            })
+            .finally(() => {
+              if (currentUidRef.current === uid) setResolving(false);
             });
         }, 0);
       } else {
         setTwin(null);
+        setResolving(false);
       }
       setLoading(false);
     });
 
     void supabase.auth.getSession().then(({ data }) => {
       if (data.session) {
+        currentUidRef.current = data.session.user.id;
         setSession(data.session);
         setUser(data.session.user);
       }
@@ -97,11 +113,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signOut = useCallback(async () => {
+    currentUidRef.current = null;
+    // Clear all actor-scoped query cache BEFORE dropping the session so a
+    // different persona can never see the previous user's cached data.
+    queryClient.clear();
     const { error } = await supabase.auth.signOut();
     if (error) throw error;
     setUser(null);
     setSession(null);
     setTwin(null);
+    setResolving(false);
   }, []);
 
   const value = useMemo<AuthContextValue>(
@@ -111,12 +132,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       twin,
       role: twin?.role ?? null,
       loading,
+      resolving,
       signInDemo,
       signInWithEmail,
       signUp,
       signOut,
     }),
-    [user, session, twin, loading, signInDemo, signInWithEmail, signUp, signOut]
+    [user, session, twin, loading, resolving, signInDemo, signInWithEmail, signUp, signOut]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
