@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
+import { computeFit } from "../_shared/skill-graph-engine.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -55,14 +56,14 @@ Deno.serve(async (req) => {
 
   const { data: twin, error: twinErr } = await supabase
     .from("digital_twins")
-    .select("id, role, status, name, org_id")
+    .select("id, role, status, name, org_id, verified_skills, seniority_level, computed_fits, audit_events")
     .eq("id", twinId)
     .maybeSingle();
   if (twinErr || !twin) return json({ error: "NOT_FOUND", message: "Candidate not found." }, 404);
 
   const { data: reqRow, error: reqErr } = await supabase
     .from("job_requisitions")
-    .select("id, org_id, title, applicants, audit_events")
+    .select("id, org_id, title, required_skills, future_skills, seniority_level, applicants, audit_events")
     .eq("id", reqId)
     .maybeSingle();
   if (reqErr || !reqRow) return json({ error: "NOT_FOUND", message: "Requisition not found." }, 404);
@@ -86,11 +87,53 @@ Deno.serve(async (req) => {
       p_req_id: reqId,
     });
     if (convErr) return json({ error: "CONVERSION_FAILED", message: convErr.message }, 500);
+
+    // Requirement: on conversion, compute the Fit against the role's required
+    // AND future skills, persist into computed_fits[] + audit.
+    const { data: graphRows } = await supabase
+      .from("skill_graph")
+      .select("skill, category, outgoing_edges")
+      .eq("org_id", twin.org_id);
+    const fits = (twin.computed_fits ?? []) as { target_id: string; scenario: string }[];
+    const fitCurrent = computeFit({
+      candidateSkills: twin.verified_skills ?? [],
+      candidateLevel: twin.seniority_level ?? 3,
+      requiredSkills: reqRow.required_skills ?? [],
+      roleLevel: reqRow.seniority_level ?? 3,
+      skillGraph: graphRows ?? [],
+      target: { type: "requisition", id: reqRow.id, title: reqRow.title },
+      scenario: "current",
+    });
+    const fitFuture = computeFit({
+      candidateSkills: twin.verified_skills ?? [],
+      candidateLevel: twin.seniority_level ?? 3,
+      requiredSkills: reqRow.future_skills ?? [],
+      roleLevel: reqRow.seniority_level ?? 3,
+      skillGraph: graphRows ?? [],
+      target: { type: "requisition", id: reqRow.id, title: reqRow.title },
+      scenario: "future",
+    });
+    const now = new Date().toISOString();
+    const nextFits = fits
+      .filter((f) => !(f.target_id === reqRow.id && (f.scenario === "current" || f.scenario === "future")))
+      .concat([fitCurrent, fitFuture] as unknown as { target_id: string; scenario: string }[]);
+    await supabase
+      .from("digital_twins")
+      .update({
+        computed_fits: nextFits,
+        audit_events: [
+          ...(twin.audit_events ?? []),
+          { actor: caller.email ?? uid, action: "conversion_fit_computed", note: `Role fit current ${fitCurrent.score.toFixed(2)} / future ${fitFuture.score.toFixed(2)} for ${reqRow.title}.`, timestamp: now },
+        ],
+      })
+      .eq("id", twinId);
+
     return json({
       ok: true,
       decision: "select",
       converted: conv,
       applicant: { twin_id: twinId, stage: "selected" },
+      fits: { current: fitCurrent.score, future: fitFuture.score },
       note: `Candidate selected and converted to employee for ${reqRow.title}.`,
     });
   }

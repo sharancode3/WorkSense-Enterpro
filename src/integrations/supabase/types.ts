@@ -3503,6 +3503,8 @@ export type Database = {
           created_at: string
           id: string
           org_id: string
+          plan: Json
+          status: string
           tasks: Json
           twin_id: string
           updated_at: string
@@ -3512,6 +3514,8 @@ export type Database = {
           created_at?: string
           id?: string
           org_id: string
+          plan?: Json
+          status?: string
           tasks?: Json
           twin_id: string
           updated_at?: string
@@ -3521,6 +3525,8 @@ export type Database = {
           created_at?: string
           id?: string
           org_id?: string
+          plan?: Json
+          status?: string
           tasks?: Json
           twin_id?: string
           updated_at?: string

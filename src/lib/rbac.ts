@@ -14,6 +14,7 @@ export type Action =
   | "reset_demo"
   | "view_team"
   | "approve_onboarding"
+  | "view_onboarding"
   | "self_service";
 
 export const ROLES: Role[] = [
@@ -74,11 +75,12 @@ export const ROLE_ACTIONS: Record<Role, Action[]> = {
     "manage_recruitment",
     "approve_recommendations",
     "reset_demo",
+    "view_onboarding",
   ],
-  hr_partner: ["view_all_workforce", "approve_recommendations"],
-  manager: ["view_team", "approve_recommendations", "approve_onboarding"],
+  hr_partner: ["view_all_workforce", "approve_recommendations", "view_onboarding"],
+  manager: ["view_team", "approve_recommendations", "approve_onboarding", "view_onboarding"],
   recruiter: ["manage_recruitment"],
-  employee: ["self_service"],
+  employee: ["self_service", "view_onboarding"],
   candidate: [],
 };
 

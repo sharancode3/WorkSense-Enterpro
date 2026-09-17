@@ -75,8 +75,9 @@ function ModuleStubs({ role }: { role: string }) {
       {MODULES.map(({ icon: Icon, title, desc }) => {
         const open = can(role, "explore_skill_graph") && title === "Skill Intelligence Graph";
         const openRecruitment = can(role, "manage_recruitment") && title === "Recruitment Intelligence";
-        const href = open ? "/graph" : openRecruitment ? "/recruitment" : null;
-        const isOpen = open || openRecruitment;
+        const openOnboarding = can(role, "view_onboarding") && title === "Adaptive Onboarding";
+        const href = open ? "/graph" : openRecruitment ? "/recruitment" : openOnboarding ? "/onboarding" : null;
+        const isOpen = open || openRecruitment || openOnboarding;
         const card = (
           <div className="group flex h-full flex-col gap-3 rounded-lg bg-muted p-5 transition-all duration-200 hover:scale-[1.02]">
             <span className="flex h-12 w-12 items-center justify-center rounded-md bg-white text-primary transition-transform duration-200 group-hover:scale-110">

@@ -154,3 +154,57 @@ export const requisitionCreate = (payload: {
   required_skills: { skill: string; target_proficiency: number }[];
   future_skills: { skill: string; target_proficiency: number }[];
 }) => invoke<{ ok: true; requisition: unknown }>("requisition", { action: "create", ...payload });
+
+// ---- Onboarding ----
+
+export interface ScheduledTask {
+  id: string;
+  title: string;
+  depends_on: string[];
+  skill?: string;
+  target_proficiency?: number;
+  non_waivable?: boolean;
+  duration_days: number;
+  waived: boolean;
+  status: "waived" | "pending" | "done" | "blocked";
+  start_date: string | null;
+  end_date: string | null;
+  topological_level: number;
+  blocked?: { note: string; reported_by: string; at: string } | null;
+}
+
+export interface OnboardingPlan {
+  start_date: string;
+  approvals: { role: string; approved: boolean; by: string; at: string }[];
+  fit_current: number;
+  fit_future: number;
+  generated_at: string;
+}
+
+export interface JourneyRow {
+  id: string;
+  twin_id: string;
+  status: string;
+  plan: OnboardingPlan;
+  tasks: ScheduledTask[];
+}
+
+export const onboardingPlan = (twinId: string, startDate?: string) =>
+  invoke<{ ok: true; journey: JourneyRow }>("onboarding-plan", { twin_id: twinId, start_date: startDate });
+
+export const onboardingApprove = (journeyId: string) =>
+  invoke<{ ok: true; status: string; manager_approved: boolean; hr_approved: boolean; approvals: unknown[] }>(
+    "onboarding-approve",
+    { journey_id: journeyId }
+  );
+
+export const onboardingTask = (
+  journeyId: string,
+  taskId: string,
+  action: "complete" | "block" | "resolve",
+  note?: string
+) =>
+  invoke<{ ok: true; action: string; task_id: string; tasks: ScheduledTask[] }>(
+    "onboarding-task",
+    { journey_id: journeyId, task_id: taskId, action, note }
+  );

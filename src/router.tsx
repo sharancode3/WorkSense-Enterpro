@@ -4,6 +4,7 @@ import CandidateStatus from "./pages/candidate-status";
 import RoleHome from "./pages/role-home";
 import SkillGraph from "./pages/skill-graph";
 import Recruitment from "./pages/recruitment";
+import Onboarding from "./pages/onboarding";
 import NotFound from "./pages/NotFound";
 import { ProtectedRoute } from "./components/protected-route";
 
@@ -47,6 +48,15 @@ export const routers = [
     element: (
       <ProtectedRoute>
         <Recruitment />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: "/onboarding",
+    name: "onboarding",
+    element: (
+      <ProtectedRoute>
+        <Onboarding />
       </ProtectedRoute>
     ),
   },
