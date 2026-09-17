@@ -1,0 +1,612 @@
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+};
+
+// ---------------------------------------------------------------------------
+// WorkSense seed payload — single source of truth for demo data.
+// Everything is pre-computed static JSON: no live generation, no Qwen calls.
+// ---------------------------------------------------------------------------
+
+const DEMO_ORG_ID = "11111111-1111-1111-1111-111111111111";
+
+const DEMO_ACCOUNTS = [
+  { email: "dana@worksense.demo", password: "WorkSenseDemo!2026", twinId: "22222222-2222-2222-2222-222222222201" },
+  { email: "jordan@worksense.demo", password: "WorkSenseDemo!2026", twinId: "22222222-2222-2222-2222-222222222202" },
+  { email: "alex@worksense.demo", password: "WorkSenseDemo!2026", twinId: "22222222-2222-2222-2222-222222222203" },
+  { email: "sam@worksense.demo", password: "WorkSenseDemo!2026", twinId: "22222222-2222-2222-2222-222222222204" },
+];
+
+const POLICIES = [
+  {
+    id: "pol-01",
+    title: "Remote Work Policy",
+    category: "Workplace",
+    effective_date: "2025-01-01",
+    summary: "Hybrid model: 2 in-office days per week baseline; full remote requires manager + People Ops approval.",
+    full_text:
+      "WorkSense operates on a hybrid model. Employees are expected in office two days per week (Tuesday and Thursday baseline) unless their role is designated remote-first. Requests for full-time remote work require written approval from the reporting manager and People Operations. Re-approval is required every six months or when role or team changes. Failure to obtain approval before changing work location may result in loss of remote eligibility.",
+  },
+  {
+    id: "pol-02",
+    title: "Leave & Time Off Policy",
+    category: "Benefits",
+    effective_date: "2025-01-01",
+    summary: "24 days annual paid leave, accrued monthly; 10+ consecutive days requires 4 weeks notice.",
+    full_text:
+      "Employees accrue 24 days of paid annual leave per year on a monthly basis. Leave requests of ten or more consecutive days must be submitted at least four weeks in advance and require manager approval. Unused leave carries over up to five days per year. Emergency leave does not require advance notice but must be logged on the first working day.",
+  },
+  {
+    id: "pol-03",
+    title: "Learning & Development Reimbursement",
+    category: "Development",
+    effective_date: "2025-01-01",
+    summary: "Up to 2,500 per year for role-relevant training; certifications tied to roadmap priorities.",
+    full_text:
+      "Employees may claim reimbursement up to 2,500 per calendar year for role-relevant courses, certifications, and conferences. Claims must include proof of completion and a one-paragraph relevance statement. Certifications aligned with the current quarter's skill roadmap are prioritized in review. Pre-approval is required for expenses above 1,000.",
+  },
+  {
+    id: "pol-04",
+    title: "Internal Mobility Policy",
+    category: "Career",
+    effective_date: "2025-01-01",
+    summary: "Eligible after 12 months in role; must inform manager before applying; 30-day transition.",
+    full_text:
+      "Employees are eligible to apply for internal roles after completing twelve months in their current role, unless a documented exception is approved by both managers. Candidates must inform their current manager before applying. The transition window is thirty days unless both managers agree on a shorter handover. A rejected internal application carries no negative record.",
+  },
+  {
+    id: "pol-05",
+    title: "Performance Review Cycle",
+    category: "Performance",
+    effective_date: "2025-01-01",
+    summary: "Two review cycles per year; calibration sessions ensure cross-team fairness.",
+    full_text:
+      "Performance reviews run twice per year (mid-year and end-of-year). Each cycle includes manager assessment, peer feedback, and a calibration session to align ratings across teams. Employees may submit self-assessment two weeks before the review meeting. Ratings use a five-level scale from 'Needs Improvement' to 'Exceptional'.",
+  },
+  {
+    id: "pol-06",
+    title: "Parental Leave Policy",
+    category: "Benefits",
+    effective_date: "2025-01-01",
+    summary: "16 weeks fully paid for primary caregivers; 6 weeks for secondary; return-to-work support.",
+    full_text:
+      "Primary caregivers receive sixteen weeks of fully paid parental leave; secondary caregivers receive six weeks. Leave may be taken in one continuous block or, with manager approval, split. Return-to-work support includes a phased schedule for the first two weeks back and access to an internal parenting community.",
+  },
+  {
+    id: "pol-07",
+    title: "Equipment & Security Policy",
+    category: "Security",
+    effective_date: "2025-01-01",
+    summary: "Company-issued devices only; MFA mandatory; annual security training required.",
+    full_text:
+      "Work must be performed on company-issued devices. Multi-factor authentication is mandatory on all accounts. Annual security training is required for continued system access; non-completion within 60 days of the due date suspends access. Lost devices must be reported within 24 hours.",
+  },
+  {
+    id: "pol-08",
+    title: "Overtime & Comp Time Policy",
+    category: "Workplace",
+    effective_date: "2025-01-01",
+    summary: "Overtime requires manager pre-approval; compensated as time-off on a 1:1 basis.",
+    full_text:
+      "Overtime requires manager pre-approval unless responding to a declared incident. Approved overtime is compensated as equivalent time off on a 1:1 basis, to be taken within 90 days. Employees are expected to track overtime in the time system the same week it is worked.",
+  },
+];
+
+const SKILLS = [
+  { skill: "Go", category: "Backend", outgoing_edges: [{ target_skill: "REST APIs", type: "ADJACENT_TO", weight: 0.6 }, { target_skill: "TypeScript", type: "TRANSFERABLE_TO", weight: 0.55 }] },
+  { skill: "TypeScript", category: "Frontend", outgoing_edges: [{ target_skill: "React", type: "PREREQUISITE_OF", weight: 0.8 }, { target_skill: "Node.js", type: "ADJACENT_TO", weight: 0.7 }] },
+  { skill: "React", category: "Frontend", outgoing_edges: [{ target_skill: "TypeScript", type: "ADJACENT_TO", weight: 0.75 }] },
+  { skill: "Node.js", category: "Backend", outgoing_edges: [{ target_skill: "REST APIs", type: "ADJACENT_TO", weight: 0.75 }] },
+  { skill: "Docker", category: "DevOps", outgoing_edges: [{ target_skill: "Containerization", type: "ADJACENT_TO", weight: 0.8 }] },
+  { skill: "Containerization", category: "DevOps", outgoing_edges: [{ target_skill: "Kubernetes", type: "PREREQUISITE_OF", weight: 0.85 }] },
+  { skill: "Kubernetes", category: "DevOps", outgoing_edges: [] },
+  { skill: "PostgreSQL", category: "Data", outgoing_edges: [{ target_skill: "SQL", type: "ADJACENT_TO", weight: 0.9 }, { target_skill: "Data Modeling", type: "ADJACENT_TO", weight: 0.65 }] },
+  { skill: "SQL", category: "Data", outgoing_edges: [{ target_skill: "Data Modeling", type: "PREREQUISITE_OF", weight: 0.9 }, { target_skill: "Python", type: "ADJACENT_TO", weight: 0.6 }] },
+  { skill: "Python", category: "Data", outgoing_edges: [{ target_skill: "Data Modeling", type: "ADJACENT_TO", weight: 0.7 }, { target_skill: "ETL", type: "ADJACENT_TO", weight: 0.7 }, { target_skill: "TypeScript", type: "TRANSFERABLE_TO", weight: 0.5 }] },
+  { skill: "Data Modeling", category: "Data", outgoing_edges: [{ target_skill: "ETL", type: "ADJACENT_TO", weight: 0.6 }] },
+  { skill: "ETL", category: "Data", outgoing_edges: [] },
+  { skill: "Tableau", category: "Analytics", outgoing_edges: [{ target_skill: "Data Visualization", type: "ADJACENT_TO", weight: 0.8 }] },
+  { skill: "Data Visualization", category: "Analytics", outgoing_edges: [{ target_skill: "Storytelling with Data", type: "TRANSFERABLE_TO", weight: 0.6 }] },
+  { skill: "Storytelling with Data", category: "Analytics", outgoing_edges: [] },
+  { skill: "REST APIs", category: "Backend", outgoing_edges: [{ target_skill: "Containerization", type: "ADJACENT_TO", weight: 0.4 }] },
+  { skill: "Leadership", category: "People", outgoing_edges: [{ target_skill: "Mentoring", type: "ADJACENT_TO", weight: 0.8 }] },
+  { skill: "Mentoring", category: "People", outgoing_edges: [] },
+];
+
+const REQUISITIONS = [
+  {
+    id: "33333333-3333-3333-3333-333333333301",
+    title: "Senior Backend Engineer",
+    department: "Platform",
+    required_skills: [
+      { skill: "Go", target_proficiency: 4 },
+      { skill: "PostgreSQL", target_proficiency: 3 },
+      { skill: "Docker", target_proficiency: 3 },
+      { skill: "REST APIs", target_proficiency: 3 },
+    ],
+    future_skills: [
+      { skill: "Kubernetes", target_proficiency: 2 },
+      { skill: "Event-driven architecture", target_proficiency: 2 },
+    ],
+    applicants: [
+      { twin_id: "22222222-2222-2222-2222-222222222205", stage: "final_round", application_code: "WS-PRIYA-2026", applied_at: "2026-08-12T09:00:00Z", match_score: 0.87 },
+      { twin_id: "22222222-2222-2222-2222-222222222206", stage: "screening", application_code: "WS-DEV-2026", applied_at: "2026-09-02T09:00:00Z", match_score: 0.62 },
+    ],
+    audit_events: [
+      { actor: "dana@worksense.demo", action: "created", note: "Requisition opened", timestamp: "2026-08-05T09:00:00Z" },
+    ],
+  },
+  {
+    id: "33333333-3333-3333-3333-333333333302",
+    title: "Data Analyst",
+    department: "Data",
+    required_skills: [
+      { skill: "SQL", target_proficiency: 4 },
+      { skill: "Python", target_proficiency: 3 },
+      { skill: "Data Modeling", target_proficiency: 3 },
+      { skill: "Tableau", target_proficiency: 2 },
+    ],
+    future_skills: [
+      { skill: "dbt", target_proficiency: 2 },
+      { skill: "Machine Learning fundamentals", target_proficiency: 2 },
+    ],
+    applicants: [
+      { twin_id: "22222222-2222-2222-2222-222222222207", stage: "technical_interview", application_code: "WS-MAYA-2026", applied_at: "2026-08-20T09:00:00Z", match_score: 0.74 },
+    ],
+    audit_events: [
+      { actor: "dana@worksense.demo", action: "created", note: "Requisition opened", timestamp: "2026-08-08T09:00:00Z" },
+    ],
+  },
+];
+
+const JOURNEY_TASKS = [
+  { id: "t1", title: "IT account & laptop setup", depends_on: [], status: "done", waived: false, approvals: [{ role: "it", approved: true, timestamp: "2026-08-01T10:00:00Z" }] },
+  { id: "t2", title: "Security & compliance training", depends_on: [], status: "done", waived: false, approvals: [] },
+  { id: "t3", title: "Team introduction & codebase walkthrough", depends_on: ["t1"], status: "done", waived: false, approvals: [] },
+  { id: "t4", title: "First sprint contribution", depends_on: ["t1", "t3"], status: "in_progress", waived: false, approvals: [] },
+  { id: "t5", title: "30-day manager check-in", depends_on: ["t2"], status: "pending", waived: false, approvals: [{ role: "manager", approved: false, timestamp: null }] },
+  { id: "t6", title: "Onboarding feedback survey", depends_on: ["t4", "t5"], status: "pending", waived: false, approvals: [] },
+];
+
+function buildTwins(authIds: Record<string, string>) {
+  return [
+    {
+      id: "22222222-2222-2222-2222-222222222201",
+      org_id: DEMO_ORG_ID,
+      auth_user_id: authIds["dana@worksense.demo"] ?? null,
+      role: "hr_executive",
+      status: "active",
+      name: "Dana Whitmore",
+      email: "dana@worksense.demo",
+      department: "People Operations",
+      job_title: "VP of People",
+      manager_id: null,
+      tenure_months: 84,
+      verified_skills: [
+        { name: "Leadership", proficiency: 5, evidence_source: "performance_review", verification_rigor: "high" },
+        { name: "Stakeholder Management", proficiency: 4, evidence_source: "performance_review", verification_rigor: "high" },
+        { name: "People Analytics", proficiency: 3, evidence_source: "certification", verification_rigor: "medium" },
+      ],
+      interview_rubrics: [],
+      performance_history: [
+        { cycle: "2025-H2", rating: "Exceeds Expectations", summary: "Built the People Ops analytics function from scratch." },
+        { cycle: "2026-H1", rating: "Exceeds Expectations", summary: "Led org-wide retention initiative." },
+      ],
+      signals: [],
+      computed_fits: [],
+      audit_events: [],
+    },
+    {
+      id: "22222222-2222-2222-2222-222222222202",
+      org_id: DEMO_ORG_ID,
+      auth_user_id: authIds["jordan@worksense.demo"] ?? null,
+      role: "manager",
+      status: "active",
+      name: "Jordan Reyes",
+      email: "jordan@worksense.demo",
+      department: "Platform",
+      job_title: "Engineering Manager",
+      manager_id: "22222222-2222-2222-2222-222222222201",
+      tenure_months: 48,
+      verified_skills: [
+        { name: "Leadership", proficiency: 4, evidence_source: "performance_review", verification_rigor: "high" },
+        { name: "Go", proficiency: 4, evidence_source: "certification", verification_rigor: "medium" },
+        { name: "Mentoring", proficiency: 4, evidence_source: "peer_feedback", verification_rigor: "medium" },
+      ],
+      interview_rubrics: [],
+      performance_history: [
+        { cycle: "2025-H2", rating: "Exceeds Expectations", summary: "Shipped platform reliability program." },
+      ],
+      signals: [],
+      computed_fits: [],
+      audit_events: [],
+    },
+    {
+      id: "22222222-2222-2222-2222-222222222203",
+      org_id: DEMO_ORG_ID,
+      auth_user_id: authIds["alex@worksense.demo"] ?? null,
+      role: "employee",
+      status: "active",
+      name: "Alex Chen",
+      email: "alex@worksense.demo",
+      department: "Platform",
+      job_title: "Backend Engineer",
+      manager_id: "22222222-2222-2222-2222-222222222202",
+      tenure_months: 3,
+      verified_skills: [
+        { name: "Go", proficiency: 3, evidence_source: "interview_rubric", verification_rigor: "high" },
+        { name: "Docker", proficiency: 2, evidence_source: "project", verification_rigor: "medium" },
+        { name: "SQL", proficiency: 2, evidence_source: "project", verification_rigor: "medium" },
+      ],
+      interview_rubrics: [
+        { role: "Backend Engineer", avg_score: 0.85, notes: "Strong systems thinking; growth area in production debugging.", evaluated_at: "2026-06-10T09:00:00Z" },
+      ],
+      performance_history: [
+        { cycle: "2026-H1", rating: "On Track", summary: "New hire, first sprint shipped on schedule." },
+      ],
+      signals: [],
+      computed_fits: [
+        { target_type: "requisition", target_id: "33333333-3333-3333-3333-333333333301", direct: ["Go", "SQL"], adjacent: ["PostgreSQL"], transferable: ["Docker"], gaps: ["Kubernetes"], score: 0.78, computed_at: "2026-08-15T09:00:00Z" },
+      ],
+      audit_events: [
+        { actor: "system", action: "created", note: "Onboarding journey initiated", timestamp: "2026-07-20T09:00:00Z" },
+      ],
+    },
+    {
+      id: "22222222-2222-2222-2222-222222222204",
+      org_id: DEMO_ORG_ID,
+      auth_user_id: authIds["sam@worksense.demo"] ?? null,
+      role: "employee",
+      status: "active",
+      name: "Samira Patel",
+      email: "sam@worksense.demo",
+      department: "Data",
+      job_title: "Data Analyst",
+      manager_id: "22222222-2222-2222-2222-222222222202",
+      tenure_months: 42,
+      verified_skills: [
+        { name: "SQL", proficiency: 4, evidence_source: "certification", verification_rigor: "high" },
+        { name: "Python", proficiency: 3, evidence_source: "project", verification_rigor: "medium" },
+        { name: "Tableau", proficiency: 3, evidence_source: "project", verification_rigor: "medium" },
+        { name: "Data Modeling", proficiency: 2, evidence_source: "course", verification_rigor: "low" },
+      ],
+      interview_rubrics: [],
+      performance_history: [
+        { cycle: "2024-H2", rating: "Exceeds Expectations", summary: "Rebuilt core reporting pipeline." },
+        { cycle: "2025-H1", rating: "Exceeds Expectations", summary: "Owned executive metrics dashboards." },
+        { cycle: "2025-H2", rating: "Exceeds Expectations", summary: "Consistent high output; strong stakeholder trust." },
+        { cycle: "2026-H1", rating: "Exceeds Expectations", summary: "Top-quartile delivery again; engagement concerns noted." },
+      ],
+      signals: [
+        { type: "workforce_review_signal", value: 78, computed_at: "2026-09-10T09:00:00Z", factors: ["declining engagement survey", "below-baseline attendance (4 weeks)", "3 late deliverables this quarter"] },
+        { type: "engagement_survey", value: "3.1 / 5", trend: "declining over 2 cycles", last_measured: "2026-08-25T09:00:00Z" },
+        { type: "attendance", value: "below baseline", windows: "last 4 weeks", last_measured: "2026-09-12T09:00:00Z" },
+      ],
+      computed_fits: [
+        { target_type: "requisition", target_id: "33333333-3333-3333-3333-333333333302", direct: ["SQL", "Python", "Tableau"], adjacent: ["Data Modeling"], transferable: ["ETL"], gaps: ["dbt"], score: 0.82, computed_at: "2026-09-01T09:00:00Z" },
+      ],
+      audit_events: [
+        { actor: "system", action: "signal_updated", note: "Workforce review signal recomputed to 78", timestamp: "2026-09-10T09:00:00Z" },
+      ],
+    },
+    {
+      id: "22222222-2222-2222-2222-222222222205",
+      org_id: DEMO_ORG_ID,
+      auth_user_id: null,
+      role: "candidate",
+      status: "candidate",
+      name: "Priya Nair",
+      email: "priya.nair@example.com",
+      department: "Platform",
+      job_title: "Candidate — Senior Backend Engineer",
+      manager_id: null,
+      tenure_months: 0,
+      verified_skills: [
+        { name: "Go", proficiency: 4, evidence_source: "resume", verification_rigor: "low" },
+        { name: "PostgreSQL", proficiency: 4, evidence_source: "resume", verification_rigor: "low" },
+        { name: "Docker", proficiency: 3, evidence_source: "resume", verification_rigor: "low" },
+        { name: "Kubernetes", proficiency: 2, evidence_source: "resume", verification_rigor: "low" },
+      ],
+      interview_rubrics: [
+        { role: "Senior Backend Engineer", round: "technical", avg_score: 0.87, strengths: ["distributed systems", "database design"], growth_areas: ["observability tooling"], evaluated_at: "2026-09-05T09:00:00Z" },
+        { role: "Senior Backend Engineer", round: "final", avg_score: 0.88, strengths: ["system design", "team fit"], growth_areas: [], evaluated_at: "2026-09-12T09:00:00Z" },
+      ],
+      performance_history: [],
+      signals: [],
+      computed_fits: [
+        { target_type: "requisition", target_id: "33333333-3333-3333-3333-333333333301", direct: ["Go", "PostgreSQL", "Docker"], adjacent: ["Kubernetes"], transferable: [], gaps: [], score: 0.91, computed_at: "2026-09-13T09:00:00Z" },
+      ],
+      audit_events: [
+        { actor: "system", action: "stage_changed", note: "Advanced to final_round", timestamp: "2026-09-12T09:00:00Z" },
+      ],
+    },
+    {
+      id: "22222222-2222-2222-2222-222222222206",
+      org_id: DEMO_ORG_ID,
+      auth_user_id: null,
+      role: "candidate",
+      status: "candidate",
+      name: "Dev Sharma",
+      email: "dev.sharma@example.com",
+      department: "Platform",
+      job_title: "Candidate — Senior Backend Engineer",
+      manager_id: null,
+      tenure_months: 0,
+      verified_skills: [
+        { name: "Go", proficiency: 2, evidence_source: "resume", verification_rigor: "low" },
+        { name: "Node.js", proficiency: 4, evidence_source: "resume", verification_rigor: "low" },
+        { name: "REST APIs", proficiency: 3, evidence_source: "resume", verification_rigor: "low" },
+      ],
+      interview_rubrics: [],
+      performance_history: [],
+      signals: [],
+      computed_fits: [
+        { target_type: "requisition", target_id: "33333333-3333-3333-3333-333333333301", direct: ["Node.js", "REST APIs"], adjacent: ["Go"], transferable: ["TypeScript"], gaps: ["PostgreSQL", "Docker"], score: 0.62, computed_at: "2026-09-14T09:00:00Z" },
+      ],
+      audit_events: [],
+    },
+    {
+      id: "22222222-2222-2222-2222-222222222207",
+      org_id: DEMO_ORG_ID,
+      auth_user_id: null,
+      role: "candidate",
+      status: "candidate",
+      name: "Maya Kapoor",
+      email: "maya.kapoor@example.com",
+      department: "Data",
+      job_title: "Candidate — Data Analyst",
+      manager_id: null,
+      tenure_months: 0,
+      verified_skills: [
+        { name: "SQL", proficiency: 4, evidence_source: "resume", verification_rigor: "low" },
+        { name: "Python", proficiency: 3, evidence_source: "resume", verification_rigor: "low" },
+        { name: "Data Modeling", proficiency: 3, evidence_source: "resume", verification_rigor: "low" },
+        { name: "Tableau", proficiency: 2, evidence_source: "resume", verification_rigor: "low" },
+      ],
+      interview_rubrics: [
+        { role: "Data Analyst", round: "technical", avg_score: 0.74, strengths: ["query optimization", "statistics"], growth_areas: ["dashboard UX"], evaluated_at: "2026-09-08T09:00:00Z" },
+      ],
+      performance_history: [],
+      signals: [],
+      computed_fits: [
+        { target_type: "requisition", target_id: "33333333-3333-3333-3333-333333333302", direct: ["SQL", "Python", "Data Modeling", "Tableau"], adjacent: [], transferable: ["ETL"], gaps: ["dbt"], score: 0.8, computed_at: "2026-09-09T09:00:00Z" },
+      ],
+      audit_events: [],
+    },
+  ];
+}
+
+const RECOMMENDATIONS = [
+  {
+    id: "44444444-4444-4444-4444-444444444401",
+    org_id: DEMO_ORG_ID,
+    twin_id: "22222222-2222-2222-2222-222222222204",
+    category: "workforce_review",
+    urgency: "high",
+    evidence_ledger: [
+      { type: "workforce_review_signal", value: 78, note: "Multiple workforce indicators warrant HR review — decision support, not a prediction." },
+      { type: "engagement_survey", value: "3.1 / 5", note: "Declining across two consecutive cycles." },
+      { type: "attendance", value: "below baseline", note: "4 consecutive weeks below personal baseline." },
+      { type: "performance", value: "Exceeds Expectations", note: "Last review cycle; strong history of delivery." },
+    ],
+    proposed_action: {
+      title: "Schedule a structured retention conversation",
+      description: "Open a manager-led check-in with Samira within the week. Focus on engagement drivers and growth path.",
+      steps: [
+        { order: 1, action: "Book a 1:1 focused on engagement, not performance." },
+        { order: 2, action: "Review the workforce signal factors together." },
+        { order: 3, action: "Propose a growth or mobility option (internal role, project, or upskilling)." },
+        { order: 4, action: "Log the outcome in the recommendation record." },
+      ],
+    },
+    status: "needs_review",
+    required_signoff_role: "manager",
+    reviewer_rationale: {},
+    audit_events: [{ actor: "system", action: "created", note: "Auto-generated from workforce signals", timestamp: "2026-09-10T09:00:00Z" }],
+  },
+  {
+    id: "44444444-4444-4444-4444-444444444402",
+    org_id: DEMO_ORG_ID,
+    twin_id: "22222222-2222-2222-2222-222222222203",
+    category: "mobility",
+    urgency: "low",
+    evidence_ledger: [
+      { type: "skill_match", value: 0.78, note: "Strong direct fit with Platform work; adjacent path toward Containerization." },
+      { type: "skill_graph", value: "Docker → Containerization → Kubernetes", note: "Clear upskilling ladder in current team." },
+    ],
+    proposed_action: {
+      title: "Expose Alex to Kubernetes work",
+      description: "Assign a Kubernetes-adjacent task in the next sprint to build the adjacent-skill bridge.",
+      steps: [
+        { order: 1, action: "Assign containerization-adjacent story." },
+        { order: 2, action: "Pair with a team member on the platform cluster." },
+        { order: 3, action: "Add Kubernetes to the L&D plan for next cycle." },
+      ],
+    },
+    status: "needs_review",
+    required_signoff_role: "manager",
+    reviewer_rationale: {},
+    audit_events: [{ actor: "system", action: "created", note: "Generated from skill graph adjacency", timestamp: "2026-09-08T09:00:00Z" }],
+  },
+  {
+    id: "44444444-4444-4444-4444-444444444403",
+    org_id: DEMO_ORG_ID,
+    twin_id: "22222222-2222-2222-2222-222222222205",
+    category: "recruitment",
+    urgency: "medium",
+    evidence_ledger: [
+      { type: "interview_rubric", value: 0.87, note: "Final-round average score." },
+      { type: "skill_match", value: 0.91, note: "Direct skills cover all required proficiencies." },
+    ],
+    proposed_action: {
+      title: "Advance candidate to offer stage",
+      description: "Priya cleared final round with a 0.91 skill match and top rubric scores. Recommend moving to offer.",
+      steps: [
+        { order: 1, action: "Review rubric details and references." },
+        { order: 2, action: "Prepare offer package aligned to band." },
+        { order: 3, action: "Log outcome in the recommendation record." },
+      ],
+    },
+    status: "needs_review",
+    required_signoff_role: "hr_executive",
+    reviewer_rationale: {},
+    audit_events: [{ actor: "system", action: "created", note: "Generated from recruitment pipeline", timestamp: "2026-09-13T09:00:00Z" }],
+  },
+];
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function jsonResponse(body: unknown, status = 200, extraHeaders: Record<string, string> = {}) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json", ...extraHeaders },
+  });
+}
+
+async function ensureDemoAuthUsers(supabase) {
+  const created: string[] = [];
+  const idByEmail: Record<string, string> = {};
+  const { data: allUsers, error: listErr } = await supabase.auth.admin.listUsers({ page: 1, perPage: 1000 });
+  if (listErr) throw new Error(`Failed to list auth users: ${listErr.message}`);
+  const usersByEmail = new Map((allUsers?.users ?? []).map((u) => [u.email, u.id]));
+
+  for (const account of DEMO_ACCOUNTS) {
+    const existingId = usersByEmail.get(account.email);
+    if (existingId) {
+      idByEmail[account.email] = existingId;
+      continue;
+    }
+    const { data, error } = await supabase.auth.admin.createUser({
+      email: account.email,
+      password: account.password,
+      email_confirm: true,
+      user_metadata: { name: account.name, is_demo: true },
+    });
+    if (error) throw new Error(`Failed to create demo user ${account.email}: ${error.message}`);
+    created.push(account.email);
+    idByEmail[account.email] = data.user.id;
+  }
+  return { created, idByEmail };
+}
+
+async function reseed(supabase, authIds: Record<string, string>) {
+  // Scoped teardown of the demo org's rows (children before parents),
+  // plus any trigger-created twins for the demo auth accounts.
+  await supabase.from("recommendations").delete().eq("org_id", DEMO_ORG_ID);
+  await supabase.from("onboarding_journeys").delete().eq("org_id", DEMO_ORG_ID);
+  await supabase.from("job_requisitions").delete().eq("org_id", DEMO_ORG_ID);
+  await supabase.from("skill_graph").delete().eq("org_id", DEMO_ORG_ID);
+  const demoIds = Object.values(authIds);
+  if (demoIds.length > 0) {
+    await supabase.from("digital_twins").delete().in("auth_user_id", demoIds);
+  }
+  await supabase.from("digital_twins").delete().eq("org_id", DEMO_ORG_ID);
+  await supabase.from("organizations").delete().eq("id", DEMO_ORG_ID);
+
+  // Re-insert the frozen seed payload.
+  const { error: orgErr } = await supabase.from("organizations").insert({
+    id: DEMO_ORG_ID,
+    name: "WorkSense Demo Org",
+    policies: POLICIES,
+  });
+  if (orgErr) throw new Error(`org insert: ${orgErr.message}`);
+
+  const { error: twinsErr } = await supabase.from("digital_twins").insert(buildTwins(authIds));
+  if (twinsErr) throw new Error(`twins insert: ${twinsErr.message}`);
+
+  const { error: skillsErr } = await supabase.from("skill_graph").insert(
+    SKILLS.map((s) => ({ ...s, org_id: DEMO_ORG_ID }))
+  );
+  if (skillsErr) throw new Error(`skills insert: ${skillsErr.message}`);
+
+  const { error: reqsErr } = await supabase.from("job_requisitions").insert(
+    REQUISITIONS.map((r) => ({ ...r, org_id: DEMO_ORG_ID }))
+  );
+  if (reqsErr) throw new Error(`reqs insert: ${reqsErr.message}`);
+
+  const { error: journeyErr } = await supabase.from("onboarding_journeys").insert({
+    id: "55555555-5555-5555-5555-555555555555",
+    org_id: DEMO_ORG_ID,
+    twin_id: "22222222-2222-2222-2222-222222222203",
+    tasks: JOURNEY_TASKS,
+    audit_events: [
+      { actor: "system", action: "created", note: "Onboarding journey generated", timestamp: "2026-07-20T09:00:00Z" },
+    ],
+  });
+  if (journeyErr) throw new Error(`journey insert: ${journeyErr.message}`);
+
+  const { error: recsErr } = await supabase.from("recommendations").insert(
+    RECOMMENDATIONS.map((r) => ({ ...r, org_id: DEMO_ORG_ID }))
+  );
+  if (recsErr) throw new Error(`recs insert: ${recsErr.message}`);
+}
+
+// ---------------------------------------------------------------------------
+// Entry point
+// ---------------------------------------------------------------------------
+
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+
+  const supabase = createClient(
+    Deno.env.get("SUPABASE_URL")!,
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+  );
+
+  let body: { bootstrap?: boolean } = {};
+  try {
+    body = await req.json();
+  } catch {
+    /* empty body is fine */
+  }
+
+  // Authorize: the database is considered initialized once a linked HR
+  // Executive twin exists. Until then (fresh Cloud), bootstrap is allowed.
+  const { count: hrCount, error: hrErr } = await supabase
+    .from("digital_twins")
+    .select("id", { count: "exact", head: true })
+    .eq("role", "hr_executive")
+    .not("auth_user_id", "is", null);
+  if (hrErr) throw hrErr;
+  const isInitialized = (hrCount ?? 0) > 0;
+
+  if (isInitialized) {
+    const authHeader = req.headers.get("Authorization") ?? "";
+    const { data: userData } = await supabase.auth.getUser(authHeader.replace("Bearer ", ""));
+    const uid = userData?.user?.id;
+    if (!uid) return jsonResponse({ error: "UNAUTHORIZED" }, 401);
+
+    const { data: twin } = await supabase
+      .from("digital_twins")
+      .select("role")
+      .eq("auth_user_id", uid)
+      .maybeSingle();
+    if (twin?.role !== "hr_executive") {
+      return jsonResponse({ error: "FORBIDDEN", message: "Only HR Executives may reset demo data." }, 403);
+    }
+  }
+
+  try {
+    const { created, idByEmail } = await ensureDemoAuthUsers(supabase);
+    await reseed(supabase, idByEmail);
+    return jsonResponse({
+      ok: true,
+      created_users: created,
+      seeded: {
+        organizations: 1,
+        digital_twins: 7,
+        skill_graph: SKILLS.length,
+        job_requisitions: REQUISITIONS.length,
+        onboarding_journeys: 1,
+        recommendations: RECOMMENDATIONS.length,
+      },
+    });
+  } catch (err) {
+    console.error("reset-demo failed:", err);
+    return jsonResponse({ error: "INTERNAL", message: err instanceof Error ? err.message : "unknown" }, 500);
+  }
+});

@@ -3360,13 +3360,323 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      digital_twins: {
+        Row: {
+          audit_events: Json
+          auth_user_id: string | null
+          computed_fits: Json
+          created_at: string
+          department: string | null
+          email: string
+          id: string
+          interview_rubrics: Json
+          job_title: string | null
+          manager_id: string | null
+          name: string
+          org_id: string | null
+          performance_history: Json
+          role: string
+          signals: Json
+          status: string
+          tenure_months: number
+          updated_at: string
+          verified_skills: Json
+        }
+        Insert: {
+          audit_events?: Json
+          auth_user_id?: string | null
+          computed_fits?: Json
+          created_at?: string
+          department?: string | null
+          email: string
+          id?: string
+          interview_rubrics?: Json
+          job_title?: string | null
+          manager_id?: string | null
+          name: string
+          org_id?: string | null
+          performance_history?: Json
+          role: string
+          signals?: Json
+          status?: string
+          tenure_months?: number
+          updated_at?: string
+          verified_skills?: Json
+        }
+        Update: {
+          audit_events?: Json
+          auth_user_id?: string | null
+          computed_fits?: Json
+          created_at?: string
+          department?: string | null
+          email?: string
+          id?: string
+          interview_rubrics?: Json
+          job_title?: string | null
+          manager_id?: string | null
+          name?: string
+          org_id?: string | null
+          performance_history?: Json
+          role?: string
+          signals?: Json
+          status?: string
+          tenure_months?: number
+          updated_at?: string
+          verified_skills?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "digital_twins_manager_id_fkey"
+            columns: ["manager_id"]
+            referencedRelation: "digital_twins"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "digital_twins_org_id_fkey"
+            columns: ["org_id"]
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      job_requisitions: {
+        Row: {
+          applicants: Json
+          audit_events: Json
+          created_at: string
+          department: string
+          future_skills: Json
+          id: string
+          org_id: string
+          required_skills: Json
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          applicants?: Json
+          audit_events?: Json
+          created_at?: string
+          department: string
+          future_skills?: Json
+          id?: string
+          org_id: string
+          required_skills?: Json
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          applicants?: Json
+          audit_events?: Json
+          created_at?: string
+          department?: string
+          future_skills?: Json
+          id?: string
+          org_id?: string
+          required_skills?: Json
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "job_requisitions_org_id_fkey"
+            columns: ["org_id"]
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      onboarding_journeys: {
+        Row: {
+          audit_events: Json
+          created_at: string
+          id: string
+          org_id: string
+          tasks: Json
+          twin_id: string
+          updated_at: string
+        }
+        Insert: {
+          audit_events?: Json
+          created_at?: string
+          id?: string
+          org_id: string
+          tasks?: Json
+          twin_id: string
+          updated_at?: string
+        }
+        Update: {
+          audit_events?: Json
+          created_at?: string
+          id?: string
+          org_id?: string
+          tasks?: Json
+          twin_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "onboarding_journeys_org_id_fkey"
+            columns: ["org_id"]
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "onboarding_journeys_twin_id_fkey"
+            columns: ["twin_id"]
+            referencedRelation: "digital_twins"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      organizations: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+          policies: Json
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name: string
+          policies?: Json
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+          policies?: Json
+        }
+        Relationships: []
+      }
+      recommendations: {
+        Row: {
+          audit_events: Json
+          category: string
+          created_at: string
+          evidence_ledger: Json
+          id: string
+          org_id: string
+          proposed_action: Json
+          required_signoff_role: string | null
+          reviewer_rationale: Json
+          status: string
+          twin_id: string | null
+          updated_at: string
+          urgency: string
+        }
+        Insert: {
+          audit_events?: Json
+          category: string
+          created_at?: string
+          evidence_ledger?: Json
+          id?: string
+          org_id: string
+          proposed_action?: Json
+          required_signoff_role?: string | null
+          reviewer_rationale?: Json
+          status?: string
+          twin_id?: string | null
+          updated_at?: string
+          urgency?: string
+        }
+        Update: {
+          audit_events?: Json
+          category?: string
+          created_at?: string
+          evidence_ledger?: Json
+          id?: string
+          org_id?: string
+          proposed_action?: Json
+          required_signoff_role?: string | null
+          reviewer_rationale?: Json
+          status?: string
+          twin_id?: string | null
+          updated_at?: string
+          urgency?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "recommendations_org_id_fkey"
+            columns: ["org_id"]
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "recommendations_twin_id_fkey"
+            columns: ["twin_id"]
+            referencedRelation: "digital_twins"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      skill_graph: {
+        Row: {
+          category: string | null
+          created_at: string
+          id: string
+          org_id: string
+          outgoing_edges: Json
+          skill: string
+        }
+        Insert: {
+          category?: string | null
+          created_at?: string
+          id?: string
+          org_id: string
+          outgoing_edges?: Json
+          skill: string
+        }
+        Update: {
+          category?: string | null
+          created_at?: string
+          id?: string
+          org_id?: string
+          outgoing_edges?: Json
+          skill?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "skill_graph_org_id_fkey"
+            columns: ["org_id"]
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      current_twin: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          audit_events: Json
+          auth_user_id: string | null
+          computed_fits: Json
+          created_at: string
+          department: string | null
+          email: string
+          id: string
+          interview_rubrics: Json
+          job_title: string | null
+          manager_id: string | null
+          name: string
+          org_id: string | null
+          performance_history: Json
+          role: string
+          signals: Json
+          status: string
+          tenure_months: number
+          updated_at: string
+          verified_skills: Json
+        }
+      }
+      is_team_member: {
+        Args: { check_twin_id: string }
+        Returns: boolean
+      }
     }
     Enums: {
       [_ in never]: never

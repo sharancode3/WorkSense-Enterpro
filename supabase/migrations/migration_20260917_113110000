@@ -1,0 +1,220 @@
+-- WorkSense Phase 0: 6 entities (no 7th table) + RLS + helpers + triggers
+
+-- 1) organizations
+create table public.organizations (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  policies jsonb not null default '[]'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+-- 2) digital_twins
+create table public.digital_twins (
+  id uuid primary key default gen_random_uuid(),
+  org_id uuid references public.organizations(id) on delete cascade,
+  auth_user_id uuid unique references auth.users(id) on delete set null,
+  role text not null check (role in ('hr_executive','manager','employee','candidate')),
+  status text not null default 'active' check (status in ('candidate','active','offboarding')),
+  name text not null,
+  email text not null,
+  department text,
+  job_title text,
+  manager_id uuid references public.digital_twins(id),
+  tenure_months integer not null default 0,
+  verified_skills jsonb not null default '[]'::jsonb,
+  interview_rubrics jsonb not null default '[]'::jsonb,
+  performance_history jsonb not null default '[]'::jsonb,
+  signals jsonb not null default '[]'::jsonb,
+  computed_fits jsonb not null default '[]'::jsonb,
+  audit_events jsonb not null default '[]'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index digital_twins_org_id_idx on public.digital_twins(org_id);
+create index digital_twins_manager_id_idx on public.digital_twins(manager_id);
+
+-- 3) job_requisitions
+create table public.job_requisitions (
+  id uuid primary key default gen_random_uuid(),
+  org_id uuid not null references public.organizations(id) on delete cascade,
+  title text not null,
+  department text not null,
+  required_skills jsonb not null default '[]'::jsonb,
+  future_skills jsonb not null default '[]'::jsonb,
+  applicants jsonb not null default '[]'::jsonb,
+  audit_events jsonb not null default '[]'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index job_requisitions_org_id_idx on public.job_requisitions(org_id);
+
+-- 4) skill_graph
+create table public.skill_graph (
+  id uuid primary key default gen_random_uuid(),
+  org_id uuid not null references public.organizations(id) on delete cascade,
+  skill text not null,
+  category text,
+  outgoing_edges jsonb not null default '[]'::jsonb,
+  created_at timestamptz not null default now(),
+  unique (org_id, skill)
+);
+create index skill_graph_org_id_idx on public.skill_graph(org_id);
+
+-- 5) onboarding_journeys
+create table public.onboarding_journeys (
+  id uuid primary key default gen_random_uuid(),
+  org_id uuid not null references public.organizations(id) on delete cascade,
+  twin_id uuid not null references public.digital_twins(id) on delete cascade,
+  tasks jsonb not null default '[]'::jsonb,
+  audit_events jsonb not null default '[]'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index onboarding_journeys_twin_id_idx on public.onboarding_journeys(twin_id);
+
+-- 6) recommendations
+create table public.recommendations (
+  id uuid primary key default gen_random_uuid(),
+  org_id uuid not null references public.organizations(id) on delete cascade,
+  twin_id uuid references public.digital_twins(id) on delete set null,
+  category text not null,
+  urgency text not null default 'medium' check (urgency in ('low','medium','high','critical')),
+  evidence_ledger jsonb not null default '[]'::jsonb,
+  proposed_action jsonb not null default '{}'::jsonb,
+  status text not null default 'needs_review' check (status in ('needs_review','approved','rejected','dispatched','completed')),
+  required_signoff_role text,
+  reviewer_rationale jsonb not null default '{}'::jsonb,
+  audit_events jsonb not null default '[]'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index recommendations_org_id_idx on public.recommendations(org_id);
+create index recommendations_status_idx on public.recommendations(status);
+
+-- updated_at trigger
+create or replace function public.set_updated_at() returns trigger language plpgsql as $$
+begin
+  new.updated_at = now();
+  return new;
+end
+$$;
+
+create trigger digital_twins_set_updated_at before update on public.digital_twins for each row execute function public.set_updated_at();
+create trigger job_requisitions_set_updated_at before update on public.job_requisitions for each row execute function public.set_updated_at();
+create trigger onboarding_journeys_set_updated_at before update on public.onboarding_journeys for each row execute function public.set_updated_at();
+create trigger recommendations_set_updated_at before update on public.recommendations for each row execute function public.set_updated_at();
+
+-- helpers (security definer to avoid recursive RLS)
+create or replace function public.current_twin() returns public.digital_twins language sql stable security definer set search_path = public as $$
+  select * from public.digital_twins where auth_user_id = auth.uid() limit 1;
+$$;
+
+create or replace function public.is_team_member(check_twin_id uuid) returns boolean language sql stable security definer set search_path = public as $$
+  select exists (
+    with recursive team as (
+      select d.id from public.digital_twins d, public.current_twin() ct where d.manager_id = ct.id
+      union all
+      select d.id from public.digital_twins d join team t on d.manager_id = t.id
+    )
+    select 1 from team where id = check_twin_id
+    union all
+    select 1 from public.current_twin() ct where ct.id = check_twin_id
+  );
+$$;
+
+-- minimal signup trigger (off demo path): new signups become employee twins
+create or replace function public.handle_new_user() returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  insert into public.digital_twins (org_id, auth_user_id, role, status, name, email, job_title)
+  values (
+    (select id from public.organizations limit 1),
+    new.id,
+    'employee',
+    'active',
+    coalesce(new.raw_user_meta_data ->> 'name', split_part(new.email, '@', 1)),
+    new.email,
+    'Employee'
+  );
+  return new;
+end
+$$;
+
+create trigger on_auth_user_created after insert on auth.users for each row execute function public.handle_new_user();
+
+-- RLS on every table
+alter table public.organizations enable row level security;
+alter table public.digital_twins enable row level security;
+alter table public.job_requisitions enable row level security;
+alter table public.skill_graph enable row level security;
+alter table public.onboarding_journeys enable row level security;
+alter table public.recommendations enable row level security;
+
+-- organizations
+create policy org_select on public.organizations for select using (
+  exists (select 1 from public.current_twin() ct where ct.org_id = public.organizations.id)
+);
+create policy org_write on public.organizations for all using (
+  (select role from public.current_twin()) = 'hr_executive'
+) with check (
+  (select role from public.current_twin()) = 'hr_executive'
+);
+
+-- digital_twins
+create policy twin_select on public.digital_twins for select using (
+  (select id from public.current_twin()) = id
+  or (select role from public.current_twin()) = 'hr_executive'
+  or public.is_team_member(id)
+);
+create policy twin_write on public.digital_twins for all using (
+  (select role from public.current_twin()) = 'hr_executive'
+) with check (
+  (select role from public.current_twin()) = 'hr_executive'
+);
+
+-- job_requisitions
+create policy req_select on public.job_requisitions for select using (
+  (select role from public.current_twin()) in ('hr_executive','manager')
+);
+create policy req_write on public.job_requisitions for all using (
+  (select role from public.current_twin()) = 'hr_executive'
+) with check (
+  (select role from public.current_twin()) = 'hr_executive'
+);
+
+-- skill_graph
+create policy skill_select on public.skill_graph for select using (
+  exists (select 1 from public.current_twin() ct)
+);
+create policy skill_write on public.skill_graph for all using (
+  (select role from public.current_twin()) = 'hr_executive'
+) with check (
+  (select role from public.current_twin()) = 'hr_executive'
+);
+
+-- onboarding_journeys
+create policy onboarding_select on public.onboarding_journeys for select using (
+  (select id from public.current_twin()) = twin_id
+  or (select role from public.current_twin()) = 'hr_executive'
+  or public.is_team_member(twin_id)
+);
+create policy onboarding_write on public.onboarding_journeys for all using (
+  (select role from public.current_twin()) = 'hr_executive'
+  or public.is_team_member(twin_id)
+) with check (
+  (select role from public.current_twin()) = 'hr_executive'
+  or public.is_team_member(twin_id)
+);
+
+-- recommendations
+create policy rec_select on public.recommendations for select using (
+  (select id from public.current_twin()) = twin_id
+  or (select role from public.current_twin()) = 'hr_executive'
+  or public.is_team_member(twin_id)
+);
+create policy rec_write on public.recommendations for all using (
+  (select role from public.current_twin()) = 'hr_executive'
+  or public.is_team_member(twin_id)
+) with check (
+  (select role from public.current_twin()) = 'hr_executive'
+  or public.is_team_member(twin_id)
+);

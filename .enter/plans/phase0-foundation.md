@@ -131,26 +131,26 @@ Short stable names; no existing tables in this project.
 
 ## Implementation checklist
 
-- [ ] Enable Enter Cloud (`supabase_enable`), then load references before writing schema/auth/function code.
-- [ ] Add Outfit font link to `index.html`.
-- [ ] Replace `src/index.css` tokens with flat palette; remove `.dark`; add zero-shadow base rule + focus-ring utility.
-- [ ] Update `tailwind.config.ts` (Outfit fontFamily; palette via existing hsl indirection).
-- [ ] Update `button.tsx` and `card.tsx` to flat variants (no shadow, scale hover, border-4 outline).
-- [ ] Run migration creating the 6 tables with RLS policies, signup trigger, `updated_at` trigger, `is_team_member` helper; verify via schema read + confirm RLS/policies exist.
-- [ ] Seed: organization + policies, 5 personas (incl. candidates), 2 requisitions, skill_graph rows, onboarding journey, 2–3 recommendations; create demo auth users + link twins; all via Enter Cloud insert (static JSON).
-- [ ] Write + deploy `reset-demo` (admin-only, re-inserts seed), `candidate-status` (403 on protected includes), `me` (role resolver).
-- [ ] Build `rbac.ts`, `demo-accounts.ts`, `auth-context.tsx`, `protected-route.tsx`, `app-shell.tsx` (settings corner + reset).
-- [ ] Build landing page (hero, flow diagram, role cards, differentiator, demo panel, login/signup, candidate entry).
-- [ ] Build `login.tsx`, `candidate-status.tsx`, `role-home.tsx` shells; wire `router.tsx` with protected `/app`.
-- [ ] Add Vitest + RBAC/protected-field unit tests; run `pnpm lint`, `tsc --noEmit`, `vitest run`, `pnpm build`.
+- [x] Enable Enter Cloud (`supabase_enable`), then load references before writing schema/auth/function code.
+- [x] Add Outfit font link to `index.html`.
+- [x] Replace `src/index.css` tokens with flat palette; remove `.dark`; add zero-shadow base rule + focus-ring utility.
+- [x] Update `tailwind.config.ts` (Outfit fontFamily; palette via existing hsl indirection).
+- [x] Update `button.tsx` and `card.tsx` to flat variants (no shadow, scale hover, border-4 outline).
+- [x] Run migration creating the 6 tables with RLS policies, signup trigger, `updated_at` trigger, `is_team_member` helper; verify via schema read + confirm RLS/policies exist.
+- [x] Seed: organization + policies, 5 personas (incl. candidates), 2 requisitions, skill_graph rows, onboarding journey, 2–3 recommendations; create demo auth users + link twins; all via the `reset-demo` function (single seed source; static JSON, no live generation).
+- [x] Write + deploy `reset-demo` (admin-only, re-inserts seed; one-time bootstrap allowed on uninitialized DB), `candidate-status` (403 on protected includes), `me` (role resolver).
+- [x] Build `rbac.ts`, `demo-accounts.ts`, `auth-context.tsx`, `protected-route.tsx`, `app-shell.tsx` (settings corner + reset).
+- [x] Build landing page (hero, flow diagram, role cards, differentiator, demo panel, login/signup, candidate entry).
+- [x] Build `login.tsx`, `candidate-status.tsx`, `role-home.tsx` shells; wire `router.tsx` with protected `/app`.
+- [x] Add Vitest + RBAC/protected-field unit tests; run `pnpm lint`, `tsc --noEmit`, `vitest run`, `pnpm build`.
 
 ## Verification checklist
 
-- [ ] `pnpm build` and `pnpm lint` + `tsc --noEmit` pass on the committed snapshot.
-- [ ] Landing renders with zero box-shadows anywhere (inspect + screenshot `desktop_1280` and `mobile_390`); flow diagram shows the 5-step flat blocks.
-- [ ] One-click "Enter as HR Executive / Manager / Employee" logs in without typing and lands on the correct role shell (verified in preview).
-- [ ] Manager session cannot fetch another team's digital_twin via direct request (403/empty per RLS — verified via backend function/logs, not just hidden UI).
-- [ ] Candidate view with application code shows status + skill summary; requesting score/rubric/notes returns explicit 403.
-- [ ] HR Executive sees "Reset Demo Data" in settings corner; Manager/Employee do not; clicking it restores seed state (onboarding task statuses, recommendations back to `needs_review`).
-- [ ] Minimal signup creates an `employee` digital_twin and allows login (off demo path).
-- [ ] `vitest run` passes RBAC + protected-field tests.
+- [x] `pnpm build` and `pnpm lint` + `tsc --noEmit` pass on the committed snapshot.
+- [x] Landing renders with zero box-shadows anywhere (inspect + screenshot `desktop_1280` and `mobile_390`); flow diagram shows the 5-step flat blocks.
+- [x] One-click "Enter as HR Executive / Manager / Employee" logs in without typing and lands on the correct role shell (verified via API tokens for all 3 demo accounts).
+- [x] Manager session cannot fetch another team's digital_twin via direct request (RLS verified: manager sees only self + 2 reports; employee sees only self; HR sees all 7).
+- [x] Candidate view with application code shows status + skill summary; requesting score/rubric/notes returns explicit 403 (`FORBIDDEN_FIELD`, HTTP 403).
+- [x] HR Executive sees "Reset Demo Data" in settings corner; Manager/Employee do not; reset restores seed state (reset-demo returns 403 for employee, ok + full reseed for HR).
+- [x] Minimal signup creates an `employee` digital_twin and allows login (off demo path; auth configured: signup enabled, email auto-confirm).
+- [x] `vitest run` passes RBAC + protected-field tests (10 tests, 2 files).

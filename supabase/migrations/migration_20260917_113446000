@@ -1,0 +1,19 @@
+create or replace function public.handle_new_user() returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  -- Demo accounts created via the admin API are seeded by reset-demo; skip them.
+  if coalesce(new.raw_user_meta_data ->> 'is_demo', 'false') = 'true' then
+    return new;
+  end if;
+  insert into public.digital_twins (org_id, auth_user_id, role, status, name, email, job_title)
+  values (
+    (select id from public.organizations limit 1),
+    new.id,
+    'employee',
+    'active',
+    coalesce(new.raw_user_meta_data ->> 'name', split_part(new.email, '@', 1)),
+    new.email,
+    'Employee'
+  );
+  return new;
+end
+$$;

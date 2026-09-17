@@ -1,11 +1,34 @@
-import Index from "./pages/Index";
+import Landing from "./pages/landing";
+import Login from "./pages/login";
+import CandidateStatus from "./pages/candidate-status";
+import RoleHome from "./pages/role-home";
 import NotFound from "./pages/NotFound";
+import { ProtectedRoute } from "./components/protected-route";
 
 export const routers = [
   {
     path: "/",
     name: "home",
-    element: <Index />,
+    element: <Landing />,
+  },
+  {
+    path: "/login",
+    name: "login",
+    element: <Login />,
+  },
+  {
+    path: "/candidate-status",
+    name: "candidate-status",
+    element: <CandidateStatus />,
+  },
+  {
+    path: "/app",
+    name: "app",
+    element: (
+      <ProtectedRoute>
+        <RoleHome />
+      </ProtectedRoute>
+    ),
   },
   /* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */
   {
