@@ -146,6 +146,29 @@ Bounded repair loop: max 3 attempts per external blocker, then stop + report evi
 
 **Limitations** — code-execution sandbox not available (stated + never simulated); select-path conversion fit still uses `verified_skills` (legacy cache) unlike the assertions-first review path (pre-existing, documented); authed browser click-through of the Recruitment studio / review panel pending a logged-in session (all flows API-verified); local 4B model latency (~10–45s per evaluation) with job-recovery polling in the UI.
 
+## 14. Phase 7 — Contextual policy reasoning with validated citations (status: full vertical verified live; authed click-through of studio pending)
+
+**Data model (migration `20260917_173000000`)** — `policy_documents` gains `effective_to` (date window), `applicable_locations` / `applicable_worker_types` (applicability filters), and `supersedes_doc_id` (supersession relationships); `digital_twins` gains optional `work_location` / `worker_type` (nullable, additive) for employee context; new RLS-reads-only `policy_escalations` table — a SEPARATE authorized escalation workflow (question, selected context, relevant sources, reason, owner, status open→in_progress→resolved→closed, timestamps).
+
+**Policy data** — fixture corpus (14 docs) extended deterministically: POL-LVE **v2** (Leave & Time Off: 2 days/month accrual, **3-day** carryover, public holidays don't reduce balance, mid-year pro-rata) that **supersedes** the fixture v1 (retired 2025-12-31, 5-day carryover — the conflict case); POL-CAT v1 **expired** (Catering Reimbursement, retired 2024-12-31); POL-RMT-EU (EU Remote-First Exception, `applicable_locations: ["EU"]` — the cross-location case). Org-scoped reads only — an actor never retrieves another org's policies.
+
+**Retrieval** — org → date window (`filterByWindow`) → supersession/current-version resolution (`currentVersionSet`: newest version per doc_code wins, superseded docs dropped) → applicability filters (`applicabilityOk`) applied before answering; deterministic BM25 lexical baseline kept (an embedding model is NOT available in this deployment, so dense/hybrid retrieval is documented as not implemented rather than faked — no Qwen chat text is ever used as an embedding). BM25 score is treated as a ranking signal, not a probability; abstention threshold tuned on the reviewed question set. Missing applicability fields → `clarification_needed` with the field + reason (never assumed); exclusive-token disambiguation (`exclusiveQuestionTokens`) decides when a question is really about a **retired** or **applicability-excluded** document (honest notes, no invention).
+
+**Contextual reasoning** — authorized employee context resolution (`canViewEmployee`: self / HR roles / manager→direct reports; name-mention detection; hypothetical context overrides), deterministic leave engine (`leave-calc.ts`: accrual, mid-year join pro-rata, capped carryover, holiday-spanning request math) whose numbers are injected as authoritative computed facts and echoed in the UI; answers may only restate them.
+
+**Citations (fixed)** — strict validator: every exact_quote must be **non-empty** and exist **in the cited section of the cited document version** (source identity + claim support), not merely somewhere in the retrieved chunks; citations are enriched with doc title/version/heading/effective dates; empty/invalid/insufficient citations → **one repair attempt** (also for schema-invalid model output), then downgrade to `partially_supported` or abstain — never labeled grounded.
+
+**Escalation** — `escalate` now creates a `policy_escalations` row (question, selected context, sources, reason, HR owner, status, timestamps); the UI confirms before including sensitive employee context and only reports "escalated" after the insert succeeds.
+
+**Employee UX** — Policy Studio: example chips + contextual form (employee picker, work location, worker type, taken days, request span), explicit "why clarification is needed" panel, deterministic calculation cards, citation list with document version + section + quote + effective dates, expandable source inspection, and a confirmed route to HR review.
+
+**Completion gate — verified live (curl + API)**
+- **Supported**: annual leave → grounded, cites POL-LVE v2 s1/s3 with real quotes + effective dates (current version, NOT the superseded v1's 5-day carryover). Mid-year-join → grounded v2 s3. Samira's balance → computed facts (accrued 84, carryover capped at 3) + cited quotes. **Unsupported**: pet-insurance/sabbatical → abstained, empty answer, no invention. **Ambiguous**: EU exception without location → `clarification_needed` (fields + reason). **Conflicting**: "five days carryover?" → explicitly corrected to 3 days citing v2. **Expired**: catering → "retired on 2024-12-31, no current version — nothing invented". **Cross-location**: US context vs EU exception → "does not apply to location=US — nothing assumed". **Injection**: instruction-injection questions (incl. one targeting a named employee) → sanitized; no inflated numbers; answer discarded/grounded only on real quotes. **Citation mismatch**: unit-tested (quote in another section/doc/version rejected); live cross-check confirmed every returned quote is verbatim in the cited section. Context action lists only visible employees + current docs; org-2 admin sees zero org-1 policies and gets 403 for org-1 employee context.
+
+**Tests** — 145 total (17 new: leave engine math, policy-context authorization/mention resolution, date window, supersession, applicability, strict per-section citations, exclusive-token disambiguation, expired-hit detection). `pnpm check` ✅ · `pnpm build` ✅. 3 functions changed + deployed (policy-qa rewritten as contextual reasoner, escalate → dedicated workflow, reset-demo seeds Phase 7 data). 25 functions deployed total.
+
+**Limitations** — dense/hybrid retrieval not implemented (no embedding model/storage available; documented honestly); BM25 relevance is lexical-only, so semantically-paraphrased questions may abstain (honest); authed browser click-through of the Policy Studio pending a logged-in session (all flows API-verified); local 4B model occasionally needs the one repair attempt for citation/schema errors (then downgrades or abstains as specified).
+
 ## 6. Unresolved defects / open requirements (queued for P3+)
 
 1. Fit-score calibration semantics (adjacency when nothing missing; evidence influence; future-role floor).
@@ -155,7 +178,7 @@ Bounded repair loop: max 3 attempts per external blocker, then stop + report evi
 5. Signal reframing documentation (heuristic ≠ probability) + UI wording audit.
 6. Remove remaining `as any` casts (seed/generator boundaries); reconcile any residual lockfile notes.
 7. Flagship workflow: HIRE / MOVE / UPSKILL / COMBINE comparison across demand, time, cost, capacity, skill evidence, policy constraints → evidence-backed recommendation → human approval → tasks → readiness/outcome tracking.
-8. Policy citation robustness (tie quotes to the specific doc+section, not any chunk).
+8. ~~Policy citation robustness (tie quotes to the specific doc+section, not any chunk)~~ ✅ Phase 7 (strict per-section/version citation validation + repair-or-abstain).
 9. `me` edge case: unauthenticated invoke without an apikey header returns a gateway-level response (not the function's `UNAUTHENTICATED`) — low risk, document only.
 
 ## 2. Contract non-negotiables — current standing
@@ -198,7 +221,7 @@ Bounded repair loop: max 3 attempts per external blocker, then stop + report evi
 5. Signal reframing documentation (heuristic ≠ probability) + UI wording audit.
 6. Remove `as any` casts; reconcile pnpm lockfile drift.
 7. Flagship workflow: HIRE / MOVE / UPSKILL / COMBINE comparison across demand, time, cost, capacity, skill evidence, policy constraints → evidence-backed recommendation → human approval → tasks → readiness/outcome tracking.
-8. Policy citation robustness (tie quotes to the specific doc+section, not any chunk).
+8. ~~Policy citation robustness (tie quotes to the specific doc+section, not any chunk)~~ ✅ Phase 7 (strict per-section/version citation validation + repair-or-abstain).
 
 ## 7. Deployment / build identifier
 

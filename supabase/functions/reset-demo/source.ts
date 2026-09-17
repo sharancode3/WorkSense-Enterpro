@@ -13,6 +13,7 @@ import {
 import { SEED_FITS } from "../_shared/generated-seed-fits.ts";
 import { DEMO_FIXTURES } from "../_shared/generated-demo-fixtures.ts";
 import { ASSESSMENT_SEEDS, PEOPLE_OPS_REQUISITION } from "../_shared/assessment.ts";
+import { POLICY_ADDITIONS, TWIN_CONTEXT_OVERRIDES } from "../_shared/policy-seed.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -102,6 +103,7 @@ async function tearDownDemo(supabase, authIds: Record<string, string>) {
     await supabase.from("workforce_observations").delete().eq("org_id", orgId);
     await supabase.from("candidate_sessions").delete().eq("org_id", orgId);
     await supabase.from("application_stage_events").delete().eq("org_id", orgId);
+    await supabase.from("policy_escalations").delete().eq("org_id", orgId);
     await supabase.from("assessments").delete().eq("org_id", orgId);
     await supabase.from("applications").delete().eq("org_id", orgId);
     await supabase.from("assessment_rubrics").delete().eq("org_id", orgId);
@@ -258,6 +260,36 @@ async function reseed(supabase, authIds: Record<string, string>) {
     fx.policies.map((p) => ({ ...p, org_id: DEMO_ORG_ID, sections: p.sections }))
   );
   if (polErr) throw new Error(`policies insert: ${polErr.message}`);
+
+  // 5b) Phase 7 policy additions: versioned Leave v2 superseding fixture v1,
+  // an expired Catering policy, and an EU-only remote exception.
+  const { data: lveV1 } = await supabase
+    .from("policy_documents")
+    .select("id")
+    .eq("org_id", DEMO_ORG_ID)
+    .eq("doc_code", "POL-LVE")
+    .eq("version", 1)
+    .maybeSingle();
+  if (lveV1) {
+    const { error: lveToErr } = await supabase
+      .from("policy_documents")
+      .update({ effective_to: "2025-12-31" })
+      .eq("id", lveV1.id);
+    if (lveToErr) throw new Error(`POL-LVE v1 window update: ${lveToErr.message}`);
+  }
+  const additions = POLICY_ADDITIONS.map((p) => ({
+    ...p,
+    org_id: DEMO_ORG_ID,
+    supersedes_doc_id: p.doc_code === "POL-LVE" ? lveV1?.id ?? null : null,
+    sections: p.sections,
+  }));
+  const { error: polAddErr } = await supabase.from("policy_documents").insert(additions);
+  if (polAddErr) throw new Error(`policy additions insert: ${polAddErr.message}`);
+
+  // 5c) Employee context overrides (location / worker type) for applicability.
+  for (const [email, ctx] of Object.entries(TWIN_CONTEXT_OVERRIDES)) {
+    await supabase.from("digital_twins").update(ctx).eq("org_id", DEMO_ORG_ID).eq("email", email);
+  }
 
   // 6) Onboarding journeys (legacy mid-onboarding persona + 4 fixture states).
   const journeyStatus = (tasks: { status?: string }[]) =>
@@ -536,7 +568,7 @@ Deno.serve(async (req) => {
         digital_twins: fx.employees.length + fx.candidates.length + 1 + fx.org2.employees.length,
         skill_graph: fx.skills.length + fx.org2.skills.length,
         job_requisitions: fx.requisitions.length + 2,
-        policy_documents: fx.policies.length,
+        policy_documents: fx.policies.length + POLICY_ADDITIONS.length,
         onboarding_journeys: 1 + fx.journeys.length,
         recommendations: RECOMMENDATIONS.length,
         assessment_blueprints: ASSESSMENT_SEEDS.length,

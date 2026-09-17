@@ -249,7 +249,13 @@ export interface PolicyDoc {
   title: string;
   category: string;
   doc_code: string;
+  version?: number;
   effective_date?: string;
+  effective_from?: string;
+  effective_to?: string | null;
+  applicable_locations?: string[];
+  applicable_worker_types?: string[];
+  supersedes_doc_id?: string | null;
   summary?: string;
   sections: { code: string; heading: string; text: string }[];
 }
@@ -258,6 +264,10 @@ export interface PolicyChunk {
   doc_code: string;
   doc_title: string;
   category: string;
+  doc_id?: string;
+  version?: number;
+  effective_from?: string;
+  effective_to?: string | null;
   section_code: string;
   heading: string;
   text: string;
@@ -294,9 +304,13 @@ export function flattenPolicies(policies: PolicyDoc[]): PolicyChunk[] {
   for (const p of policies) {
     for (const s of p.sections) {
       chunks.push({
+        doc_id: p.id,
         doc_code: p.doc_code,
         doc_title: p.title,
         category: p.category,
+        version: p.version,
+        effective_from: p.effective_from ?? p.effective_date,
+        effective_to: p.effective_to ?? null,
         section_code: s.code,
         heading: s.heading,
         text: s.text,
@@ -304,6 +318,78 @@ export function flattenPolicies(policies: PolicyDoc[]): PolicyChunk[] {
     }
   }
   return chunks;
+}
+
+export interface EmployeePolicyContext {
+  location?: string;
+  worker_type?: string;
+}
+
+/** Normalize an applicability list; "All" matches anything. */
+function appliesTo(list: string[] | undefined, value: string | undefined): boolean {
+  if (!value) return true; // unknown field: do not filter (clarification handles it)
+  const norm = (v: string) => v.trim().toLowerCase();
+  const arr = (list ?? ["All"]).map(norm);
+  return arr.includes("all") || arr.includes(norm(value));
+}
+
+/** Is the document applicable given the known employee context? Unknown fields
+ *  are treated as "not ruled out" — the missing-field logic decides if we must
+ *  clarify instead of assume. */
+export function applicabilityOk(doc: PolicyDoc, ctx: EmployeePolicyContext): boolean {
+  return appliesTo(doc.applicable_locations, ctx.location) && appliesTo(doc.applicable_worker_types, ctx.worker_type);
+}
+
+/** Which applicability fields are missing but required by the document? */
+export function missingApplicability(doc: PolicyDoc, ctx: EmployeePolicyContext): string[] {
+  const missing: string[] = [];
+  const needsLocation = (doc.applicable_locations ?? []).length > 0 && !(doc.applicable_locations ?? []).map((v) => v.trim().toLowerCase()).includes("all");
+  const needsWorker = (doc.applicable_worker_types ?? []).length > 0 && !(doc.applicable_worker_types ?? []).map((v) => v.trim().toLowerCase()).includes("all");
+  if (needsLocation && !ctx.location) missing.push("location");
+  if (needsWorker && !ctx.worker_type) missing.push("worker_type");
+  return missing;
+}
+
+/** Date-window filter: keep docs effective on `asOf`. */
+export function filterByWindow(policies: PolicyDoc[], asOf: string): PolicyDoc[] {
+  const t = new Date(asOf).getTime();
+  return (policies ?? []).filter((p) => {
+    const from = p.effective_from ?? p.effective_date;
+    if (from && new Date(from).getTime() > t) return false;
+    if (p.effective_to && new Date(p.effective_to).getTime() < t) return false;
+    return true;
+  });
+}
+
+/** Docs that fell OUTSIDE the window (used for honest "expired/retired" notes). */
+export function filterOutOfWindow(policies: PolicyDoc[], asOf: string): PolicyDoc[] {
+  const t = new Date(asOf).getTime();
+  return (policies ?? []).filter((p) => {
+    const from = p.effective_from ?? p.effective_date;
+    if (from && new Date(from).getTime() > t) return true;
+    if (p.effective_to && new Date(p.effective_to).getTime() < t) return true;
+    return false;
+  });
+}
+
+/**
+ * Resolve the CURRENT version set for an as-of date:
+ *  - drop documents outside the date window,
+ *  - keep the newest version per doc_code,
+ *  - drop documents explicitly superseded by a current document.
+ */
+export function currentVersionSet(policies: PolicyDoc[], asOf: string): PolicyDoc[] {
+  const inWindow = filterByWindow(policies, asOf);
+  const byCode = new Map<string, PolicyDoc>();
+  for (const doc of inWindow) {
+    const cur = byCode.get(doc.doc_code);
+    if (!cur || (doc.version ?? 1) > (cur.version ?? 1)) byCode.set(doc.doc_code, doc);
+  }
+  const current = [...byCode.values()];
+  const supersededIds = new Set(
+    current.filter((d) => d.supersedes_doc_id).map((d) => d.supersedes_doc_id as string)
+  );
+  return current.filter((d) => !supersededIds.has(d.id));
 }
 
 const K1 = 1.2;
@@ -350,34 +436,93 @@ export function normalizeForMatch(s: string): string {
 export interface Citation {
   claim?: string;
   doc_code?: string;
+  version?: number | string;
   section?: string;
   exact_quote?: string;
 }
 
-/**
- * Every citation's quote must actually appear (fuzzily) in a retrieved chunk.
- * Invalid citations are dropped; returns { valid, droppedCount }.
- */
-export function validateCitations(citations: Citation[] | undefined, chunks: RetrievedChunk[]): {
+export interface CitationValidation {
   valid: Citation[];
   droppedCount: number;
-} {
+  invalidReasons: string[];
+}
+
+/**
+ * STRICT citation validation (Phase 7): every exact_quote must appear in the
+ * cited SECTION of the cited DOCUMENT — existing verbatim somewhere in the
+ * retrieved chunks is NOT sufficient (source identity + claim support).
+ * A version may be omitted, in which case any version of the doc_code matches.
+ * Invalid citations are dropped with a reason; callers repair once or abstain.
+ */
+export function validateCitations(
+  citations: Citation[] | undefined,
+  chunks: RetrievedChunk[]
+): CitationValidation {
   const valid: Citation[] = [];
+  const invalidReasons: string[] = [];
   let dropped = 0;
+
+  const hasExactSection = (c: Citation, quote: string): boolean =>
+    chunks.some((ch) => {
+      if (String(ch.doc_code).toLowerCase() !== String(c.doc_code ?? "").toLowerCase()) return false;
+      if (String(ch.section_code) !== String(c.section ?? "")) return false;
+      if (c.version !== undefined && c.version !== null && String(ch.version ?? "") !== String(c.version)) return false;
+      return normalizeForMatch(ch.text).includes(quote);
+    });
+
   for (const c of citations ?? []) {
     const quote = normalizeForMatch(c.exact_quote ?? "");
     if (!quote) {
       dropped++;
+      invalidReasons.push("Citation has an empty exact_quote.");
       continue;
     }
-    const found = chunks.some((ch) => normalizeForMatch(ch.text).includes(quote));
-    if (found && c.doc_code && c.section) {
+    if (!c.doc_code || !c.section) {
+      dropped++;
+      invalidReasons.push("Citation is missing doc_code or section.");
+      continue;
+    }
+    if (hasExactSection(c, quote)) {
       valid.push(c);
     } else {
       dropped++;
+      invalidReasons.push(`Quote not found in the cited section ${c.doc_code} ${c.section}: "${String(c.exact_quote ?? "").slice(0, 80)}"`);
     }
   }
-  return { valid, droppedCount: dropped };
+  return { valid, droppedCount: dropped, invalidReasons };
+}
+
+/** Highest-scoring match against documents that fell out of the date window —
+ *  used to say "this policy was retired on <date>" instead of inventing. */
+export function bestExpiredHit(policies: PolicyDoc[], question: string, asOf: string): {
+  doc_code: string;
+  title: string;
+  effective_to: string | null;
+  score: number;
+} | null {
+  const out = filterOutOfWindow(policies, asOf);
+  if (out.length === 0) return null;
+  const res = retrieveChunks(out, question, 1);
+  if (res.length === 0) return null;
+  return {
+    doc_code: res[0].doc_code,
+    title: res[0].doc_title,
+    effective_to: res[0].effective_to ?? null,
+    score: res[0].score,
+  };
+}
+
+/**
+ * Question tokens that appear in `candidateTexts` but in NONE of `otherTexts`.
+ * Used to distinguish "this question is really about the expired/excluded
+ * document" from "the question only shares generic words (e.g. reimbursement)
+ * with a still-current document".
+ */
+export function exclusiveQuestionTokens(question: string, candidateTexts: string[], otherTexts: string[]): string[] {
+  const q = new Set(tokenize(question));
+  const cand = new Set(candidateTexts.flatMap((t) => tokenize(t)));
+  const others = new Set(otherTexts.flatMap((t) => tokenize(t)));
+  return [...q].filter((t) => cand.has(t) && !others.has(t));
 }
 
 
@@ -476,8 +621,9 @@ export function validatePolicyAnswer(d: unknown): ValidationResult {
       const c = isObj(raw) ? raw : null;
       if (!c) { errors.push("citation not an object"); continue; }
       if (!isStr(c.doc_code) || !/^POL-/.test(c.doc_code)) errors.push("citation doc_code must start with POL-");
+      if (c.version !== undefined && c.version !== null && !isStr(c.version) && !isNum(c.version)) errors.push("citation version must be a string or number");
       if (!isStr(c.section) || c.section.trim().length === 0) errors.push("citation section missing");
-      if (!isStr(c.exact_quote) || c.exact_quote.trim().length === 0) errors.push("citation exact_quote missing");
+      if (!isStr(c.exact_quote) || c.exact_quote.trim().length === 0) errors.push("citation exact_quote must be non-empty");
     }
   }
   return fail(errors);
@@ -625,7 +771,257 @@ export function validateResumeReview(d: unknown): ValidationResult {
 }
 
 
+// ---------------------------------------------------------------------------
+// Phase 7 policy-context helpers — pure, testable:
+//  - who may see whose employee context (server-side authorization)
+//  - resolving an employee mention inside a question
+// ---------------------------------------------------------------------------
+
+export interface CallerView {
+  id: string;
+  role: string;
+  org_id: string;
+}
+
+export interface EmployeeView {
+  id: string;
+  org_id: string;
+  name: string;
+  manager_id: string | null;
+  work_location?: string | null;
+  worker_type?: string | null;
+}
+
+/** Employees can see themselves; HR roles see everyone in the org; managers
+ *  see their direct reports. Never decided on the client. */
+export function canViewEmployee(caller: CallerView, target: EmployeeView): boolean {
+  if (target.org_id !== caller.org_id) return false;
+  if (target.id === caller.id) return true;
+  if (["hr_executive", "hr_partner", "recruiter"].includes(caller.role)) return true;
+  if (caller.role === "manager" && target.manager_id === caller.id) return true;
+  return false;
+}
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** Find a visible employee whose first name appears as a whole word in the
+ *  question. Deterministic; only returns employees the caller may view. */
+export function findEmployeeMention(
+  question: string,
+  employees: EmployeeView[],
+  caller: CallerView
+): EmployeeView | null {
+  const q = String(question ?? "").toLowerCase();
+  for (const emp of employees) {
+    if (!canViewEmployee(caller, emp)) continue;
+    const first = (emp.name.split(/\s+/)[0] ?? "").toLowerCase();
+    if (!first || first.length < 2) continue;
+    const re = new RegExp(`(^|\\W)${escapeRegExp(first)}(\\W|$)`, "i");
+    if (re.test(q)) return emp;
+  }
+  return null;
+}
+
+
+// ---------------------------------------------------------------------------
+// WorkSense deterministic leave engine (Phase 7).
+// Matches POL-LVE v2 ("Leave & Time Off Policy"): 24 days/year, credited
+// monthly at 2 days per full month of service; up to 3 days carryover;
+// public holidays at the applicable location do not reduce the balance;
+// mid-year joiners accrue only for months employed in the leave year.
+// Zero LLM — every number is computed, so answers can cite the policy while
+// the arithmetic stays honest and unit-tested.
+// ---------------------------------------------------------------------------
+
+export const LEAVE_POLICY = {
+  days_per_year: 24,
+  monthly_credit: 2,
+  carryover_cap_days: 3,
+  notice_days_for_long_leave: 28, // 4 weeks for requests of 10+ consecutive days
+  long_leave_threshold: 10,
+} as const;
+
+export const LEAVE_YEAR_START = { month: 0, day: 1 }; // 1 January
+
+/** Whole calendar months between two dates (join/start to as-of). A month
+ *  counts when the same day-of-month has passed in the following month. */
+export function fullMonthsBetween(from: string, to: string): number {
+  const a = new Date(from);
+  const b = new Date(to);
+  if (Number.isNaN(a.getTime()) || Number.isNaN(b.getTime()) || b < a) return 0;
+  let months = (b.getUTCFullYear() - a.getUTCFullYear()) * 12 + (b.getUTCMonth() - a.getUTCMonth());
+  if (b.getUTCDate() < a.getUTCDate()) months -= 1;
+  return Math.max(0, months);
+}
+
+/** Full months of employment inside the current leave year. */
+export function monthsInLeaveYear(joinDate: string, asOf: string): number {
+  const yearStart = `${new Date(asOf).getUTCFullYear()}-01-01`;
+  if (new Date(joinDate) > new Date(asOf)) return 0;
+  const effectiveStart = new Date(joinDate) > new Date(yearStart) ? joinDate : yearStart;
+  return fullMonthsBetween(effectiveStart, asOf);
+}
+
+export interface LeaveSummary {
+  accrued_days: number;
+  taken_days: number;
+  unused_days: number;
+  carryover_days: number;
+  carryover_cap_days: number;
+  monthly_credit: number;
+  as_of: string;
+  join_date: string;
+}
+
+/** Deterministic balance for an employee on an as-of date. */
+export function leaveSummary(params: { join_date: string; taken_days: number; as_of: string }): LeaveSummary {
+  const accrued = LEAVE_POLICY.monthly_credit * fullMonthsBetween(params.join_date, params.as_of);
+  const unused = Math.max(0, accrued - params.taken_days);
+  const carryover = Math.min(LEAVE_POLICY.carryover_cap_days, unused);
+  return {
+    accrued_days: accrued,
+    taken_days: params.taken_days,
+    unused_days: unused,
+    carryover_days: carryover,
+    carryover_cap_days: LEAVE_POLICY.carryover_cap_days,
+    monthly_credit: LEAVE_POLICY.monthly_credit,
+    as_of: params.as_of,
+    join_date: params.join_date,
+  };
+}
+
+/** A leave request spanning public holidays consumes only non-holiday days. */
+export function leaveDaysConsumed(params: { from: string; to: string; public_holidays: string[] }): {
+  calendar_days: number;
+  holiday_days: number;
+  leave_days_consumed: number;
+} {
+  const from = new Date(params.from);
+  const to = new Date(params.to);
+  if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime()) || to < from) {
+    return { calendar_days: 0, holiday_days: 0, leave_days_consumed: 0 };
+  }
+  const holidays = new Set(
+    (params.public_holidays ?? []).map((d) => d.slice(0, 10))
+  );
+  let calendarDays = 0;
+  let holidayDays = 0;
+  const cursor = new Date(from);
+  while (cursor <= to) {
+    const iso = cursor.toISOString().slice(0, 10);
+    if (holidays.has(iso)) holidayDays += 1;
+    calendarDays += 1;
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return {
+    calendar_days: calendarDays,
+    holiday_days: holidayDays,
+    leave_days_consumed: Math.max(0, calendarDays - holidayDays),
+  };
+}
+
+
+// ---------------------------------------------------------------------------
+// Phase 7 policy seed — deterministic additions on top of the fixture corpus:
+//  - POL-LVE v2 (current Leave & Time Off) that SUPERSEDES the fixture v1,
+//  - POL-CAT v1 (Catering Reimbursement) that is EXPIRED (out of date window),
+//  - POL-RMT-EU (EU Remote-First Exception) scoped to EU locations only,
+//  - employee work_location / worker_type overrides for context resolution.
+// Text is authored (never generated); the leave engine constants in
+// leave-calc.ts match POL-LVE v2 exactly.
+// ---------------------------------------------------------------------------
+
+export const POLICY_ADDITIONS = [
+  {
+    id: "aaaaaaa1-1111-1111-1111-111111111111",
+    doc_code: "POL-LVE",
+    version: 2,
+    title: "Leave & Time Off Policy",
+    category: "Benefits",
+    effective_from: "2026-01-01",
+    effective_to: null,
+    applicable_locations: ["All"],
+    applicable_worker_types: ["All"],
+    supersedes_doc_id: null, // set at insert time to the seeded v1 row
+    sections: [
+      {
+        code: "s1",
+        heading: "Accrual and notice",
+        text: "Employees accrue 24 days of paid annual leave per year, credited monthly at two days per full month of service. Leave requests of ten or more consecutive days must be submitted at least four weeks in advance and require manager approval.",
+      },
+      {
+        code: "s2",
+        heading: "Carryover and public holidays",
+        text: "Unused leave carries over up to three days into the following leave year. Emergency leave does not require advance notice but must be logged on the first working day. Public holidays observed at the employee's applicable work location do not reduce the annual leave balance.",
+      },
+      {
+        code: "s3",
+        heading: "Leave year and mid-year joins",
+        text: "The leave year runs from 1 January to 31 December. Employees who join part-way through the leave year accrue for the months they are employed during that year, credited at two days per full month. Unused accrued leave at year-end carries over up to three days.",
+      },
+    ],
+  },
+  {
+    id: "aaaaaaa1-1111-1111-1111-111111111112",
+    doc_code: "POL-CAT",
+    version: 1,
+    title: "Catering Reimbursement Policy",
+    category: "Workplace",
+    effective_from: "2024-01-01",
+    effective_to: "2024-12-31",
+    applicable_locations: ["All"],
+    applicable_worker_types: ["All"],
+    supersedes_doc_id: null,
+    sections: [
+      {
+        code: "s1",
+        heading: "Coverage",
+        text: "The organisation reimburses up to 150 per month for in-office catering expenses during approved events.",
+      },
+    ],
+  },
+  {
+    id: "aaaaaaa1-1111-1111-1111-111111111113",
+    doc_code: "POL-RMT-EU",
+    version: 1,
+    title: "EU Remote-First Exception",
+    category: "Workplace",
+    effective_from: "2026-02-01",
+    effective_to: null,
+    applicable_locations: ["EU"],
+    applicable_worker_types: ["All"],
+    supersedes_doc_id: null,
+    sections: [
+      {
+        code: "s1",
+        heading: "Remote-first exception",
+        text: "Employees whose applicable work location is in the EU may work remotely up to four days per week without individual approval, subject to their team's hybrid baseline.",
+      },
+    ],
+  },
+];
+
+/** Static employee context overrides applied by reset-demo (fixtures untouched). */
+export const TWIN_CONTEXT_OVERRIDES: Record<string, { work_location: string; worker_type: string }> = {
+  "dana@worksense.demo": { work_location: "US", worker_type: "full_time" },
+  "riley@worksense.demo": { work_location: "US", worker_type: "full_time" },
+  "jordan@worksense.demo": { work_location: "US", worker_type: "full_time" },
+  "chris@worksense.demo": { work_location: "US", worker_type: "full_time" },
+  "alex@worksense.demo": { work_location: "US", worker_type: "full_time" },
+  "sam@worksense.demo": { work_location: "US", worker_type: "full_time" },
+};
+
+/** Public holidays used by the leave-calc holiday test/demo (US, 2026/2027). */
+export const US_PUBLIC_HOLIDAYS_2026 = ["2026-01-01", "2026-05-25", "2026-07-03", "2026-09-07", "2026-11-26", "2026-12-25", "2027-01-01"];
+
+
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
+
+
+
+
 
 
 
@@ -633,145 +1029,431 @@ const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
-
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
-const GROUNDING_SYSTEM = `You are the WorkSense HR Policy Reasoning Agent. Answer using ONLY the provided policy excerpts. If they do not contain the answer, set status to "insufficient_evidence" and say so plainly — never invent a policy. Every claim must cite doc_code, section, and a short exact quote.
+const NL = String.fromCharCode(10);
+
+const GROUNDING_SYSTEM = `You are the WorkSense HR Policy Reasoning Agent. Answer using ONLY the provided policy excerpts and the authoritative computed facts. If they do not contain the answer, set status to "insufficient_evidence" and say so plainly — never invent a policy, an exception, an eligibility fact, or a number.
+Chunk headers may carry tags: [RETIRED yyyy-mm-dd] means that document was retired and may only be used to state that the policy no longer applies. [DOES NOT APPLY - context] means that document does not apply to the given employee context and may only be used to state that the exception does not apply.
+Every material claim MUST include a citation: doc_code (POL-...), version (integer), section (the section code, e.g. "s1"), and an exact_quote copied VERBATIM from that exact section of that document version.
+The numeric facts in <authoritative_computed_facts> are exact and authoritative — restate them as given, never recalculate them.
 Respond with JSON only:
-{"status":"grounded_response|insufficient_evidence","answer":"string","citations":[{"doc_code":"string","section":"string","exact_quote":"string"}]}`;
+{"status":"grounded_response|insufficient_evidence","answer":"string","citations":[{"doc_code":"string","version":2,"section":"string","exact_quote":"string"}]}`;
+
+const REPAIR_SYSTEM = `You are the WorkSense HR Policy Reasoning Agent. Your previous answer failed: it either cited passages that do not exist verbatim in the cited sections, or its JSON was invalid. Fix the answer: keep it truthful, rewrite the citations so every exact_quote is copied VERBATIM from the cited section of the cited document version in the provided excerpts, and respond with valid JSON only. If you cannot support a claim, remove the claim. Never invent policy.
+Respond with JSON only:
+{"status":"grounded_response|insufficient_evidence","answer":"string","citations":[{"doc_code":"string","version":2,"section":"string","exact_quote":"string"}]}`;
+
+const subMonths = (iso: string, months: number): string => {
+  const d = new Date(iso);
+  d.setUTCMonth(d.getUTCMonth() - months);
+  return d.toISOString().slice(0, 10);
+};
+
+interface EmployeeContext {
+  id?: string;
+  name?: string;
+  work_location?: string;
+  worker_type?: string;
+  tenure_months?: number;
+  join_date?: string;
+}
+
+/** Enrich citations with the source document metadata they were validated against. */
+function enrichCitations(
+  citations: { doc_code?: string; version?: number | string; section?: string; exact_quote?: string; claim?: string }[],
+  chunks: RetrievedChunk[]
+) {
+  return citations.map((c) => {
+    const ch = chunks.find(
+      (x) =>
+        String(x.doc_code).toLowerCase() === String(c.doc_code ?? "").toLowerCase() &&
+        String(x.section_code) === String(c.section ?? "") &&
+        (c.version === undefined || c.version === null || String(x.version ?? "") === String(c.version))
+    );
+    return {
+      ...c,
+      doc_title: ch?.doc_title,
+      version: ch?.version ?? c.version ?? null,
+      heading: ch?.heading,
+      effective_from: ch?.effective_from ?? null,
+      effective_to: ch?.effective_to ?? null,
+    };
+  });
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   try {
+    const supabase = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+    );
 
-  const supabase = createClient(
-    Deno.env.get("SUPABASE_URL")!,
-    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-  );
+    const authHeader = req.headers.get("Authorization") ?? "";
+    const { data: userData } = await supabase.auth.getUser(authHeader.replace("Bearer ", ""));
+    const uid = userData?.user?.id;
+    if (!uid) return json({ error: "UNAUTHENTICATED" }, 401);
 
-  const authHeader = req.headers.get("Authorization") ?? "";
-  const { data: userData } = await supabase.auth.getUser(authHeader.replace("Bearer ", ""));
-  const uid = userData?.user?.id;
-  if (!uid) return json({ error: "UNAUTHENTICATED" }, 401);
+    const { data: caller } = await supabase
+      .from("digital_twins")
+      .select("id, role, email, org_id, name, manager_id, work_location, worker_type, tenure_months")
+      .eq("auth_user_id", uid)
+      .maybeSingle();
+    if (!caller) return json({ error: "UNAUTHENTICATED" }, 401);
 
-  const { data: caller } = await supabase
-    .from("digital_twins")
-    .select("id, org_id")
-    .eq("auth_user_id", uid)
-    .maybeSingle();
-  if (!caller) return json({ error: "UNAUTHENTICATED" }, 401);
+    let body: {
+      action?: string;
+      question?: string;
+      employee_id?: string;
+      context?: { location?: string; worker_type?: string; taken_days?: number; request_from?: string; request_to?: string };
+    } = {};
+    try {
+      body = await req.json();
+    } catch {
+      /* empty */
+    }
 
-  let body: { question?: string } = {};
-  try {
-    body = await req.json();
-  } catch {
-    /* empty */
-  }
-  const raw = String(body.question ?? "").trim();
-  if (raw.length < 5) return json({ error: "VALIDATION_ERROR", message: "Ask a real question (min 5 characters)." }, 400);
+    // ---- context listing (auth only): visible employees + current docs -------
+    if (body.action === "context") {
+      const { data: twins } = await supabase
+        .from("digital_twins")
+        .select("id, name, org_id, manager_id, work_location, worker_type, tenure_months")
+        .eq("org_id", caller.org_id);
+      const employees: EmployeeView[] = (twins ?? []).map((t) => ({
+        id: t.id, org_id: t.org_id, name: t.name, manager_id: t.manager_id,
+        work_location: t.work_location, worker_type: t.worker_type,
+      }));
+      const visible = employees.filter((e) => canViewEmployee({ id: caller.id, role: caller.role, org_id: caller.org_id }, e));
 
-  // Untrusted input handling: neutralize instruction-like phrases.
-  const question = sanitizeUntrusted(raw);
+      const { data: docRows } = await supabase
+        .from("policy_documents")
+        .select("id, doc_code, version, title, category, effective_from, effective_to, applicable_locations, applicable_worker_types")
+        .eq("org_id", caller.org_id);
+      const docs = (docRows ?? []).map((d) => ({
+        id: d.id, doc_code: d.doc_code, version: d.version, title: d.title, category: d.category ?? "General",
+        effective_from: d.effective_from, effective_to: d.effective_to,
+        applicable_locations: d.applicable_locations ?? ["All"], applicable_worker_types: d.applicable_worker_types ?? ["All"],
+      }));
+      const current = currentVersionSet(
+        docs.map((d) => ({ ...d, sections: [] })),
+        new Date().toISOString().slice(0, 10)
+      );
+      return json({ ok: true, employees: visible, policies: current });
+    }
 
-  // Policy source: versioned policy_documents (Phase 3) with jsonb fallback.
-  const { data: docRows } = await supabase
-    .from("policy_documents")
-    .select("doc_code, version, title, category, sections, effective_from")
-    .eq("org_id", caller.org_id);
-  let policies: PolicyDoc[] = [];
-  if ((docRows ?? []).length > 0) {
-    const byCode = new Map<string, PolicyDoc & { version?: number }>();
-    for (const row of docRows as { doc_code: string; version: number; title: string; category: string | null; sections: { code: string; heading: string; text: string }[]; effective_from: string }[]) {
-      const cur = byCode.get(row.doc_code);
-      if (!cur || row.version > (cur.version ?? 1)) {
-        byCode.set(row.doc_code, {
-          id: `pol-${row.doc_code}`,
-          doc_code: row.doc_code,
-          version: row.version,
-          title: row.title,
-          category: row.category ?? "General",
-          sections: row.sections,
-          effective_date: row.effective_from,
-        });
+    // ---- question answering ----
+    const raw = String(body.question ?? "").trim();
+    if (raw.length < 5) return json({ error: "VALIDATION_ERROR", message: "Ask a real question (min 5 characters)." }, 400);
+    const question = sanitizeUntrusted(raw);
+    const asOf = new Date().toISOString().slice(0, 10);
+
+    // 1) Load the policy corpus (org-scoped: the actor only ever sees their org).
+    const { data: docRows } = await supabase
+      .from("policy_documents")
+      .select("id, doc_code, version, title, category, sections, effective_from, effective_to, applicable_locations, applicable_worker_types, supersedes_doc_id")
+      .eq("org_id", caller.org_id);
+    const policies: PolicyDoc[] = (docRows ?? []).map((r) => ({
+      id: r.id,
+      doc_code: r.doc_code,
+      version: r.version,
+      title: r.title,
+      category: r.category ?? "General",
+      sections: r.sections ?? [],
+      effective_from: r.effective_from ?? undefined,
+      effective_to: r.effective_to ?? null,
+      applicable_locations: r.applicable_locations ?? ["All"],
+      applicable_worker_types: r.applicable_worker_types ?? ["All"],
+      supersedes_doc_id: r.supersedes_doc_id ?? null,
+    }));
+
+    // 2) Resolve employee context (authorized).
+    const { data: twins } = await supabase
+      .from("digital_twins")
+      .select("id, name, org_id, manager_id, work_location, worker_type, tenure_months")
+      .eq("org_id", caller.org_id);
+    const employees: EmployeeView[] = (twins ?? []).map((t) => ({
+      id: t.id, org_id: t.org_id, name: t.name, manager_id: t.manager_id,
+      work_location: t.work_location, worker_type: t.worker_type,
+    }));
+    const callerView: CallerView = { id: caller.id, role: caller.role, org_id: caller.org_id };
+
+    let employeeCtx: EmployeeContext = {};
+    const explicitId = (body.employee_id ?? "").trim();
+    if (explicitId) {
+      const target = employees.find((e) => e.id === explicitId);
+      if (!target || !canViewEmployee(callerView, target)) {
+        return json({ error: "FORBIDDEN", message: "You cannot access that employee's context." }, 403);
+      }
+      employeeCtx = {
+        id: target.id, name: target.name,
+        work_location: target.work_location ?? undefined,
+        worker_type: target.worker_type ?? undefined,
+        tenure_months: (twins ?? []).find((t) => t.id === target.id)?.tenure_months ?? undefined,
+      };
+    } else {
+      const mention = findEmployeeMention(question, employees, callerView);
+      if (mention) {
+        employeeCtx = {
+          id: mention.id, name: mention.name,
+          work_location: mention.work_location ?? undefined,
+          worker_type: mention.worker_type ?? undefined,
+          tenure_months: (twins ?? []).find((t) => t.id === mention.id)?.tenure_months ?? undefined,
+        };
+      } else if (caller.role === "employee") {
+        employeeCtx = { id: caller.id, name: caller.name, work_location: caller.work_location ?? undefined, worker_type: caller.worker_type ?? undefined, tenure_months: caller.tenure_months ?? undefined };
       }
     }
-    policies = [...byCode.values()];
-  }
-  if (policies.length === 0) {
-    const { data: org } = await supabase.from("organizations").select("policies").eq("id", caller.org_id).maybeSingle();
-    policies = (org?.policies ?? []) as PolicyDoc[];
-  }
+    // Hypothetical context supplied explicitly overrides the resolved one.
+    if (body.context?.location) employeeCtx.work_location = body.context.location;
+    if (body.context?.worker_type) employeeCtx.worker_type = body.context.worker_type;
+    if (employeeCtx.tenure_months !== undefined) employeeCtx.join_date = subMonths(asOf, employeeCtx.tenure_months);
 
-  // 1) DETERMINISTIC retrieval — zero LLM credits.
-  const retrieval = retrieveChunks(policies, question, 3);
+    const ctx = { location: employeeCtx.work_location, worker_type: employeeCtx.worker_type };
 
-  // 2) CALIBRATED ABSTENTION GATE — before any model call.
-  if (retrieval.length === 0 || retrieval[0].score < ABSTENTION_THRESHOLD) {
+    // 3) Current version set (date window + supersession).
+    const currentAll = currentVersionSet(policies, asOf);
+    if (currentAll.length === 0) {
+      return json({ status: "insufficient_evidence", abstained: true, best_score: 0, threshold: ABSTENTION_THRESHOLD, answer: "", citations: [], retrieval: [], note: "No current policy documents are available in your organization." });
+    }
+
+    // 4) Missing applicability fields -> targeted clarification, not assumption.
+    const topOfAll = retrieveChunks(currentAll, question, 1)[0];
+    if (topOfAll) {
+      const doc = currentAll.find((d) => d.doc_code === topOfAll.doc_code);
+      if (doc) {
+        const missing = missingApplicability(doc, ctx);
+        if (missing.length > 0) {
+          return json({
+            status: "clarification_needed",
+            abstained: true,
+            best_score: topOfAll.score,
+            threshold: ABSTENTION_THRESHOLD,
+            answer: "",
+            citations: [],
+            retrieval: [topOfAll],
+            clarification: {
+              fields: missing,
+              reason: `"${doc.title}" applies to specific ${missing.map((f) => f.replace("_", " ")).join(" and ")}, which were not provided. I will not assume an applicable ${missing.join(" / ")}.`,
+              doc_code: doc.doc_code,
+              doc_title: doc.title,
+            },
+            employee_context: employeeCtx,
+          });
+        }
+      }
+    }
+
+    // 5) Applicability filter (only when the field is known), then lexical retrieval.
+    const applicable = currentAll.filter((d) => applicabilityOk(d, ctx));
+    const retrieval = retrieveChunks(applicable, question, 5);
+
+    // 6) Honest context notes: retired policies and applicability-excluded docs.
+    const outOfWindow = filterOutOfWindow(policies, asOf);
+    const expiredChunks = outOfWindow.length > 0 ? retrieveChunks(outOfWindow, question, 1) : [];
+    const expiredHit = expiredChunks[0] ?? null;
+    const expiredDoc = expiredHit ? outOfWindow.find((d) => d.doc_code === expiredHit.doc_code) ?? null : null;
+    const currentTexts = applicable.flatMap((d) => d.sections.map((s) => s.text));
+    const expiredExclusive = expiredHit && expiredDoc
+      ? exclusiveQuestionTokens(question, expiredDoc.sections.map((s) => s.text), currentTexts)
+      : [];
+    const expiredPriority = Boolean(expiredHit && expiredDoc && expiredHit.score >= 0.45 && expiredExclusive.length >= 1);
+
+    const excludedDocs = currentAll.filter((d) => !applicabilityOk(d, ctx));
+    const excludedChunks = excludedDocs.length > 0 ? retrieveChunks(excludedDocs, question, 1) : [];
+    const excludedHit = excludedChunks[0] ?? null;
+    const excludedDoc = excludedHit ? excludedDocs.find((d) => d.doc_code === excludedHit.doc_code) ?? null : null;
+    const excludedExclusive = excludedHit && excludedDoc
+      ? exclusiveQuestionTokens(question, excludedDoc.sections.map((s) => s.text), currentTexts)
+      : [];
+    const excludedPriority = Boolean(excludedHit && excludedDoc && excludedHit.score >= 0.45 && excludedExclusive.length >= 1);
+
+    const ctxText = [ctx.location && `location=${ctx.location}`, ctx.worker_type && `worker type=${ctx.worker_type}`].filter(Boolean).join(", ") || "no context provided";
+
+    // Deterministic, honest notes — no model call, nothing invented.
+    if (expiredPriority) {
+      return json({
+        status: "insufficient_evidence",
+        abstained: true,
+        best_score: retrieval[0]?.score ?? 0,
+        threshold: ABSTENTION_THRESHOLD,
+        answer: "",
+        citations: [],
+        retrieval: retrieveChunks([expiredDoc!], question, 2).map((c) => ({ ...c, heading: `${c.heading} [RETIRED ${expiredDoc!.effective_to ?? ""}]` })),
+        note: `No current policy covers this. "${expiredDoc!.title}" (${expiredDoc!.doc_code}) was retired on ${expiredDoc!.effective_to ?? "a prior date"} and has no current version — nothing was invented to answer it.`,
+        expired_policy: { doc_code: expiredDoc!.doc_code, title: expiredDoc!.title, effective_to: expiredDoc!.effective_to ?? null, score: expiredHit!.score },
+        employee_context: employeeCtx,
+      });
+    }
+    if (excludedPriority) {
+      return json({
+        status: "insufficient_evidence",
+        abstained: true,
+        best_score: retrieval[0]?.score ?? 0,
+        threshold: ABSTENTION_THRESHOLD,
+        answer: "",
+        citations: [],
+        retrieval: retrieveChunks([excludedDoc!], question, 2).map((c) => ({ ...c, heading: `${c.heading} [DOES NOT APPLY — ${ctxText}]` })),
+        note: `"${excludedDoc!.title}" (${excludedDoc!.doc_code}) does not apply to ${ctxText || "the given context"}, so it cannot answer this question — nothing was assumed or invented.`,
+        excluded_policy: { doc_code: excludedDoc!.doc_code, title: excludedDoc!.title, context: ctx },
+        employee_context: employeeCtx,
+      });
+    }
+
+    // 7) Abstention gate (BM25 score is a ranking signal, not a probability).
+    if (retrieval.length === 0 || retrieval[0].score < ABSTENTION_THRESHOLD) {
+      return json({
+        status: "insufficient_evidence",
+        abstained: true,
+        best_score: retrieval[0]?.score ?? 0,
+        threshold: ABSTENTION_THRESHOLD,
+        answer: "",
+        citations: [],
+        retrieval,
+        employee_context: employeeCtx,
+      });
+    }
+
+    // 8) Deterministic computations where supported (leave balances / spans).
+    let computed: unknown = null;
+    const topDoc = applicable.find((d) => d.doc_code === retrieval[0].doc_code);
+    const isLeaveTopic = retrieval[0].doc_code === "POL-LVE" || /\bleave\b|\bvacation\b|\bcarryover\b|\baccru\w*\b/.test(question);
+    if (isLeaveTopic && topDoc && employeeCtx.tenure_months !== undefined && employeeCtx.join_date) {
+      const taken = Math.max(0, Number(body.context?.taken_days) || 0);
+      const balance = leaveSummary({ join_date: employeeCtx.join_date, taken_days: taken, as_of: asOf });
+      let request: unknown = null;
+      if (body.context?.request_from && body.context?.request_to && employeeCtx.work_location === "US") {
+        request = leaveDaysConsumed({
+          from: body.context.request_from,
+          to: body.context.request_to,
+          public_holidays: US_PUBLIC_HOLIDAYS_2026,
+        });
+      }
+      computed = {
+        topic: "leave_balance",
+        employee: { name: employeeCtx.name ?? null, work_location: employeeCtx.work_location ?? null, worker_type: employeeCtx.worker_type ?? null },
+        balance,
+        months_in_leave_year: monthsInLeaveYear(employeeCtx.join_date, asOf),
+        request_span: request,
+      };
+    }
+
+    // 9) One grounded Qwen call, then STRICT citation validation (+ one repair).
+    const contextNotes: RetrievedChunk[] = [];
+    if (expiredHit && expiredDoc && expiredHit.score >= 0.45) {
+      contextNotes.push(...retrieveChunks([expiredDoc], question, 2).map((c) => ({ ...c, heading: `${c.heading} [RETIRED ${expiredDoc.effective_to ?? ""}]` })));
+    }
+    if (excludedHit && excludedDoc && excludedHit.score >= 0.45) {
+      contextNotes.push(...retrieveChunks([excludedDoc], question, 2).map((c) => ({ ...c, heading: `${c.heading} [DOES NOT APPLY — ${ctxText}]` })));
+    }
+    const fullRetrieval = [...retrieval, ...contextNotes];
+
+    const chunksText = fullRetrieval
+      .map((c) => `[${c.doc_code} v${c.version} ${c.section_code}] ${c.heading}${NL}${c.text}`)
+      .join(NL + NL);
+    const factsBlock = computed
+      ? `<authoritative_computed_facts>${NL}${JSON.stringify(computed)}${NL}</authoritative_computed_facts>`
+      : "";
+
+    const buildUser = () =>
+      `<policy_chunks>${NL}${chunksText}${NL}</policy_chunks>${NL}${NL}${factsBlock}${NL}${NL}Question (untrusted): ${wrapUntrusted(question)}`;
+
+    const attempt = async (repairHint: boolean) => {
+      const parsed = (await callQwen({
+        json: true,
+        temperature: 0.1,
+        maxTokens: 1100,
+        task: repairHint ? "policy_answer_repair" : "policy_qa",
+        system: repairHint ? REPAIR_SYSTEM : GROUNDING_SYSTEM,
+        user: buildUser(),
+      })) as unknown;
+      const valid = validatePolicyAnswer(parsed);
+      if (!valid.ok) throw new QwenError("MODEL_OUTPUT_INVALID", `Policy answer failed validation: ${valid.errors.join("; ")}`);
+      return parsed as { status?: string; answer?: string; citations?: { doc_code?: string; version?: number; section?: string; exact_quote?: string }[] };
+    };
+
+    let typed: { status?: string; answer?: string; citations?: { doc_code?: string; version?: number; section?: string; exact_quote?: string }[] } | null = null;
+    let modelNote = "";
+    try {
+      typed = await attempt(false);
+      const { droppedCount } = validateCitations(typed.citations, fullRetrieval);
+      if (typed.status === "grounded_response" && droppedCount > 0) {
+        typed = await attempt(true);
+      }
+    } catch (err) {
+      if (err instanceof QwenError && err.code === "MODEL_OUTPUT_INVALID") {
+        // Repair once; if the repair also fails, abstain honestly.
+        try {
+          typed = await attempt(true);
+        } catch {
+          modelNote = "The model could not produce a schema-valid grounded answer; the question was not answered.";
+        }
+      } else {
+        throw err;
+      }
+    }
+
+    if (!typed) {
+      return json({
+        status: "insufficient_evidence",
+        abstained: false,
+        best_score: retrieval[0].score,
+        threshold: ABSTENTION_THRESHOLD,
+        answer: "",
+        citations: [],
+        retrieval: fullRetrieval,
+        computed,
+        employee_context: employeeCtx,
+        note: modelNote || "No supported answer was produced.",
+      });
+    }
+
+    const repaired = validateCitations(typed.citations, fullRetrieval);
+    const finalCits = repaired.valid;
+    const finalDropped = repaired.droppedCount;
+
+    const answer = String(typed.answer ?? "").trim();
+    let status: "grounded" | "partially_supported" | "insufficient_evidence" =
+      typed.status === "grounded_response" ? "grounded" : "insufficient_evidence";
+
+    // Never label grounded without a valid citation; never allow dropped claims
+    // to silently pass as grounded.
+    if (finalCits.length === 0) status = "insufficient_evidence";
+    else if (finalDropped > 0) status = "partially_supported";
+    if (answer.length === 0) status = "insufficient_evidence";
+
+    if (status === "insufficient_evidence") {
+      return json({
+        status,
+        abstained: false,
+        best_score: retrieval[0].score,
+        threshold: ABSTENTION_THRESHOLD,
+        answer: "",
+        citations: [],
+        retrieval: fullRetrieval,
+        computed,
+        employee_context: employeeCtx,
+        note: finalCits.length === 0
+          ? "The model could not tie the answer to verbatim quotes from the cited sections; it was discarded rather than labeled grounded."
+          : "No supported answer was produced.",
+      });
+    }
+
     return json({
-      status: "insufficient_evidence",
-      abstained: true,
-      best_score: retrieval[0]?.score ?? 0,
-      threshold: ABSTENTION_THRESHOLD,
-      answer: "",
-      citations: [],
-      retrieval,
-    });
-  }
-
-  // 3) ONE grounded Qwen call per question that clears the threshold.
-  const chunksText = retrieval
-    .map((c) => `[${c.doc_code} ${c.section_code}] ${c.heading}
-${c.text}`)
-    .join("\n\n");
-
-  const parsed = (await callQwen({
-    json: true,
-    temperature: 0.1,
-    maxTokens: 900,
-    system: GROUNDING_SYSTEM,
-    user: `<policy_chunks>
-${chunksText}
-</policy_chunks>
-
-Question (untrusted): ${wrapUntrusted(question)}`,
-  })) as unknown;
-  const valid = validatePolicyAnswer(parsed);
-  if (!valid.ok) throw new QwenError("MODEL_OUTPUT_INVALID", `Policy answer failed validation: ${valid.errors.join("; ")}`);
-  const typed = parsed as { status?: string; answer?: string; citations?: { doc_code?: string; section?: string; exact_quote?: string }[] };
-
-  // Never let an ungrounded answer through: every exact_quote must exist
-  // verbatim in a retrieved chunk. Dropped citations downgrade the state.
-  const { valid: validCits, droppedCount } = validateCitations(typed.citations, retrieval);
-  const answer = String(typed.answer ?? "").trim();
-  let status: "grounded" | "partially_supported" | "insufficient_evidence" =
-    typed.status === "grounded_response" ? "grounded" : "insufficient_evidence";
-
-  if (status === "grounded" && droppedCount > 0) status = "partially_supported";
-  if (answer.length === 0 || (validCits.length === 0 && droppedCount > 0)) status = "insufficient_evidence";
-
-  if (status === "insufficient_evidence") {
-    return json({
-      status: "insufficient_evidence",
+      status,
       abstained: false,
       best_score: retrieval[0].score,
       threshold: ABSTENTION_THRESHOLD,
-      answer: "",
-      citations: [],
-      retrieval,
-      note: "The model could not answer from the retrieved chunks.",
+      answer,
+      citations: enrichCitations(finalCits, fullRetrieval),
+      retrieval: fullRetrieval,
+      computed,
+      employee_context: employeeCtx,
+      note: status === "partially_supported"
+        ? `Some claims were removed: ${repaired.invalidReasons.slice(0, 2).join(" ")}`
+        : undefined,
     });
-  }
-
-  return json({
-    status,
-    abstained: false,
-    best_score: retrieval[0].score,
-    threshold: ABSTENTION_THRESHOLD,
-    answer,
-    citations: validCits,
-    retrieval,
-  });
   } catch (err) {
     return json({ error: err instanceof QwenError ? err.code : "INTERNAL", message: err instanceof Error ? err.message : "unknown" });
   }

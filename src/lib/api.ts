@@ -227,21 +227,39 @@ export const onboardingTask = (
 export interface PolicyCitation {
   claim?: string;
   doc_code: string;
+  version: number | null;
   section: string;
+  heading?: string;
   exact_quote: string;
+  doc_title?: string;
+  effective_from?: string | null;
+  effective_to?: string | null;
 }
 
 export interface PolicyRetrievedChunk {
   doc_code: string;
   doc_title: string;
+  version?: number;
   section_code: string;
   heading: string;
   text: string;
   score: number;
+  effective_from?: string | null;
+  effective_to?: string | null;
 }
 
+export interface PolicyComputedFacts {
+  topic: string;
+  employee?: { name: string | null; work_location: string | null; worker_type: string | null };
+  balance?: { accrued_days: number; taken_days: number; unused_days: number; carryover_days: number; carryover_cap_days: number; as_of: string; join_date: string };
+  months_in_leave_year?: number;
+  request_span?: { calendar_days: number; holiday_days: number; leave_days_consumed: number } | null;
+}
+
+export type PolicyAnswerStatus = "grounded" | "partially_supported" | "insufficient_evidence" | "clarification_needed";
+
 export interface PolicyAnswer {
-  status: "grounded" | "partially_supported" | "insufficient_evidence";
+  status: PolicyAnswerStatus;
   abstained: boolean;
   best_score: number;
   threshold: number;
@@ -249,13 +267,29 @@ export interface PolicyAnswer {
   citations: PolicyCitation[];
   retrieval: PolicyRetrievedChunk[];
   note?: string;
+  clarification?: { fields: string[]; reason: string; doc_code: string; doc_title: string };
+  computed?: PolicyComputedFacts;
+  employee_context?: { name?: string; work_location?: string; worker_type?: string };
+  expired_policy?: { doc_code: string; title: string; effective_to: string | null; score: number };
+  excluded_policy?: { doc_code: string; title: string; context: Record<string, unknown> };
 }
 
-export const policyAsk = (question: string) =>
-  invoke<PolicyAnswer>("policy-qa", { question });
+export interface PolicyContextResult {
+  ok: true;
+  employees: { id: string; name: string; work_location: string | null; worker_type: string | null }[];
+  policies: { id: string; doc_code: string; version: number; title: string; category: string; effective_from: string | null; effective_to: string | null; applicable_locations: string[]; applicable_worker_types: string[] }[];
+}
 
-export const escalatePolicy = (question: string, status: string, bestScore: number) =>
-  invoke<{ ok: true; recommendation_id: string }>("escalate", { question, status, best_score: bestScore });
+export const policyAsk = (question: string, employeeId?: string, context?: { location?: string; worker_type?: string; taken_days?: number; request_from?: string; request_to?: string }) =>
+  invoke<PolicyAnswer>("policy-qa", { question, employee_id: employeeId, context });
+
+export const policyContext = () => invoke<PolicyContextResult>("policy-qa", { action: "context" });
+
+export const escalatePolicy = (question: string, context?: Record<string, unknown>, sources?: unknown[], reason?: string) =>
+  invoke<{ ok: true; escalation_id: string; status: string; created_at: string; owner: string; message: string }>(
+    "escalate",
+    { question, context, sources, reason }
+  );
 
 // ---- Recommendation & Action Hub ----
 

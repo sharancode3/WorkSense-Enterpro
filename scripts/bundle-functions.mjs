@@ -36,12 +36,15 @@ const fixtures = stripAllImports(read("supabase/functions/_shared/generated-demo
 const seed = stripAllImports(read("supabase/functions/_shared/seed-data.ts"));
 const stageEngine = stripAllImports(read("supabase/functions/_shared/stage-engine.ts"));
 const assessment = stripAllImports(read("supabase/functions/_shared/assessment.ts"));
+const pcontext = stripAllImports(read("supabase/functions/_shared/policy-context.ts"));
+const leave = stripAllImports(read("supabase/functions/_shared/leave-calc.ts"));
+const policyseed = stripAllImports(read("supabase/functions/_shared/policy-seed.ts"));
 
-const SHARED = { engine, onboarding, qwen, policy, signal, recEngine, jobs, validate, evidence, resume, generated, journey, fixtures, seed, stageEngine, assessment };
+const SHARED = { engine, onboarding, qwen, policy, signal, recEngine, jobs, validate, evidence, resume, generated, journey, fixtures, seed, stageEngine, assessment, pcontext, leave, policyseed };
 
 // Function -> shared dependencies (in import order) it needs inlined.
 const FNS = {
-  "reset-demo": ["generated", "journey", "seed", "fixtures", "assessment"],
+  "reset-demo": ["generated", "journey", "seed", "fixtures", "assessment", "policyseed"],
   "skill-match": ["engine", "evidence"],
   "extract-resume": ["engine", "qwen", "jobs", "validate", "evidence"],
   "rubric": ["qwen", "validate"],
@@ -52,7 +55,7 @@ const FNS = {
   "onboarding-plan": ["engine", "onboarding"],
   "onboarding-approve": [],
   "onboarding-task": ["onboarding"],
-  "policy-qa": ["qwen", "policy", "validate"],
+  "policy-qa": ["qwen", "policy", "validate", "pcontext", "leave", "policyseed"],
   "escalate": [],
   "workforce-signal": ["signal"],
   "performance-synthesis": ["qwen", "validate"],

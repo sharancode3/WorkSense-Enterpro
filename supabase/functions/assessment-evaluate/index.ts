@@ -450,8 +450,9 @@ export function validatePolicyAnswer(d: unknown): ValidationResult {
       const c = isObj(raw) ? raw : null;
       if (!c) { errors.push("citation not an object"); continue; }
       if (!isStr(c.doc_code) || !/^POL-/.test(c.doc_code)) errors.push("citation doc_code must start with POL-");
+      if (c.version !== undefined && c.version !== null && !isStr(c.version) && !isNum(c.version)) errors.push("citation version must be a string or number");
       if (!isStr(c.section) || c.section.trim().length === 0) errors.push("citation section missing");
-      if (!isStr(c.exact_quote) || c.exact_quote.trim().length === 0) errors.push("citation exact_quote missing");
+      if (!isStr(c.exact_quote) || c.exact_quote.trim().length === 0) errors.push("citation exact_quote must be non-empty");
     }
   }
   return fail(errors);

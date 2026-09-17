@@ -3832,6 +3832,8 @@ export type Database = {
           tenure_months: number
           updated_at: string
           verified_skills: Json
+          work_location: string | null
+          worker_type: string | null
         }
         Insert: {
           attendance?: Json
@@ -3859,6 +3861,8 @@ export type Database = {
           tenure_months?: number
           updated_at?: string
           verified_skills?: Json
+          work_location?: string | null
+          worker_type?: string | null
         }
         Update: {
           attendance?: Json
@@ -3886,6 +3890,8 @@ export type Database = {
           tenure_months?: number
           updated_at?: string
           verified_skills?: Json
+          work_location?: string | null
+          worker_type?: string | null
         }
         Relationships: [
           {
@@ -4175,35 +4181,47 @@ export type Database = {
       }
       policy_documents: {
         Row: {
+          applicable_locations: Json
+          applicable_worker_types: Json
           category: string | null
           created_at: string
           doc_code: string
           effective_from: string
+          effective_to: string | null
           id: string
           org_id: string
           sections: Json
+          supersedes_doc_id: string | null
           title: string
           version: number
         }
         Insert: {
+          applicable_locations?: Json
+          applicable_worker_types?: Json
           category?: string | null
           created_at?: string
           doc_code: string
           effective_from: string
+          effective_to?: string | null
           id?: string
           org_id: string
           sections?: Json
+          supersedes_doc_id?: string | null
           title: string
           version?: number
         }
         Update: {
+          applicable_locations?: Json
+          applicable_worker_types?: Json
           category?: string | null
           created_at?: string
           doc_code?: string
           effective_from?: string
+          effective_to?: string | null
           id?: string
           org_id?: string
           sections?: Json
+          supersedes_doc_id?: string | null
           title?: string
           version?: number
         }
@@ -4212,6 +4230,76 @@ export type Database = {
             foreignKeyName: "policy_documents_org_id_fkey"
             columns: ["org_id"]
             referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "policy_documents_supersedes_doc_id_fkey"
+            columns: ["supersedes_doc_id"]
+            referencedRelation: "policy_documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      policy_escalations: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          org_id: string
+          owner_twin_id: string | null
+          question: string
+          reason: string | null
+          relevant_sources: Json
+          resolved_at: string | null
+          selected_context: Json
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          org_id: string
+          owner_twin_id?: string | null
+          question: string
+          reason?: string | null
+          relevant_sources?: Json
+          resolved_at?: string | null
+          selected_context?: Json
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          org_id?: string
+          owner_twin_id?: string | null
+          question?: string
+          reason?: string | null
+          relevant_sources?: Json
+          resolved_at?: string | null
+          selected_context?: Json
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "policy_escalations_created_by_fkey"
+            columns: ["created_by"]
+            referencedRelation: "digital_twins"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "policy_escalations_org_id_fkey"
+            columns: ["org_id"]
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "policy_escalations_owner_twin_id_fkey"
+            columns: ["owner_twin_id"]
+            referencedRelation: "digital_twins"
             referencedColumns: ["id"]
           },
         ]
@@ -4598,6 +4686,8 @@ export type Database = {
           tenure_months: number
           updated_at: string
           verified_skills: Json
+          work_location: string | null
+          worker_type: string | null
         }
       }
       is_team_member: {
