@@ -136,7 +136,7 @@ Aggregates (JSON): ${JSON.stringify(agg)}
 Write the strengths/growth-areas narrative from these numbers only.`,
   })) as unknown;
   const valid = validatePerformanceNarrative(parsed);
-  if (!valid.ok) throw new QwenError("MODEL_OUTPUT_INVALID", `Narrative failed validation: ${valid.errors.join("; ")}`);
+  if (valid.ok === false) throw new QwenError("MODEL_OUTPUT_INVALID", `Narrative failed validation: ${valid.errors.join("; ")}`);
   const typed = parsed as { strengths?: string; growth_areas?: string; trend_direction?: string; confidence?: number };
 
   const synthesis = {

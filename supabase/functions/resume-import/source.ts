@@ -231,7 +231,7 @@ Deno.serve(async (req) => {
   }
 
   const valid = validateResumeReview(parsed);
-  if (!valid.ok) {
+  if (valid.ok === false) {
     await finishJob(supabase, job.id, { status: "failed", errorCode: "MODEL_OUTPUT_INVALID", errorMessage: valid.errors.join("; "), latencyMs: Date.now() - startedAt });
     await supabase.from("resume_documents").insert({
       id: docId, org_id: caller.org_id, twin_id: twinId, storage_path: safePath, file_name: fileName,

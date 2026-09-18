@@ -97,7 +97,7 @@ export default function WorkforceReview() {
 
   const dash = useQuery({
     queryKey: ["dashboard", me?.id ?? "anon", role],
-    queryFn: fetchDashboard,
+    queryFn: () => fetchDashboard(),
   });
 
   const cases: ReviewCaseRow[] = useMemo(() => {

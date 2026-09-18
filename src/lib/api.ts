@@ -1,5 +1,13 @@
 import { supabase } from "@/integrations/supabase/client";
 import type { Role } from "./rbac";
+import {
+  decode,
+  healthViewSchema,
+  interviewKitSchema,
+  meResultSchema,
+  staffingComparisonSchema,
+} from "./contracts";
+import type { z } from "zod";
 
 export interface Twin {
   id: string;
@@ -29,6 +37,7 @@ export interface SkillClaim {
 }
 
 export interface MeResult {
+  ok: true;
   user: { id: string; email?: string };
   twin: Twin;
 }
@@ -51,8 +60,7 @@ export interface CandidateStatusResult {
 export async function fetchMe(): Promise<MeResult> {
   const { data, error } = await supabase.functions.invoke<MeResult>("me");
   if (error) throw new Error(error.message || "me: invocation failed");
-  if (!data?.ok) throw new Error("me: no twin for this account");
-  return data;
+  return decode(meResultSchema, data, "me");
 }
 
 export async function resetDemo(): Promise<{ ok: true }> {
@@ -133,13 +141,13 @@ export interface FitRecordShape {
   computed_at: string;
 }
 
-async function invoke<T>(name: string, body: unknown): Promise<T> {
+async function invoke<T>(name: string, body: unknown, schema?: z.ZodType<T>, label?: string): Promise<T> {
   const { data, error } = await supabase.functions.invoke<T>(name, { body });
   if (error) {
     const ctx = (error as { context?: Record<string, unknown> }).context;
     throw new ApiError(error.message || `${name}: failed`, (ctx?.error as string) ?? undefined, ctx);
   }
-  return data as T;
+  return schema ? decode(schema, data, label ?? name) : (data as T);
 }
 
 export const extractResume = (twinId: string, resumeText: string, reqId?: string) =>
@@ -148,8 +156,13 @@ export const extractResume = (twinId: string, resumeText: string, reqId?: string
 export const generateRubrics = (reqId: string, competencies?: string[]) =>
   invoke<{ ok: true; rubrics: RubricCompetency[] }>("rubric", { req_id: reqId, competencies });
 
-export const generateInterviewKit = (twinId: string, reqId: string) =>
-  invoke<{ ok: true; kit: InterviewKit }>("interview-kit", { twin_id: twinId, req_id: reqId });
+export const generateInterviewKit = async (twinId: string, reqId: string) => {
+  const res = await invoke<{ ok: true; kit: InterviewKit }>("interview-kit", {
+    twin_id: twinId,
+    req_id: reqId,
+  });
+  return { ...res, kit: decode(interviewKitSchema, res.kit, "interview-kit.kit") };
+};
 
 export const evaluateInterview = (twinId: string, reqId: string, notes: string) =>
   invoke<{ ok: true; evaluation: InterviewEvaluation }>("evaluate-interview", { twin_id: twinId, req_id: reqId, notes });
@@ -605,7 +618,7 @@ export interface StaffingComparison {
 }
 
 export const fetchStaffingComparison = (requisitionTitle?: string) =>
-  invoke<StaffingComparison>("staffing-comparison", { requisition_title: requisitionTitle });
+  invoke<StaffingComparison>("staffing-comparison", { requisition_title: requisitionTitle }, staffingComparisonSchema, "staffing-comparison");
 
 // ---- Phase 9: Workforce Review Index + Performance Summaries ----
 
@@ -674,7 +687,7 @@ export interface PerformanceSummaryResult {
   summary: {
     narrative: string;
     source_facts: PerfSourceFact[];
-    inferred_themes: { theme: string; basis: string[]; inference?: boolean }[];
+    inferred_themes: { theme: string; basis: string[]; inference?: boolean; confidence_note?: string }[];
     contradictions: PerfContradiction[];
     sparse_evidence: { flags: string[] };
     model_note: string;
@@ -717,7 +730,7 @@ export interface HealthView {
 
 export const fetchModelJob = (jobId: string) => invoke<{ ok: true; job: ModelJobView }>("model-job", { job_id: jobId });
 
-export const fetchHealth = () => invoke<HealthView>("health", {});
+export const fetchHealth = () => invoke<HealthView>("health", {}, healthViewSchema, "health");
 
 // ---- Phase 4: file-based resume ingestion & evidence review ----
 
@@ -775,7 +788,7 @@ export interface ResumeImportResult {
   review?: ResumeReviewPayload;
   message?: string;
   job_id?: string;
-  warnings?: { conflicts: string[]; overlaps: string[] };
+  warnings?: { conflicts?: string[]; overlaps?: string[] };
   versions?: { id: string; version: number; review_state: string; created_at: string }[];
 }
 export interface ResumeReviewSaveResult {
@@ -945,6 +958,7 @@ export interface AssessmentEvaluation {
   assessment_id: string;
   result: {
     type: string;
+    assessment_id: string;
     session_id: string;
     session_type: string;
     blueprint_id: string;

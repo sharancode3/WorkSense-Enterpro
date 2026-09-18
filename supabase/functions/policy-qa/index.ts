@@ -1408,7 +1408,7 @@ Deno.serve(async (req) => {
         user: buildUser(),
       })) as unknown;
       const valid = validatePolicyAnswer(parsed);
-      if (!valid.ok) throw new QwenError("MODEL_OUTPUT_INVALID", `Policy answer failed validation: ${valid.errors.join("; ")}`);
+      if (valid.ok === false) throw new QwenError("MODEL_OUTPUT_INVALID", `Policy answer failed validation: ${valid.errors.join("; ")}`);
       return parsed as { status?: string; answer?: string; citations?: { doc_code?: string; version?: number; section?: string; exact_quote?: string }[] };
     };
 

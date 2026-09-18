@@ -34,13 +34,14 @@ function shapeRubric(parsed: { competency?: string; question?: string; follow_up
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
-  let jobId: string | null = null;
-  try {
 
   const supabase = createClient(
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
   );
+
+  let jobId: string | null = null;
+  try {
 
   const authHeader = req.headers.get("Authorization") ?? "";
   const { data: userData } = await supabase.auth.getUser(authHeader.replace("Bearer ", ""));
@@ -97,7 +98,7 @@ Deno.serve(async (req) => {
 
   // 1) Reuse cached rubrics; generate any missing competencies (cached per role).
   const required = (reqRow.required_skills ?? []) as { skill: string; target_proficiency: number }[];
-  let rubrics = (reqRow.rubrics ?? []) as { competency: string }[];
+  let rubrics = (reqRow.rubrics ?? []) as { competency: string; question: string; follow_up_probes: string[]; rubric: Record<string, string> }[];
   const have = new Set(rubrics.map((r) => r.competency.toLowerCase()));
   const missing = [...required.map((r) => r.skill), "Collaboration"].filter((c) => !have.has(c.toLowerCase()));
 
@@ -119,7 +120,7 @@ Deno.serve(async (req) => {
 
       for (const item of parsed.rubrics ?? []) {
         const valid = validateRubric(item);
-        if (!valid.ok) throw new QwenError("MODEL_OUTPUT_INVALID", `Rubric failed validation: ${valid.errors.join("; ")}`);
+        if (valid.ok === false) throw new QwenError("MODEL_OUTPUT_INVALID", `Rubric failed validation: ${valid.errors.join("; ")}`);
         const r = item as { competency?: string; question?: string; follow_up_probes?: string[]; rubric: Record<string, string> };
         const name = (r.competency ?? "").replace(/\s*\(.*\)\s*$/, "").trim();
         if (!name) continue;
@@ -175,7 +176,7 @@ Deno.serve(async (req) => {
       user: `Role: ${reqRow.title}. Candidate's Adjacent/Transferable/Gap items: ${focusItems.map((i) => i.skill).join(", ")}. Bias the question toward the top item and produce the rubric JSON.`,
     })) as unknown;
     const valid = validateRubric(parsed);
-    if (!valid.ok) throw new QwenError("MODEL_OUTPUT_INVALID", `Biased probe failed validation: ${valid.errors.join("; ")}`);
+    if (valid.ok === false) throw new QwenError("MODEL_OUTPUT_INVALID", `Biased probe failed validation: ${valid.errors.join("; ")}`);
     biasedProbe = shapeRubric(parsed as { competency?: string; question?: string; follow_up_probes?: string[]; rubric?: Partial<Record<(typeof TIER_KEYS)[number], string>> }, focusItems[0].skill);
     biasedProbe.competency = focusItems[0].skill; // pin to the actual focus skill
   }

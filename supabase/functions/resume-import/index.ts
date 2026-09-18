@@ -265,6 +265,9 @@ export interface JobRow {
   error_code: string | null;
   error_message: string | null;
   output: unknown;
+  created_at: string;
+  started_at: string | null;
+  finished_at: string | null;
 }
 
 /** Open duplicate for the same actor+task+input while still queued/running.
@@ -954,7 +957,7 @@ Deno.serve(async (req) => {
   }
 
   const valid = validateResumeReview(parsed);
-  if (!valid.ok) {
+  if (valid.ok === false) {
     await finishJob(supabase, job.id, { status: "failed", errorCode: "MODEL_OUTPUT_INVALID", errorMessage: valid.errors.join("; "), latencyMs: Date.now() - startedAt });
     await supabase.from("resume_documents").insert({
       id: docId, org_id: caller.org_id, twin_id: twinId, storage_path: safePath, file_name: fileName,

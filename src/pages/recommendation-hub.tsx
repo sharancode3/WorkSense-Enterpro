@@ -36,6 +36,7 @@ import {
   type RecommendationRow,
   type WorkflowEventRow,
 } from "@/lib/api";
+import { decode, recommendationRowSchema } from "@/lib/contracts";
 
 const STATUS_CHIP: Record<string, { label: string; cls: string }> = {
   suggested: { label: "Suggested", cls: "bg-muted text-foreground" },
@@ -405,8 +406,9 @@ export default function RecommendationHub() {
   const recs = useQuery({
     queryKey: ["hub-recs", user?.id ?? "anon"],
     queryFn: async () => {
-      const { data } = await supabase.from("recommendations").select("*").order("created_at", { ascending: false }).limit(20);
-      return (data ?? []) as RecommendationRow[];
+      const { data, error } = await supabase.from("recommendations").select("*").order("created_at", { ascending: false }).limit(20);
+      if (error) throw error;
+      return (data ?? []).map((r) => decode(recommendationRowSchema, r, "recommendation-row"));
     },
   });
 

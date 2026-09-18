@@ -517,7 +517,7 @@ async function generateRubric(supabase, reqRow: { id: string; title: string; req
   };
 
   const valid = validateRubric(parsed);
-  if (!valid.ok) throw new QwenError("MODEL_OUTPUT_INVALID", `Rubric failed validation: ${valid.errors.join("; ")}`);
+  if (valid.ok === false) throw new QwenError("MODEL_OUTPUT_INVALID", `Rubric failed validation: ${valid.errors.join("; ")}`);
   return {
     competency: (parsed.competency ?? competency).replace(/\s*\(.*\)\s*$/, "").trim() || competency,
     question: parsed.question ?? `Tell me about your experience with ${competency}.`,

@@ -74,7 +74,7 @@ Deno.serve(async (req) => {
   }
 
   const transition = resolveTransition(application.stage, decision);
-  if (!transition.ok) {
+  if (transition.ok === false) {
     return json({ error: transition.code, message: transition.message }, transition.code === "STAGE_TERMINAL" ? 409 : 400);
   }
   const newStage = transition.newStage;

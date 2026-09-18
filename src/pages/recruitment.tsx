@@ -42,29 +42,21 @@ import {
   extractResume,
   fetchModelJob,
   generateInterviewKit,
+  generateRubrics,
   requisitionCreate,
   type ApplicationRow,
   type InterviewEvaluation,
   type InterviewKit,
   type StageEventRow,
 } from "@/lib/api";
-
-interface Applicant {
-  twin_id: string;
-  stage: string;
-  match_score: number | null;
-}
-
-interface ReqRow {
-  id: string;
-  title: string;
-  department: string;
-  status: string;
-  seniority_level: number;
-  required_skills: { skill: string; target_proficiency: number }[];
-  future_skills: { skill: string; target_proficiency: number }[];
-  applicants: Applicant[];
-}
+import {
+  decode,
+  candidateRowSchema,
+  requisitionRowSchema,
+  type CandidateRow,
+  type RequisitionRow,
+} from "@/lib/contracts";
+import { classifyQuery } from "@/lib/query-state";
 
 const REQ_STATUS_CLASS: Record<string, string> = {
   open: "bg-primary text-white",
@@ -72,14 +64,6 @@ const REQ_STATUS_CLASS: Record<string, string> = {
   filled: "bg-secondary text-white",
   closed: "bg-muted text-foreground",
 };
-
-interface CandidateRow {
-  id: string;
-  name: string;
-  email: string;
-  role: string;
-  status: string;
-}
 
 const STAGE_LABEL: Record<string, string> = {
   screening: "Under Review",
@@ -167,8 +151,9 @@ export default function Recruitment() {
   const reqs = useQuery({
     queryKey: ["recruiter-reqs", user?.id ?? "anon"],
     queryFn: async () => {
-      const { data } = await supabase.from("job_requisitions").select("*").order("created_at", { ascending: false });
-      return (data ?? []) as ReqRow[];
+      const { data, error } = await supabase.from("job_requisitions").select("*").order("created_at", { ascending: false });
+      if (error) throw new ApiError(error.message, error.code);
+      return (data ?? []).map((r) => decode(requisitionRowSchema, r, "requisition-row"));
     },
   });
 
@@ -198,18 +183,26 @@ export default function Recruitment() {
   const candidates = useQuery({
     queryKey: ["recruiter-candidates", user?.id ?? "anon"],
     queryFn: async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("digital_twins")
         .select("id, name, email, role, status")
         .eq("role", "candidate")
         .order("name");
-      return (data ?? []) as CandidateRow[];
+      if (error) throw new ApiError(error.message, error.code);
+      return (data ?? []).map((c) => decode(candidateRowSchema, c, "candidate-row"));
     },
   });
 
   const candidatesMap = new Map((candidates.data ?? []).map((c) => [c.id, c]));
   const req = reqs.data?.find((r) => r.id === selected) ?? null;
   const appsByTwin = new Map((apps.data?.apps ?? []).map((a) => [a.candidate_twin_id, a]));
+  const reqsState = classifyQuery<RequisitionRow[]>({
+    isPending: reqs.isPending,
+    isError: reqs.isError,
+    data: reqs.data,
+    error: reqs.error,
+    list: true,
+  });
 
   const invalidate = () => {
     void qc.invalidateQueries({ queryKey: ["recruiter-reqs", user?.id ?? "anon"] });
@@ -471,31 +464,50 @@ export default function Recruitment() {
 
             <div className="flex flex-col gap-2">
               <h2 className="px-1 text-xs font-bold uppercase tracking-wider text-muted-foreground">Requisitions</h2>
-              {(reqs.data ?? []).map((r) => (
-                <button
-                  key={r.id}
-                  onClick={() => setSelected(r.id)}
-                  className={`flex items-center justify-between rounded-lg p-4 text-left transition-all duration-200 hover:scale-[1.02] ${
-                    selected === r.id ? "bg-foreground text-white" : "bg-white text-foreground"
-                  }`}
-                >
-                  <span className="flex items-center gap-2 font-bold">
-                    <Briefcase className="h-4 w-4" />
-                    {r.title}
-                  </span>
-                  <span className="flex items-center gap-2">
-                    <span className={`rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${REQ_STATUS_CLASS[r.status] ?? "bg-muted text-foreground"}`}>
-                      {r.status.replace(/_/g, " ")}
-                    </span>
-                    <span className={`text-xs ${selected === r.id ? "text-white/70" : "text-muted-foreground"}`}>
-                      {r.applicants.length} applicant{r.applicants.length === 1 ? "" : "s"}
-                    </span>
-                  </span>
-                </button>
-              ))}
-              {reqs.data && reqs.data.length === 0 && (
+              {reqsState.kind === "loading" && (
+                <p className="flex items-center gap-2 rounded-lg bg-muted p-4 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Loading requisitions…
+                </p>
+              )}
+              {reqsState.kind === "forbidden" && (
+                <p className="rounded-lg bg-destructive/10 p-4 text-sm text-destructive">
+                  Requisitions are restricted to recruitment-authorized roles.
+                </p>
+              )}
+              {reqsState.kind === "unavailable" && (
+                <p className="rounded-lg bg-destructive/10 p-4 text-sm text-destructive">
+                  Could not reach the backend — check your connection and try again.
+                </p>
+              )}
+              {reqsState.kind === "error" && (
+                <p className="rounded-lg bg-destructive/10 p-4 text-sm text-destructive">{reqsState.message}</p>
+              )}
+              {reqsState.kind === "empty" && (
                 <p className="rounded-lg bg-muted p-4 text-sm text-muted-foreground">No requisitions yet.</p>
               )}
+              {reqsState.kind === "ready" &&
+                (reqs.data ?? []).map((r) => (
+                  <button
+                    key={r.id}
+                    onClick={() => setSelected(r.id)}
+                    className={`flex items-center justify-between rounded-lg p-4 text-left transition-all duration-200 hover:scale-[1.02] ${
+                      selected === r.id ? "bg-foreground text-white" : "bg-white text-foreground"
+                    }`}
+                  >
+                    <span className="flex items-center gap-2 font-bold">
+                      <Briefcase className="h-4 w-4" />
+                      {r.title}
+                    </span>
+                    <span className="flex items-center gap-2">
+                      <span className={`rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${REQ_STATUS_CLASS[r.status] ?? "bg-muted text-foreground"}`}>
+                        {r.status.replace(/_/g, " ")}
+                      </span>
+                      <span className={`text-xs ${selected === r.id ? "text-white/70" : "text-muted-foreground"}`}>
+                        {r.applicants.length} applicant{r.applicants.length === 1 ? "" : "s"}
+                      </span>
+                    </span>
+                  </button>
+                ))}
             </div>
           </div>
 

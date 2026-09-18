@@ -15,8 +15,8 @@ function genCode() {
   return `WS-${Math.random().toString(36).slice(2, 7).toUpperCase()}-2026`;
 }
 
-function skillsEqual(a: { skill: string }[] | undefined, b: { skill: string }[] | undefined): boolean {
-  const norm = (arr?: { skill: string }[]) =>
+function skillsEqual(a: { skill: string; target_proficiency?: number }[] | undefined, b: { skill: string; target_proficiency?: number }[] | undefined): boolean {
+  const norm = (arr?: { skill: string; target_proficiency?: number }[]) =>
     (arr ?? []).map((s) => `${s.skill.toLowerCase()}:${s.target_proficiency ?? 0}`).sort().join(",");
   return norm(a) === norm(b);
 }

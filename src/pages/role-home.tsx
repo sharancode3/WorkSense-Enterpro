@@ -26,6 +26,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { can, ROLE_LABEL, type Role } from "@/lib/rbac";
 import { actionTaskUpdate, type ActionTaskRow, type Twin } from "@/lib/api";
+import { decode, requisitionRowSchema, type RequisitionRow } from "@/lib/contracts";
 
 // My Action Tasks: tasks assigned to me from dispatched recommendations
 // (Phase 11). Owners act on their own tasks with evidence + rationale.
@@ -366,13 +367,7 @@ export default function RoleHome() {
         supabase.from("job_requisitions").select("*"),
         supabase.from("digital_twins").select("id, name, role, status").eq("role", "candidate"),
       ]);
-      const reqs = (reqsRes.data ?? []) as {
-        id: string;
-        title: string;
-        department: string;
-        status: string;
-        applicants: { twin_id: string; stage: string; match_score: number | null }[];
-      }[];
+      const reqs = (reqsRes.data ?? []).map((r) => decode(requisitionRowSchema, r, "requisition-row"));
       const candidates = (candidatesRes.data ?? []) as { id: string; name: string }[];
       const openReqs = reqs.filter((r) => r.status === "open");
       const applicants = openReqs.flatMap((r) => r.applicants ?? []);

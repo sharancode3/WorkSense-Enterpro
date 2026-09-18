@@ -185,7 +185,7 @@ Deno.serve(async (req) => {
       })) as unknown;
 
       const valid = validateAssessmentJudgment(parsed);
-      if (!valid.ok) throw new QwenError("MODEL_OUTPUT_INVALID", `Judgment failed validation: ${valid.errors.join("; ")}`);
+      if (valid.ok === false) throw new QwenError("MODEL_OUTPUT_INVALID", `Judgment failed validation: ${valid.errors.join("; ")}`);
       const typed = parsed as { judgments?: unknown[]; summary?: string };
 
       const byCompetency = new Map<string, unknown>();

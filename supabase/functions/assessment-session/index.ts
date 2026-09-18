@@ -28,6 +28,9 @@ export interface JobRow {
   error_code: string | null;
   error_message: string | null;
   output: unknown;
+  created_at: string;
+  started_at: string | null;
+  finished_at: string | null;
 }
 
 /** Open duplicate for the same actor+task+input while still queued/running.
@@ -280,7 +283,7 @@ Deno.serve(async (req) => {
         org_id: caller.org_id,
         application_id: application.id,
         twin_id: application.candidate_twin_id,
-        blueprint_id,
+        blueprint_id: blueprintId,
         rubric_id: null,
         session_type: sessionType,
         invitation_token: token,

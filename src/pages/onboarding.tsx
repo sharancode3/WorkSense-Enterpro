@@ -39,6 +39,7 @@ import {
   type PlanTaskView,
   type PlanView,
 } from "@/lib/api";
+import { decode, planTaskViewSchema, planViewSchema } from "@/lib/contracts";
 
 const OWNER_LABEL: Record<PlanTaskView["owner_role"], string> = {
   employee: "Employee",
@@ -145,6 +146,7 @@ function TaskCard({
   canAdapt: boolean;
   canFail: boolean;
   canResolve: boolean;
+  titleFor: (code: string) => string;
   onComplete: (evidence: { kind: "note" | "assessment_id"; label: string; value: string }[], note?: string) => void;
   onBlock: (note: string) => void;
   onResolve: (blockerId: string) => void;
@@ -320,7 +322,7 @@ function TaskCard({
               <Sparkles className="h-3.5 w-3.5" /> Adapt to verification
             </Button>
           )}
-          {canFail && task.task_type === "verification" && task.state !== "done" && (
+          {canFail && task.task_type === "verification" && (
             <Button size="sm" variant="ghost" className="text-destructive" onClick={() => setFailOpen(true)} disabled={busy}>
               <XCircle className="h-3.5 w-3.5" /> Mark failed
             </Button>
@@ -493,7 +495,7 @@ export default function Onboarding() {
     queryKey: ["plan", user?.id ?? "anon", selected],
     enabled: !!selected && canView,
     queryFn: async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("onboarding_plans")
         .select("*")
         .eq("twin_id", selected)
@@ -501,7 +503,8 @@ export default function Onboarding() {
         .order("version", { ascending: false })
         .limit(1)
         .maybeSingle();
-      return (data ?? null) as PlanView | null;
+      if (error) throw error;
+      return data ? decode(planViewSchema, data, "plan-row") : null;
     },
   });
 
@@ -539,12 +542,18 @@ export default function Onboarding() {
     queryKey: ["plan-tasks", user?.id ?? "anon", plan.data?.id ?? "none"],
     enabled: !!plan.data?.id,
     queryFn: async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("onboarding_tasks")
         .select("*")
         .eq("plan_id", plan.data!.id)
         .order("topological_level", { ascending: true });
-      return ((data ?? []) as unknown[]) as PlanTaskView[];
+      if (error) throw error;
+      return (data ?? []).map((t) => {
+        // onboarding_tasks has no blocked_reasons column; derive it for the
+        // contract so the plan/task view stays a single source of truth.
+        const row = { ...t, blocked_reasons: (t as { blocked_reasons?: unknown }).blocked_reasons ?? [] };
+        return decode(planTaskViewSchema, row, "plan-task-row");
+      });
     },
   });
 

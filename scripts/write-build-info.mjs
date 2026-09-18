@@ -6,21 +6,42 @@ import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 
-function commitId() {
+function git(...args) {
   try {
-    return execSync("git rev-parse --short HEAD", { cwd: root }).toString().trim();
+    return execSync(`git ${args.join(" ")}`, { cwd: root }).toString().trim();
   } catch {
-    return "no-git";
+    return "";
   }
 }
 
-// Bump this when a migration changes the public schema/entities contract.
+const commit = git("rev-parse --short HEAD") || "no-git";
+const commitFull = git("rev-parse HEAD") || "no-git";
+// Deterministic build timestamp: the current commit's committer time, so a
+// rebuild of the same revision produces an identical manifest (no generated
+// churn between commits that did not change).
+const builtAt = git("show -s --format=%cI HEAD") || new Date().toISOString();
+
+// Bump the schema version when a migration changes the public entity contract.
 const SCHEMA_VERSION = "v1";
 
+// Bump a contract version whenever the corresponding calculation contract
+// changes semantics. The /status screen and the build manifest expose these.
+const CALC_CONTRACT_VERSIONS = {
+  skillFit: "v1",
+  staffing: "v1",
+  reviewIndex: "v1",
+  onboardingV2: "v1",
+  recommendation: "v1",
+  assessment: "v1",
+  policyRetrieval: "v1",
+};
+
 const info = {
-  commit: commitId(),
-  builtAt: new Date().toISOString(),
+  commit,
+  commitFull,
+  builtAt,
   schemaVersion: SCHEMA_VERSION,
+  contracts: CALC_CONTRACT_VERSIONS,
 };
 
 mkdirSync(`${root}src/generated`, { recursive: true });
@@ -30,4 +51,4 @@ writeFileSync(
 export const BUILD_INFO = ${JSON.stringify(info, null, 2)} as const;
 `
 );
-console.log(`build-info: ${info.commit} @ ${info.builtAt} (schema ${info.schemaVersion})`);
+console.log(`build-info: ${commit} @ ${builtAt} (schema ${SCHEMA_VERSION}, contracts ${Object.values(CALC_CONTRACT_VERSIONS).join(",")})`);

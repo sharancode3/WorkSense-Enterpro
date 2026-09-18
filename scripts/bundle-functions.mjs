@@ -48,7 +48,7 @@ const SHARED = { engine, onboarding, onboardingV2, qwen, policy, reviewIndex, pe
 
 // Function -> shared dependencies (in import order) it needs inlined.
 const FNS = {
-  "reset-demo": ["generated", "journey", "seed", "fixtures", "assessment", "policyseed", "onboardingV2", "reviewIndex"],
+  "reset-demo": ["generated", "journey", "seed", "fixtures", "assessment", "policyseed", "onboardingV2", "reviewIndex", "engine"],
   "skill-match": ["engine", "evidence"],
   "extract-resume": ["engine", "qwen", "jobs", "validate", "evidence", "llmcache"],
   "rubric": ["qwen", "validate"],

@@ -544,6 +544,9 @@ export interface JobRow {
   error_code: string | null;
   error_message: string | null;
   output: unknown;
+  created_at: string;
+  started_at: string | null;
+  finished_at: string | null;
 }
 
 /** Open duplicate for the same actor+task+input while still queued/running.
@@ -1171,7 +1174,7 @@ const TIER_PROFICIENCY: Record<string, number> = {
 const TIER_ALIASES: Record<string, string> = {
   foundational: "FOUNDATIONAL", beginner: "FOUNDATIONAL", basic: "FOUNDATIONAL", entry: "FOUNDATIONAL", novice: "FOUNDATIONAL", "1": "FOUNDATIONAL", "2": "FOUNDATIONAL",
   intermediate: "INTERMEDIATE", mid: "INTERMEDIATE", working: "INTERMEDIATE", proficient: "INTERMEDIATE", moderate: "INTERMEDIATE", "3": "INTERMEDIATE",
-  advanced: "ADVANCED", strong: "ADVANCED", good: "ADVANCED", proficient: "ADVANCED", "4": "ADVANCED",
+  advanced: "ADVANCED", strong: "ADVANCED", good: "ADVANCED", "4": "ADVANCED",
   expert: "EXPERT", senior: "EXPERT", master: "EXPERT", "5": "EXPERT",
 };
 const normalizeTier = (v: unknown): string | null => {
@@ -1302,7 +1305,7 @@ Deno.serve(async (req) => {
   }
 
   const valid = validateResumeExtraction(parsed);
-  if (!valid.ok) {
+  if (valid.ok === false) {
     await finishJob(supabase, job.id, { status: "failed", errorCode: "MODEL_OUTPUT_INVALID", errorMessage: valid.errors.join("; "), latencyMs: Date.now() - startedAt });
     return json({ error: "MODEL_OUTPUT_INVALID", message: "Model output failed schema validation.", details: valid.errors, job_id: job.id }, 422);
   }
@@ -1445,7 +1448,7 @@ Deno.serve(async (req) => {
     await cacheSet(supabase, caller.org_id, "resume_extraction", inputHash, QWEN_MODEL, parsed as Record<string, unknown>);
   }
 
-  await finishJob(supabase, job.id, { status: "succeeded", output: result, latencyMs: Date.now() - startedAt, cache_hit: fromCache });
+  await finishJob(supabase, job.id, { status: "succeeded", output: result, latencyMs: Date.now() - startedAt });
 
   return json({ ok: true, job_id: job.id, status: "succeeded", from_cache: fromCache, ...result });
 });

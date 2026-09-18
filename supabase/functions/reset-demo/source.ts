@@ -40,7 +40,10 @@ async function ensureDemoAuthUsers(supabase) {
   const idByEmail: Record<string, string> = {};
   const { data: allUsers, error: listErr } = await supabase.auth.admin.listUsers({ page: 1, perPage: 1000 });
   if (listErr) throw new Error(`Failed to list auth users: ${listErr.message}`);
-  const usersByEmail = new Map((allUsers?.users ?? []).map((u) => [u.email, u.id]));
+  const usersByEmail = new Map<string, string>();
+  for (const ru of (allUsers?.users ?? []) as { email?: string; id?: string }[]) {
+    if (ru.email && ru.id) usersByEmail.set(ru.email, ru.id);
+  }
 
   for (const account of DEMO_ACCOUNTS) {
     const existingId = usersByEmail.get(account.email);
@@ -68,9 +71,38 @@ const sourceFor = (state: string) =>
 const sourceTypeFor = (state: string) =>
   state === "reviewer_confirmed" ? "performance_review" : state === "assessment_supported" ? "assessment" : "resume_document";
 
-const SKILL_NAME = new Map(DEMO_FIXTURES.skills.map((s) => [s.id, s.skill]));
+const SKILL_NAME = new Map<string, string>(DEMO_FIXTURES.skills.map((s) => [s.id, s.skill]));
 
-function twinRow(p: (typeof DEMO_FIXTURES.employees)[number], orgId: string, authIds: Record<string, string>, roleOverride?: string) {
+/**
+ * Structural seed-twin shape accepted by `twinRow`. Fixtures arrive as literal
+ * (read-only) unions, so the parameter is widened to the fields twinRow reads —
+ * not a hiding cast, just an explicit structural contract.
+ */
+interface TwinSeedRow {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  department: string | null;
+  job_title: string | null;
+  manager_id: string | null;
+  tenure_months: number;
+  seniority_level: number;
+  promotion_lag_months: number | null;
+  attendance: unknown;
+  delivery: unknown;
+  assertions?: readonly {
+    readonly skill_id: string;
+    readonly claimed_proficiency: number;
+    readonly review_state: string;
+  }[];
+  interview_rubrics?: unknown;
+  performance_history?: unknown;
+  signals?: unknown;
+  audit_events?: unknown;
+}
+
+function twinRow(p: TwinSeedRow, orgId: string, authIds: Record<string, string>, roleOverride?: string) {
   const role = roleOverride ?? p.role;
   return {
     id: p.id,
@@ -509,7 +541,7 @@ async function reseed(supabase, authIds: Record<string, string>) {
   }
 
   // 6) Onboarding journeys (legacy mid-onboarding persona + 4 fixture states).
-  const journeyStatus = (tasks: { status?: string }[]) =>
+  const journeyStatus = (tasks: readonly { status?: string }[]) =>
     tasks.length > 0 && tasks.every((t) => t.status === "done")
       ? "completed"
       : tasks.some((t) => t.status === "done")
@@ -604,7 +636,7 @@ async function reseed(supabase, authIds: Record<string, string>) {
   }
 
   // 8) Evidence items + skill assertions (normalized source of truth).
-  const toEvidence = (p: { id: string; assertions?: { skill_id: string; quote: string; review_state: string }[] }, orgId: string) =>
+  const toEvidence = (p: { id: string; assertions?: readonly { readonly skill_id: string; readonly quote: string; readonly review_state: string }[] }, orgId: string) =>
     (p.assertions ?? []).map((a) => ({
       org_id: orgId,
       twin_id: p.id,
@@ -625,7 +657,7 @@ async function reseed(supabase, authIds: Record<string, string>) {
   const evMap = new Map(
     (evRows ?? []).map((e) => [`${e.org_id}|${e.twin_id}|${String((e.metadata as { skill_id?: string })?.skill_id ?? "")}`, e.id])
   );
-  const toAssertion = (p: { id: string; assertions?: { skill_id: string; claimed_proficiency: number; proficiency_tier: string; review_state: string }[] }, orgId: string) =>
+  const toAssertion = (p: { id: string; assertions?: readonly { readonly skill_id: string; readonly claimed_proficiency: number; readonly proficiency_tier: string; readonly review_state: string }[] }, orgId: string) =>
     (p.assertions ?? []).map((a) => ({
       org_id: orgId,
       twin_id: p.id,

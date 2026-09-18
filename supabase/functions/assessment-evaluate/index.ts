@@ -265,6 +265,9 @@ export interface JobRow {
   error_code: string | null;
   error_message: string | null;
   output: unknown;
+  created_at: string;
+  started_at: string | null;
+  finished_at: string | null;
 }
 
 /** Open duplicate for the same actor+task+input while still queued/running.
@@ -1368,7 +1371,7 @@ Deno.serve(async (req) => {
       })) as unknown;
 
       const valid = validateAssessmentJudgment(parsed);
-      if (!valid.ok) throw new QwenError("MODEL_OUTPUT_INVALID", `Judgment failed validation: ${valid.errors.join("; ")}`);
+      if (valid.ok === false) throw new QwenError("MODEL_OUTPUT_INVALID", `Judgment failed validation: ${valid.errors.join("; ")}`);
       const typed = parsed as { judgments?: unknown[]; summary?: string };
 
       const byCompetency = new Map<string, unknown>();

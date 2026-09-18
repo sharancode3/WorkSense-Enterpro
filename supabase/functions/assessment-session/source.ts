@@ -158,7 +158,7 @@ Deno.serve(async (req) => {
         org_id: caller.org_id,
         application_id: application.id,
         twin_id: application.candidate_twin_id,
-        blueprint_id,
+        blueprint_id: blueprintId,
         rubric_id: null,
         session_type: sessionType,
         invitation_token: token,

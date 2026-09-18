@@ -97,20 +97,19 @@ Deno.serve(async (req) => {
   const hash = reviewSourceHash(input);
   const now = new Date().toISOString();
 
-  const nextSignals = signals
-    .filter((s) => s.type !== "workforce_review_signal" && s.type !== "workforce_review_index")
-    .concat([
-      {
-        type: "workforce_review_index",
-        value: result.index,
-        priority: result.priority,
-        data_completeness: result.data_completeness,
-        source_version_hash: hash,
-        computed_at: now,
-        factors: result.factors,
-        label: "Workforce Review Index — interpretable decision support, NOT a probability of leaving.",
-      },
-    ]);
+  const nextSignals = [
+    ...signals.filter((s) => s.type !== "workforce_review_signal" && s.type !== "workforce_review_index"),
+    {
+      type: "workforce_review_index",
+      value: result.index,
+      priority: result.priority,
+      data_completeness: result.data_completeness,
+      source_version_hash: hash,
+      computed_at: now,
+      factors: result.factors,
+      label: "Workforce Review Index — interpretable decision support, NOT a probability of leaving.",
+    },
+  ];
 
   await supabase
     .from("digital_twins")

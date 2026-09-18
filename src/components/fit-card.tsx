@@ -22,7 +22,7 @@ const STATE_META: Record<string, { label: string; chip: string }> = {
 };
 
 const stateMeta = (state: string) =>
-  STATE_META[state] ?? { label: state.replaceAll("_", " "), chip: "bg-muted text-foreground" };
+  STATE_META[state] ?? { label: state.split("_").join(" "), chip: "bg-muted text-foreground" };
 
 const pct = (n: number) => `${Math.round(n * 100)}`;
 
@@ -133,7 +133,7 @@ function EvidenceLineagePanel({ lineage }: { lineage: FitLineage }) {
                   <div key={e.id} className="mt-1.5 rounded-md bg-muted px-3 py-2">
                     <p className="font-mono text-xs leading-relaxed text-foreground/80">“{e.quote}”</p>
                     <p className="mt-1 text-[11px] text-muted-foreground">
-                      {e.source_type.replaceAll("_", " ")} · {e.source_id ?? "no source id"} · {new Date(e.captured_at).toLocaleDateString()}
+                      {e.source_type.split("_").join(" ")} · {e.source_id ?? "no source id"} · {new Date(e.captured_at).toLocaleDateString()}
                     </p>
                   </div>
                 ))}

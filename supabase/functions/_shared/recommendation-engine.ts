@@ -6,7 +6,7 @@
 // executive summary later; it never decides facts or urgency.
 // ---------------------------------------------------------------------------
 
-import { computeFit, type GraphSkill } from "./skill-graph-engine.ts";
+import { computeFit, type FitRecord, type GraphSkill, type SkillClaim } from "./skill-graph-engine.ts";
 
 export type RecCategory =
   | "INTERNAL_MOBILITY"
@@ -155,13 +155,13 @@ export function scanForRecommendations(inputs: ScanInputs): RecCandidate[] {
     //    paths exist. ALL requisitions are evaluated and the best fit is
     //    selected (with ranked alternatives), not the first match.
     if (index > 65 && (RATING_ORDER[latestRating(twin.performance_history)] ?? 0) >= 4) {
-      const candidateSkills: import("./skill-graph-engine.ts").SkillClaim[] = (twin.verified_skills ?? []).map((s) => ({
+      const candidateSkills: SkillClaim[] = (twin.verified_skills ?? []).map((s) => ({
         name: s.name,
         proficiency: s.proficiency,
         evidence_source: s.evidence_source ?? "skill_scan",
         verification_rigor: (s.verification_rigor as "low" | "medium" | "high") ?? "low",
       }));
-      const evaluated: { req: (typeof inputs.requisitions)[number]; fit: import("./skill-graph-engine.ts").FitRecord; soft: number; direct: number; covered: number; covered_ratio: number; soft_share: number; coverage_score: number }[] = [];
+      const evaluated: { req: (typeof inputs.requisitions)[number]; fit: FitRecord; soft: number; direct: number; covered: number; covered_ratio: number; soft_share: number; coverage_score: number }[] = [];
       for (const req of inputs.requisitions) {
         const fit = computeFit({
           candidateSkills,

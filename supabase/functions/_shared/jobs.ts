@@ -25,6 +25,9 @@ export interface JobRow {
   error_code: string | null;
   error_message: string | null;
   output: unknown;
+  created_at: string;
+  started_at: string | null;
+  finished_at: string | null;
 }
 
 /** Open duplicate for the same actor+task+input while still queued/running.

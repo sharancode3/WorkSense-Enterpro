@@ -685,7 +685,12 @@ Write the narrative JSON.`;
   if (!narrative) throw new QwenError("MODEL_OUTPUT_INVALID", "performance-summary: empty narrative");
   const modelThemes = (parsed.inferred_themes ?? [])
     .filter((t) => t?.theme)
-    .map((t) => ({ theme: t.theme!, basis: Array.isArray(t.basis) ? t.basis : [], inference: true }));
+    .map((t) => ({
+      theme: t.theme!,
+      basis: Array.isArray(t.basis) ? t.basis : [],
+      inference: true,
+      confidence_note: "Inferred from the model narrative — not a verified source fact.",
+    }));
   const dataQuality = ["complete", "partial", "sparse"].includes(parsed.data_quality ?? "") ? parsed.data_quality! : facts.sparse_evidence.flags.length >= 2 ? "sparse" : facts.sparse_evidence.flags.length === 1 ? "partial" : "complete";
 
   const row = {

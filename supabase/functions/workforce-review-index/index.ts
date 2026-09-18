@@ -441,19 +441,18 @@ Deno.serve(async (req) => {
   }
 
   // Reflect the index on the twin's signals (replaces the legacy risk label).
-  const nextSignals = signals
-    .filter((s) => s.type !== "workforce_review_signal" && s.type !== "workforce_review_index")
-    .concat([
-      {
-        type: "workforce_review_index",
-        value: result.index,
-        priority: result.priority,
-        data_completeness: result.data_completeness,
-        computed_at: now,
-        factors: result.factors,
-        label: "Workforce Review Index — interpretable decision support, NOT a probability of leaving.",
-      },
-    ]);
+  const nextSignals = [
+    ...signals.filter((s) => s.type !== "workforce_review_signal" && s.type !== "workforce_review_index"),
+    {
+      type: "workforce_review_index",
+      value: result.index,
+      priority: result.priority,
+      data_completeness: result.data_completeness,
+      computed_at: now,
+      factors: result.factors,
+      label: "Workforce Review Index — interpretable decision support, NOT a probability of leaving.",
+    },
+  ];
 
   await supabase
     .from("digital_twins")

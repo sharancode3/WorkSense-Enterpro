@@ -96,7 +96,7 @@ ${notes}
 </untrusted_input>`,
   })) as unknown;
   const valid = validateEvaluation(parsed);
-  if (!valid.ok) throw new QwenError("MODEL_OUTPUT_INVALID", `Evaluation failed validation: ${valid.errors.join("; ")}`);
+  if (valid.ok === false) throw new QwenError("MODEL_OUTPUT_INVALID", `Evaluation failed validation: ${valid.errors.join("; ")}`);
   const typed = parsed as { evaluations?: { competency?: string; tier?: string; score?: number; evidence?: string; strengths?: string[]; concerns?: string[] }[]; overall_recommendation?: string; summary?: string };
 
   const evaluations = (typed.evaluations ?? []).map((e) => ({

@@ -148,7 +148,7 @@ Deno.serve(async (req) => {
 
   // Fit context (informational — the plan itself is built from gaps).
   const fitCurrent = computeFit({
-    candidateSkills: (twin.verified_skills ?? []) as { name: string; proficiency: number }[],
+    candidateSkills: (twin.verified_skills ?? []) as { name: string; proficiency: number; evidence_source: string; verification_rigor: "low" | "medium" | "high" }[],
     candidateLevel: twin.seniority_level ?? 3,
     requiredSkills: (reqRow.required_skills ?? []) as { skill: string; target_proficiency: number }[],
     roleLevel: reqRow.seniority_level ?? 3,
