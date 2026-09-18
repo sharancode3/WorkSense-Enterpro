@@ -37,6 +37,14 @@ const REQ_STATUS_CLASS: Record<string, string> = {
   closed: "bg-muted text-foreground",
 };
 
+// Batch B3: understandable hiring terminology, explained once via tooltip.
+const REQ_STATUS_LABEL: Record<string, string> = {
+  open: "Open — accepting candidates",
+  on_hold: "On hold — hiring temporarily paused",
+  filled: "Filled — position staffed",
+  closed: "Closed — no longer accepting candidates",
+};
+
 const STAGE_LABEL: Record<string, string> = {
   screening: "Under Review",
   technical_interview: "Interview Scheduled",
@@ -262,7 +270,7 @@ export default function Recruitment() {
           {/* Left rail: requisitions */}
           <div className="flex flex-col gap-4">
             <Button onClick={() => setCreating(true)}>
-              <Plus className="h-4 w-4" /> New requisition
+              <Plus className="h-4 w-4" /> Create hiring role
             </Button>
             <div className="flex flex-wrap gap-1.5">
               {["all", "open", "on_hold", "filled", "closed"].map((s) => (

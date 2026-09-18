@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowRight,
   Briefcase,
+  Download,
   FileText,
   History,
   Loader2,
@@ -37,6 +38,7 @@ import {
   extractResume,
   generateInterviewKit,
   generateRubrics,
+  resumeDownload,
   type ApplicationRow,
   type InterviewEvaluation,
   type InterviewKit,
@@ -88,6 +90,7 @@ export function CandidateDetail({ open, onOpenChange, candidate, req, app, onCha
   // Resume provenance
   const [provenance, setProvenance] = useState<{ document_id: string; version: number; artifact_ref: string; file_name: string; checksum_short: string } | null>(null);
   const [resumeMode, setResumeMode] = useState<"file" | "text">("file");
+  const [pendingDecision, setPendingDecision] = useState<"reject" | "select" | null>(null);
   const [resumeText, setResumeText] = useState("");
   const [extractBusy, setExtractBusy] = useState(false);
   const [extractResult, setExtractResult] = useState<{ skills: string[]; years: number; fit: number | null } | null>(null);
@@ -338,7 +341,7 @@ export function CandidateDetail({ open, onOpenChange, candidate, req, app, onCha
                   {busy === `move_forward-${candidate.id}` ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />}
                   Move forward
                 </Button>
-                <Button size="sm" variant="outline" onClick={() => void runStage("reject")} disabled={busy === `reject-${candidate.id}`}>
+                <Button size="sm" variant="outline" onClick={() => setPendingDecision("reject")} disabled={busy === `reject-${candidate.id}`}>
                   Reject
                 </Button>
               </div>
@@ -346,11 +349,11 @@ export function CandidateDetail({ open, onOpenChange, candidate, req, app, onCha
             {app && stage === "final_round" && (
               <div className="flex flex-wrap items-center gap-2 rounded-lg bg-muted/60 p-3">
                 <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Decision</span>
-                <Button size="sm" onClick={() => void runStage("select")} disabled={busy === `select-${candidate.id}`}>
+                <Button size="sm" onClick={() => setPendingDecision("select")} disabled={busy === `select-${candidate.id}`}>
                   {busy === `select-${candidate.id}` ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
                   Select — convert to employee
                 </Button>
-                <Button size="sm" variant="outline" onClick={() => void runStage("reject")} disabled={busy === `reject-${candidate.id}`}>
+                <Button size="sm" variant="outline" onClick={() => setPendingDecision("reject")} disabled={busy === `reject-${candidate.id}`}>
                   Reject
                 </Button>
                 <p className="ml-auto text-[11px] text-muted-foreground">Selection is human-only — model output never changes it.</p>
@@ -358,8 +361,59 @@ export function CandidateDetail({ open, onOpenChange, candidate, req, app, onCha
             )}
           </TabsContent>
 
-          {/* Resume: intake + provenance + revision history */}
+          {/* Resume: existing document first (viewing), intake as a secondary,
+              permission-controlled action (Batch B1). */}
           <TabsContent value="resume" className="flex flex-col gap-4">
+            {resumeDocuments.isLoading ? (
+              <p className="rounded-lg bg-muted p-4 text-sm text-muted-foreground">Loading resume documents…</p>
+            ) : resumeDocuments.isError ? (
+              <p className="rounded-lg bg-destructive/10 p-4 text-sm text-destructive">
+                Could not load resume documents — the record may be unavailable.
+              </p>
+            ) : (resumeDocuments.data?.documents?.length ?? 0) > 0 ? (
+              <div className="rounded-lg bg-muted p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                    <FileText className="h-4 w-4" /> Existing resume document
+                  </p>
+                  <span className="rounded-md bg-foreground px-2 py-0.5 font-mono text-[11px] font-bold text-white">
+                    {resumeDocuments.data?.documents?.[0]?.file_name}
+                  </span>
+                </div>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Uploaded {resumeDocuments.data?.documents?.[0]?.created_at ? new Date(resumeDocuments.data.documents[0].created_at).toLocaleDateString() : "—"}
+                  {resumeDocuments.data?.documents?.[0]?.low_text ? " · extracted text preview (low-text document)" : " · text-extracted"}
+                  {resumeDocuments.data?.versions?.[0] ? ` · v${resumeDocuments.data.versions[0].version} ${resumeDocuments.data.versions[0].review_state ?? ""}` : ""}
+                </p>
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <Button size="sm" asChild>
+                    <a
+                      href={`/api/resume-download?id=${resumeDocuments.data?.documents?.[0]?.id ?? ""}`}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        void resumeDownload(resumeDocuments.data?.documents?.[0]?.id ?? "").then((r) => {
+                          if (r.url) window.open(r.url, "_blank", "noopener,noreferrer");
+                        });
+                      }}
+                    >
+                      <Download className="h-4 w-4" /> Download
+                    </a>
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => setResumeMode("text")}>
+                    Import / replace document
+                  </Button>
+                </div>
+                {(resumeDocuments.data?.documents?.length ?? 0) > 1 && (
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    {resumeDocuments.data?.documents?.length} document(s) · {resumeDocuments.data?.versions?.length ?? 0} version(s) on record.
+                  </p>
+                )}
+              </div>
+            ) : (
+              <p className="rounded-lg bg-muted p-4 text-sm text-muted-foreground">
+                No resume document on record for this candidate yet — import one below.
+              </p>
+            )}
             <ResumeReviewFlow
               twin={{ id: candidate.id, name: candidate.name }}
               reqId={req?.id}
@@ -636,6 +690,30 @@ export function CandidateDetail({ open, onOpenChange, candidate, req, app, onCha
             reqTitle={req?.title ?? ""}
             onChanged={onChanged}
           />
+        )}
+        {pendingDecision && app && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
+            <div role="dialog" aria-modal="true" aria-labelledby="decision-preview-title" className="w-full max-w-md rounded-lg bg-white p-6">
+              <h2 id="decision-preview-title" className="text-lg font-extrabold text-foreground">Confirm stage decision</h2>
+              <dl className="mt-3 flex flex-col gap-2 text-sm">
+                <div className="flex justify-between gap-2"><dt className="text-muted-foreground">Candidate</dt><dd className="font-bold text-foreground">{candidate.name}</dd></div>
+                <div className="flex justify-between gap-2"><dt className="text-muted-foreground">Role</dt><dd className="font-bold text-foreground">{req?.title ?? "—"}</dd></div>
+                <div className="flex justify-between gap-2"><dt className="text-muted-foreground">Current stage</dt><dd className="capitalize text-foreground">{app.stage.replace(/_/g, " ")}</dd></div>
+                <div className="flex justify-between gap-2"><dt className="text-muted-foreground">New stage</dt><dd className="capitalize text-foreground">{pendingDecision === "reject" ? "Rejected" : pendingDecision === "select" ? "Selected (converted to employee)" : "—"}</dd></div>
+              </dl>
+              <p className="mt-3 rounded-md bg-muted p-3 text-xs leading-relaxed text-muted-foreground">
+                {pendingDecision === "reject"
+                  ? "Consequence: the candidate's application is closed and they can no longer be progressed. A typed reason is recorded with the stage change."
+                  : "Consequence: the candidate is converted to an employee with pre-hire data preserved. This is a stage conversion — no offer workflow is implied beyond the demo record."}
+              </p>
+              <div className="mt-5 flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setPendingDecision(null)}>Cancel</Button>
+                <Button variant={pendingDecision === "reject" ? "destructive" : "default"} onClick={() => { void runStage(pendingDecision); setPendingDecision(null); }}>
+                  Confirm {pendingDecision === "reject" ? "rejection" : "selection"}
+                </Button>
+              </div>
+            </div>
+          </div>
         )}
       </DialogContent>
     </Dialog>
