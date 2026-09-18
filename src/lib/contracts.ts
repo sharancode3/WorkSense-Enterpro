@@ -626,3 +626,71 @@ export const securityAuditResultSchema = z.object({
   ),
   truncated_sources: z.array(z.string()),
 }) as z.ZodType<SecurityAuditResult>;
+
+// ---------------------------------------------------------------------------
+// Batch 5: hiring work-queue contract (assessment-queue backend function).
+// Strict: every queue item must carry its candidate/role linkage when the
+// canonical row has one; unknown/missing linkage decodes as an explicit
+// "Unknown candidate" / "—", never as a fabricated row.
+// ---------------------------------------------------------------------------
+
+const queueCandidateRefSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  email: z.string(),
+});
+const queueRoleRefSchema = z.object({
+  requisition_id: z.string(),
+  title: z.string(),
+  application_code: z.string(),
+  application_id: z.string(),
+});
+const queueSessionItemSchema = z.object({
+  session_id: z.string(),
+  session_type: z.enum(["work_sample", "interview", "knowledge_assessment"]),
+  status: z.string(),
+  expires_at: z.string(),
+  submitted_at: z.string().nullable(),
+  created_at: z.string(),
+  blueprint_title: z.string(),
+  candidate: queueCandidateRefSchema,
+  role: queueRoleRefSchema,
+});
+const awaitingReviewItemSchema = z.object({
+  assessment_id: z.string(),
+  session_id: z.string().nullable(),
+  session_type: z.string(),
+  blueprint_title: z.string(),
+  evaluated_at: z.string(),
+  model: z.string(),
+  review_required: z.boolean(),
+  candidate: queueCandidateRefSchema,
+  role: queueRoleRefSchema,
+});
+const failedJobItemSchema = z.object({
+  job_id: z.string(),
+  error_code: z.string().nullable(),
+  error_message: z.string().nullable(),
+  created_at: z.string(),
+  finished_at: z.string().nullable(),
+  session: queueSessionItemSchema.nullable(),
+});
+export const assessmentQueueSchema = z.object({
+  ok: z.literal(true),
+  role: z.enum(["recruiter", "hr_executive", "hr_partner"]),
+  generated_at: z.string(),
+  scope: z.object({ org_id: z.string() }),
+  queues: z.object({
+    upcoming_interviews: z.array(queueSessionItemSchema),
+    invitations_awaiting_response: z.array(queueSessionItemSchema),
+    incomplete_scorecards: z.array(queueSessionItemSchema),
+    submitted_assessments: z.array(queueSessionItemSchema),
+    awaiting_reviewer_confirmation: z.array(awaitingReviewItemSchema),
+    failed_evaluation_jobs: z.array(failedJobItemSchema),
+  }),
+});
+export type AssessmentQueueResult = z.infer<typeof assessmentQueueSchema>;
+export type QueueSessionItem = z.infer<typeof queueSessionItemSchema>;
+export type AwaitingReviewItem = z.infer<typeof awaitingReviewItemSchema>;
+export type FailedJobItem = z.infer<typeof failedJobItemSchema>;
+

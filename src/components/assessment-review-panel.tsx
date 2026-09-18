@@ -7,10 +7,16 @@ import {
   Cpu,
   Loader2,
   MessageSquarePlus,
+  RefreshCw,
   Send,
   TriangleAlert,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import {
+  loadCandidateSessions,
+  SessionListError,
+  type CandidateSessionSummary,
+} from "@/lib/candidate-sessions";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import {
@@ -42,16 +48,9 @@ interface Props {
   candidate: CandidateBrief;
   reqId: string;
   reqTitle: string;
+  /** Batch 5 (5.1): deep-link straight into one session's review. */
+  initialSessionId?: string;
   onChanged: () => void;
-}
-
-interface SessionListItem {
-  id: string;
-  session_type: string;
-  status: string;
-  expires_at: string;
-  submitted_at: string | null;
-  blueprint_title: string;
 }
 
 interface BlueprintListItem {
@@ -86,29 +85,17 @@ const STATUS_LABEL: Record<string, string> = {
   cancelled: "Cancelled",
 };
 
-async function loadSessionList(applicationId: string): Promise<SessionListItem[]> {
-  const { data: sess } = await supabase
-    .from("candidate_sessions")
-    .select("id, session_type, status, expires_at, submitted_at, blueprint_id")
-    .eq("application_id", applicationId)
-    .order("created_at", { ascending: false });
-  const blueprintIds = [...new Set((sess ?? []).map((s) => s.blueprint_id))];
-  const { data: bps } = blueprintIds.length > 0
-    ? await supabase.from("assessment_blueprints").select("id, artifact_spec").in("id", blueprintIds)
-    : { data: [] };
-  const titleById = new Map((bps ?? []).map((b) => [b.id, (b.artifact_spec as { title?: string })?.title ?? b.id]));
-  return (sess ?? []).map((s) => ({
-    id: s.id,
-    session_type: s.session_type,
-    status: s.status,
-    expires_at: s.expires_at,
-    submitted_at: s.submitted_at,
-    blueprint_title: titleById.get(s.blueprint_id) ?? "Assessment",
-  }));
+async function loadSessionList(applicationId: string): Promise<CandidateSessionSummary[]> {
+  // Batch 5 (5.3): errors propagate (never `?? []`), so the caller can render
+  // a real error-with-retry instead of a false "No sessions yet."
+  return loadCandidateSessions(applicationId);
 }
 
-export function AssessmentReviewPanel({ open, onOpenChange, application, candidate, reqId, reqTitle, onChanged }: Props) {
-  const [sessions, setSessions] = useState<SessionListItem[]>([]);
+type SessionsState = { kind: "loading" } | { kind: "error"; message: string } | { kind: "ready" };
+
+export function AssessmentReviewPanel({ open, onOpenChange, application, candidate, reqId, reqTitle, initialSessionId, onChanged }: Props) {
+  const [sessions, setSessions] = useState<CandidateSessionSummary[]>([]);
+  const [sessionsState, setSessionsState] = useState<SessionsState>({ kind: "loading" });
   const [blueprints, setBlueprints] = useState<BlueprintListItem[]>([]);
   const [selectedId, setSelectedId] = useState<string>("");
   const [detail, setDetail] = useState<{ session: AssessmentSessionView; rubrics: RubricAnchorRow[]; evaluation: AssessmentEvaluation["result"] | null } | null>(null);
@@ -123,13 +110,30 @@ export function AssessmentReviewPanel({ open, onOpenChange, application, candida
   const [jobPolling, setJobPolling] = useState(false);
 
   const loadSessions = useCallback(async () => {
-    const [list, bps] = await Promise.all([
-      loadSessionList(application.id),
-      assessmentBlueprintList(reqId).catch(() => ({ ok: true, blueprints: [] })),
-    ]);
-    setSessions(list);
+    setSessionsState({ kind: "loading" });
+    const bps = await assessmentBlueprintList(reqId).catch(() => ({ ok: true, blueprints: [] }));
     setBlueprints(bps.blueprints);
-  }, [application.id, reqId]);
+    try {
+      const list = await loadSessionList(application.id);
+      setSessions(list);
+      setSessionsState({ kind: "ready" });
+      // Batch 5 (5.1): honor a requested session once the list is available.
+      if (initialSessionId && list.some((s) => s.id === initialSessionId)) {
+        setSelectedId(initialSessionId);
+        void openDetail(initialSessionId);
+      }
+    } catch (err) {
+      setSessionsState({
+        kind: "error",
+        message:
+          err instanceof SessionListError && err.code === "FORBIDDEN"
+            ? "You are not allowed to read this candidate's assessment sessions."
+            : err instanceof Error
+              ? err.message
+              : "Could not load sessions.",
+      });
+    }
+  }, [application.id, reqId, initialSessionId]);
 
   useEffect(() => {
     if (!open) return;
@@ -300,22 +304,40 @@ export function AssessmentReviewPanel({ open, onOpenChange, application, candida
             <div className="rounded-lg bg-muted p-3">
               <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Sessions</p>
               <div className="mt-2 flex flex-col gap-1.5">
-                {sessions.length === 0 && <p className="text-xs text-muted-foreground">No sessions yet.</p>}
-                {sessions.map((s) => (
-                  <button
-                    key={s.id}
-                    type="button"
-                    onClick={() => void openDetail(s.id)}
-                    className={`rounded-md p-2 text-left text-sm transition-colors ${
-                      selectedId === s.id ? "bg-foreground text-white" : "bg-white text-foreground hover:bg-white/70"
-                    }`}
-                  >
-                    <span className="block font-bold">{s.blueprint_title}</span>
-                    <span className={`text-xs ${selectedId === s.id ? "text-white/75" : "text-muted-foreground"}`}>
-                      {s.session_type.replace(/_/g, " ")} · {STATUS_LABEL[s.status] ?? s.status}
-                    </span>
-                  </button>
-                ))}
+                {sessionsState.kind === "loading" && (
+                  <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading sessions…
+                  </p>
+                )}
+                {sessionsState.kind === "error" && (
+                  <div className="flex flex-col gap-2">
+                    <p className="rounded bg-destructive/10 p-2 text-xs text-destructive">
+                      {sessionsState.message}
+                    </p>
+                    <Button size="sm" variant="outline" onClick={() => void loadSessions()}>
+                      <RefreshCw className="h-3.5 w-3.5" /> Retry
+                    </Button>
+                  </div>
+                )}
+                {sessionsState.kind === "ready" && sessions.length === 0 && (
+                  <p className="text-xs text-muted-foreground">No sessions yet for this application.</p>
+                )}
+                {sessionsState.kind === "ready" &&
+                  sessions.map((s) => (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() => void openDetail(s.id)}
+                      className={`rounded-md p-2 text-left text-sm transition-colors ${
+                        selectedId === s.id ? "bg-foreground text-white" : "bg-white text-foreground hover:bg-white/70"
+                      }`}
+                    >
+                      <span className="block font-bold">{s.blueprint_title}</span>
+                      <span className={`text-xs ${selectedId === s.id ? "text-white/75" : "text-muted-foreground"}`}>
+                        {s.session_type.replace(/_/g, " ")} · {STATUS_LABEL[s.status] ?? s.status}
+                      </span>
+                    </button>
+                  ))}
               </div>
             </div>
 

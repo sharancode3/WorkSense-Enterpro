@@ -2021,8 +2021,11 @@ Deno.serve(async (req) => {
     return json({ ok: true, job_id: job.id, status: "succeeded", assessment_id: assessmentRow.id, result });
   } catch (err) {
     const code = err instanceof QwenError ? err.code : "INTERNAL";
+    // Batch 5 (5.2): record the failed job's session link so the hiring work
+    // queue can surface it against the candidate/application/role.
     await finishJob(supabase, job.id, {
       status: "failed",
+      output: { session_id: session.id },
       errorCode: code,
       errorMessage: err instanceof Error ? err.message : "unknown",
       latencyMs: Date.now() - startedAt,

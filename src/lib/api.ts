@@ -1,6 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import type { Role } from "./rbac";
 import {
+  assessmentQueueSchema,
   candidateCompareSchema,
   decode,
   healthViewSchema,
@@ -16,6 +17,7 @@ import {
   securityAuditResultSchema,
   recommendationCommentListSchema,
   recommendationCommentResultSchema,
+  type AssessmentQueueResult,
   type CandidateCompare,
   type OnboardingQueue,
 } from "./contracts";
@@ -1413,3 +1415,8 @@ export const assessmentReview = (
   reason?: string
 ) =>
   invoke<AssessmentReviewResult>("assessment-review", { assessment_id: assessmentId, determination, judgments, reason });
+
+// ---- Batch 5: hiring-level work queue --------------------------------------
+
+export const assessmentQueue = () =>
+  invoke<AssessmentQueueResult>("assessment-queue", {}, assessmentQueueSchema, "assessment-queue");

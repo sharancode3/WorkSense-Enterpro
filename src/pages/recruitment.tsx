@@ -18,6 +18,7 @@ import { Badge } from "@/components/ui/badge";
 import { RequisitionForm } from "@/components/requisition-form";
 import { CandidateDetail } from "@/components/candidate-detail";
 import { CandidateCompareTable } from "@/components/candidate-compare-table";
+import { AssessmentWorkQueue } from "@/components/assessment-work-queue";
 import { can } from "@/lib/rbac";
 import { ApiError, candidateCompare, fetchModelJob, type ApplicationRow } from "@/lib/api";
 import {
@@ -91,10 +92,11 @@ export default function Recruitment() {
   const [selected, setSelected] = useState<string>(searchParams.get("req") ?? "");
   const [statusFilter, setStatusFilter] = useState("all");
   const [creating, setCreating] = useState(false);
-  const [activeTab, setActiveTab] = useState("pipeline");
+  const [activeTab, setActiveTab] = useState(searchParams.get("tab") === "work-queue" ? "work-queue" : "pipeline");
   const [detailCandidate, setDetailCandidate] = useState<CandidateRow | null>(null);
   const [detailReq, setDetailReq] = useState<RequisitionRow | null>(null);
   const [detailApp, setDetailApp] = useState<ApplicationRow | null>(null);
+  const [focusSessionId, setFocusSessionId] = useState<string | null>(null);
 
   // Refresh recovery: re-read a completed generation job from the URL.
   useEffect(() => {
@@ -207,6 +209,26 @@ export default function Recruitment() {
     setDetailCandidate(c);
     setDetailReq(req);
     setDetailApp(appsByTwin.get(twinId) ?? null);
+    setFocusSessionId(null);
+  };
+
+  // Batch 5 (5.2): a work-queue row deep-links into the candidate workspace
+  // with the Assessments tab open on the relevant session.
+  const openQueueSession = (twinId: string, applicationId: string, sessionId: string, requisitionId: string) => {
+    const c = candidatesMap.get(twinId);
+    const r = reqs.data?.find((x) => x.id === requisitionId) ?? null;
+    if (!c || !r) return;
+    void supabase
+      .from("applications")
+      .select("*")
+      .eq("id", applicationId)
+      .maybeSingle()
+      .then(({ data }) => {
+        setDetailCandidate(c);
+        setDetailReq(r);
+        setDetailApp((data as ApplicationRow | null) ?? null);
+        setFocusSessionId(sessionId);
+      });
   };
 
   if (role && !can(role, "manage_recruitment")) {
@@ -334,10 +356,18 @@ export default function Recruitment() {
           {/* Main: requisition workspace */}
           <div className="lg:col-span-2">
             {!req ? (
-              <div className="flex flex-col items-center gap-3 rounded-lg bg-muted px-6 py-20 text-center">
-                <Briefcase className="h-8 w-8 text-primary" strokeWidth={2.5} />
-                <p className="text-sm text-muted-foreground">Select a requisition to open its workspace.</p>
-              </div>
+              activeTab === "work-queue" ? (
+                <AssessmentWorkQueue
+                  requisitionId=""
+                  requisitionTitle=""
+                  onOpenSession={openQueueSession}
+                />
+              ) : (
+                <div className="flex flex-col items-center gap-3 rounded-lg bg-muted px-6 py-20 text-center">
+                  <Briefcase className="h-8 w-8 text-primary" strokeWidth={2.5} />
+                  <p className="text-sm text-muted-foreground">Select a requisition to open its workspace.</p>
+                </div>
+              )
             ) : (
               <div className="flex flex-col gap-4">
                 <div className="rounded-lg bg-white p-5">
@@ -385,6 +415,7 @@ export default function Recruitment() {
                       )}
                     </TabsTrigger>
                     <TabsTrigger value="overview">Overview</TabsTrigger>
+                    <TabsTrigger value="work-queue">Work queue</TabsTrigger>
                   </TabsList>
 
                   <TabsContent value="pipeline" className="flex flex-col gap-3">
@@ -481,6 +512,14 @@ export default function Recruitment() {
                       </div>
                     </div>
                   </TabsContent>
+
+                  <TabsContent value="work-queue" className="flex flex-col gap-3">
+                    <AssessmentWorkQueue
+                      requisitionId={selected}
+                      requisitionTitle={req.title}
+                      onOpenSession={openQueueSession}
+                    />
+                  </TabsContent>
                 </Tabs>
               </div>
             )}
@@ -497,11 +536,13 @@ export default function Recruitment() {
               setDetailCandidate(null);
               setDetailReq(null);
               setDetailApp(null);
+              setFocusSessionId(null);
             }
           }}
           candidate={detailCandidate}
           req={detailReq}
           app={detailApp}
+          initialSessionId={focusSessionId}
           onChanged={invalidate}
         />
       )}

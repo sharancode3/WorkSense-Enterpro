@@ -3,11 +3,14 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowRight,
   Briefcase,
+  CalendarClock,
   Download,
+  ExternalLink,
   FileText,
   History,
   Loader2,
   MessagesSquare,
+  RefreshCw,
   ShieldCheck,
   Target,
 } from "lucide-react";
@@ -26,6 +29,13 @@ import { Badge } from "@/components/ui/badge";
 import { FitCard } from "@/components/fit-card";
 import { ResumeReviewFlow } from "@/components/resume-review-flow";
 import { AssessmentReviewPanel } from "@/components/assessment-review-panel";
+import { classifyQuery } from "@/lib/query-state";
+import {
+  loadCandidateSessions,
+  SESSION_STATUS_LABEL,
+  SESSION_TYPE_LABEL,
+  type CandidateSessionSummary,
+} from "@/lib/candidate-sessions";
 import {
   computeSkillFit,
   type FitLineage,
@@ -68,10 +78,12 @@ interface Props {
   candidate: CandidateRow;
   req: RequisitionRow | null;
   app: ApplicationRow | null;
+  /** Batch 5 (5.2): open the Assessments tab and review this session directly. */
+  initialSessionId?: string | null;
   onChanged: () => void;
 }
 
-export function CandidateDetail({ open, onOpenChange, candidate, req, app, onChanged }: Props) {
+export function CandidateDetail({ open, onOpenChange, candidate, req, app, initialSessionId, onChanged }: Props) {
   const qc = useQueryClient();
   const [busy, setBusy] = useState<string | null>(null);
   const [tab, setTab] = useState("profile");
@@ -87,6 +99,7 @@ export function CandidateDetail({ open, onOpenChange, candidate, req, app, onCha
   // History
   const [events, setEvents] = useState<StageEventRow[] | null>(null);
   const [assessOpen, setAssessOpen] = useState(false);
+  const [focusSessionId, setFocusSessionId] = useState<string | null>(null);
   // Resume provenance
   const [provenance, setProvenance] = useState<{ document_id: string; version: number; artifact_ref: string; file_name: string; checksum_short: string } | null>(null);
   const [resumeMode, setResumeMode] = useState<"file" | "text">("file");
@@ -116,6 +129,27 @@ export function CandidateDetail({ open, onOpenChange, candidate, req, app, onCha
     enabled: open,
   });
 
+  // Batch 5 (5.1/5.3): the Assessments tab renders REAL session rows with
+  // explicit query states — a failed read is an error with retry, never a
+  // false "no assessments". Loaded when either the Assessments or Interview
+  // tab (interview record) needs it.
+  const sessionsQuery = useQuery({
+    queryKey: ["candidate-sessions", app?.id ?? "none"],
+    queryFn: () => loadCandidateSessions(app!.id),
+    enabled: open && !!app && (tab === "assessments" || tab === "interview"),
+  });
+
+  // Batch 5 (5.2): deep-link from the hiring work queue — open the Assessments
+  // tab and launch the reviewer on the requested session.
+  useEffect(() => {
+    if (open && app && initialSessionId) {
+      setTab("assessments");
+      setFocusSessionId(initialSessionId);
+      setAssessOpen(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, initialSessionId, app?.id]);
+
   useEffect(() => {
     if (!open) {
       setTab("profile");
@@ -129,6 +163,8 @@ export function CandidateDetail({ open, onOpenChange, candidate, req, app, onCha
       setExtractResult(null);
       setResumeMode("file");
       setResumeText("");
+      setAssessOpen(false);
+      setFocusSessionId(null);
       void qc.invalidateQueries({ queryKey: ["candidate-resume-docs", candidate.id] });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -148,6 +184,8 @@ export function CandidateDetail({ open, onOpenChange, candidate, req, app, onCha
     setExtractResult(null);
     setResumeMode("file");
     setResumeText("");
+    setAssessOpen(false);
+    setFocusSessionId(null);
     void qc.invalidateQueries({ queryKey: ["candidate-resume-docs", candidate.id] });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [candidate.id]);
@@ -283,6 +321,16 @@ export function CandidateDetail({ open, onOpenChange, candidate, req, app, onCha
 
   const stage = app?.stage ?? "screening";
 
+  const sessionsState = classifyQuery<CandidateSessionSummary[]>({
+    isPending: sessionsQuery.isPending,
+    isError: sessionsQuery.isError,
+    data: sessionsQuery.data,
+    error: sessionsQuery.error,
+    list: true,
+  });
+
+  const interviewSessions = sessionsState.kind === "ready" ? sessionsState.data.filter((s) => s.session_type === "interview") : null;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="flex max-w-4xl max-h-[calc(100dvh-2rem)] flex-col p-0">
@@ -304,8 +352,9 @@ export function CandidateDetail({ open, onOpenChange, candidate, req, app, onCha
         <Tabs
           value={tab}
           onValueChange={(v) => {
+            // Batch 5 (5.1): no auto-launched dialog. The Assessments tab
+            // renders real session rows in place; the reviewer opens on demand.
             setTab(v);
-            if (v === "assessments") setAssessOpen(true);
           }}
         >
           <TabsList className="flex flex-wrap">
@@ -545,8 +594,59 @@ export function CandidateDetail({ open, onOpenChange, candidate, req, app, onCha
             )}
           </TabsContent>
 
-          {/* Interview: kit + evaluation */}
+          {/* Interview: record + kit + evaluation */}
           <TabsContent value="interview" className="flex flex-col gap-4">
+            {/* Batch 5 (5.6): minimal interview record — real rows, clearly
+                labeled manual scheduling. No calendar invite is ever created. */}
+            <div className="rounded-lg bg-white p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Interview record</p>
+                <span className="rounded-md bg-muted px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                  Manually scheduled
+                </span>
+              </div>
+              {sessionsState.kind === "loading" && (
+                <p className="mt-2 flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading sessions…
+                </p>
+              )}
+              {sessionsState.kind === "error" || sessionsState.kind === "unavailable" ? (
+                <p className="mt-2 text-sm text-destructive">
+                  The interview record could not be loaded right now — open the Assessments tab to retry.
+                </p>
+              ) : (interviewSessions ?? []).length === 0 ? (
+                <p className="mt-2 text-sm text-muted-foreground">
+                  No interview session has been created for this application yet. Interview scheduling is a manual
+                  human step — no calendar invite is generated automatically.
+                </p>
+              ) : (
+                <div className="mt-2 flex flex-col gap-2">
+                  {interviewSessions?.map((s) => (
+                    <div key={s.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-muted p-3">
+                      <div>
+                        <p className="text-sm font-bold text-foreground">{s.blueprint_title}</p>
+                        <p className="text-xs text-muted-foreground">
+                          <CalendarClock className="mr-1 inline h-3.5 w-3.5" />
+                          {s.status === "submitted" && s.submitted_at
+                            ? `Submitted ${new Date(s.submitted_at).toLocaleString()}`
+                            : s.status === "expired"
+                              ? `Invitation expired ${new Date(s.expires_at).toLocaleDateString()}`
+                              : `Invitation open until ${new Date(s.expires_at).toLocaleDateString()}`}
+                        </p>
+                      </div>
+                      <span className={`rounded-md px-2.5 py-1 text-xs font-bold uppercase tracking-wider ${s.status === "submitted" ? "bg-secondary text-white" : "bg-accent text-foreground"}`}>
+                        {SESSION_STATUS_LABEL[s.status] ?? s.status.replace(/_/g, " ")}
+                      </span>
+                    </div>
+                  ))}
+                  <p className="text-xs text-muted-foreground">
+                    Time and participants are coordinated manually with the candidate — this system never sends or
+                    fabricates calendar invites.
+                  </p>
+                </div>
+              )}
+            </div>
+
             <div className="rounded-lg bg-white p-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Interview kit</p>
@@ -666,16 +766,101 @@ export function CandidateDetail({ open, onOpenChange, candidate, req, app, onCha
             )}
           </TabsContent>
 
-          {/* Assessments: sessions + reviewer confirmation flow */}
+          {/* Assessments: real session rows with explicit query states — a
+              failed read is an error with retry, never a false empty tab. */}
           {app && (
-            <TabsContent value="assessments">
-              <div className="flex flex-col items-center gap-3 rounded-lg bg-muted px-6 py-12 text-center">
-                <Briefcase className="h-7 w-7 text-primary" />
-                <p className="max-w-md text-sm text-muted-foreground">
-                  Work-sample and interview sessions for this application, blueprint versions, and the reviewer
-                  confirmation flow that turns model drafts into verified evidence.
+            <TabsContent value="assessments" className="flex flex-col gap-3">
+              {sessionsState.kind === "loading" && (
+                <p className="flex items-center gap-2 rounded-lg bg-muted p-4 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Loading assessment and interview sessions…
                 </p>
-              </div>
+              )}
+              {sessionsState.kind === "unavailable" && (
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-destructive/10 p-4 text-sm text-destructive">
+                  <p className="flex items-center gap-2">
+                    <Briefcase className="h-4 w-4" /> Could not reach the backend — sessions are unavailable right now.
+                  </p>
+                  <Button size="sm" variant="outline" onClick={() => void sessionsQuery.refetch()}>
+                    <RefreshCw className="h-4 w-4" /> Retry
+                  </Button>
+                </div>
+              )}
+              {sessionsState.kind === "forbidden" && (
+                <p className="rounded-lg bg-destructive/10 p-4 text-sm text-destructive">
+                  You are not allowed to read this candidate's assessment sessions.
+                </p>
+              )}
+              {sessionsState.kind === "error" && (
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-destructive/10 p-4 text-sm text-destructive">
+                  <p className="flex items-center gap-2">
+                    <Briefcase className="h-4 w-4" /> {sessionsState.message}
+                  </p>
+                  <Button size="sm" variant="outline" onClick={() => void sessionsQuery.refetch()}>
+                    <RefreshCw className="h-4 w-4" /> Retry
+                  </Button>
+                </div>
+              )}
+              {sessionsState.kind === "empty" && (
+                <div className="flex flex-col items-center gap-3 rounded-lg bg-muted px-6 py-12 text-center">
+                  <Briefcase className="h-7 w-7 text-primary" />
+                  <p className="max-w-md text-sm text-muted-foreground">
+                    No assessment or interview sessions exist for this application yet. Open the reviewer to create
+                    invitations (work sample, interview or knowledge assessment).
+                  </p>
+                  <Button size="sm" variant="secondary" onClick={() => setAssessOpen(true)}>
+                    <MessagesSquare className="h-4 w-4" /> Open assessment reviewer
+                  </Button>
+                </div>
+              )}
+              {sessionsState.kind === "ready" && (
+                <>
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                      {sessionsState.data.length} session(s) on record
+                    </p>
+                    <Button size="sm" variant="secondary" onClick={() => setAssessOpen(true)}>
+                      <MessagesSquare className="h-4 w-4" /> Open reviewer
+                    </Button>
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    {sessionsState.data.map((s) => (
+                      <div key={s.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-white p-4">
+                        <div className="min-w-0">
+                          <p className="font-bold text-foreground">{s.blueprint_title}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {SESSION_TYPE_LABEL[s.session_type] ?? s.session_type.replace(/_/g, " ")}
+                            {s.status === "submitted" && s.submitted_at
+                              ? ` · submitted ${new Date(s.submitted_at).toLocaleString()}`
+                              : s.status === "expired"
+                                ? ` · expired ${new Date(s.expires_at).toLocaleDateString()}`
+                                : s.status === "invited" || s.status === "in_progress"
+                                  ? ` · open until ${new Date(s.expires_at).toLocaleDateString()}`
+                                  : ""}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`rounded-md px-2.5 py-1 text-xs font-bold uppercase tracking-wider ${
+                              s.status === "submitted"
+                                ? "bg-secondary text-white"
+                                : s.status === "expired" || s.status === "cancelled"
+                                  ? "bg-muted text-muted-foreground"
+                                  : s.status === "in_progress"
+                                    ? "bg-primary text-white"
+                                    : "bg-accent text-foreground"
+                            }`}
+                          >
+                            {SESSION_STATUS_LABEL[s.status] ?? s.status.replace(/_/g, " ")}
+                          </span>
+                          <Button size="sm" variant="outline" onClick={() => { setFocusSessionId(s.id); setAssessOpen(true); }}>
+                            <ExternalLink className="h-3.5 w-3.5" /> Review
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
             </TabsContent>
           )}
         </Tabs>
@@ -683,12 +868,19 @@ export function CandidateDetail({ open, onOpenChange, candidate, req, app, onCha
         {app && (
           <AssessmentReviewPanel
             open={assessOpen}
-            onOpenChange={setAssessOpen}
+            onOpenChange={(o) => {
+              setAssessOpen(o);
+              if (!o) setFocusSessionId(null);
+            }}
             application={app}
             candidate={{ id: candidate.id, name: candidate.name, email: candidate.email ?? "" }}
             reqId={req?.id ?? ""}
             reqTitle={req?.title ?? ""}
-            onChanged={onChanged}
+            initialSessionId={focusSessionId ?? undefined}
+            onChanged={() => {
+              void sessionsQuery.refetch();
+              onChanged();
+            }}
           />
         )}
         {pendingDecision && app && (
