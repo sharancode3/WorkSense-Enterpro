@@ -586,3 +586,13 @@ Inspected existing fixtures first (54 employees with coherent manager reporting,
 **Browser verification:** not performed (auth-gated pages cannot be screenshotted). Live API verification via `scripts/verify-batch-7.mjs` — 13/13 (differentiated session states, past expiry, reviewed evaluation, verbatim source quote, linked evidence, Priya/disposable untouched, queue placement, partial-data candidate, non-uniform risk mix, pristine reset). Regressions: batch-5 15/15, batch-6 19/19, batch-4 12/12, batch-3 12/12. Demo left pristine.
 
 **Remaining:** Batch 8 (honest coverage matrix), Batch 9 (regression + release proof, incl. stale-proposal handling test).
+
+## 47. Role workspaces spec — Batch 8 (honest coverage matrix)
+
+Created `docs/coverage-matrix.md` — the internal truth-telling map of the 8 capability categories (recruitment intelligence, adaptive onboarding, policy reasoning, workforce risk, performance intelligence, skill graph, interview intelligence, decision dashboard). Each row states what exists, where (function/module), and its real limits. Supported: recruitment, onboarding, policy, workforce risk (explicitly NOT an attrition model), skill graph, interview intelligence, decision dashboard. Partial: performance intelligence (drafts only, human confirmation). Unsupported, explicitly named (nothing faked): trained attrition/performance prediction, code-execution sandbox, calendar invites, OCR, real-time push, payroll, and the evidence→staffing-proposal staleness cascade (scenario-version binding exists; proposal-to-candidate linkage deferred to Batch 9 test scope).
+
+The one working cross-source journey (Demand → evidence → explainable comparison → human review → owned execution → accepted evidence → updated readiness) is proven live end-to-end in `scripts/verify-batch-8.mjs` — 8/8, no model dependency: open requisition with criteria → Ravi's reviewed work sample with verbatim quote → deterministic fit + scored comparison → human-reviewed determination → select → onboarding plan (12 tasks owned by employee/manager/IT) → numeric readiness → every assessment_supported evidence row carries a real quote. No new feature was added to fill a coverage box (per the batch instruction).
+
+**Tests run:** `pnpm check` green (399 tests / 39 files, no drift). `pnpm build` green. Live `verify-batch-8.mjs` 8/8; prior suites unchanged (5: 15, 6: 19, 7: 13). Demo left pristine.
+
+**Remaining:** Batch 9 (regression + release proof; add the missing tests — stale proposal handling, assessment errors vs empty, etc. — then final report).
