@@ -609,6 +609,8 @@ export interface DashboardData {
     pending_recommendations: number;
   };
   review_cases: ReviewCaseRow[];
+  hiring_funnel: { stage: string; count: number }[];
+  review_band_counts: { low: number; medium: number; high: number; review: number; total: number };
   heatmap: HeatmapBucket[];
   recommendations: { id: string; category: string; urgency: string; title: string; executive_summary: string }[];
 }

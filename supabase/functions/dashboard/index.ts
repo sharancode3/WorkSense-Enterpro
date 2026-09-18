@@ -1038,6 +1038,12 @@ Deno.serve(async (req) => {
   const reqStatusCounts = Object.fromEntries(REQ_STATUSES.map((s) => [s, scopedReqs.filter((r) => r.status === s).length])) as Record<string, number>;
   const applicants = scopedReqs.flatMap((r) => r.applicants ?? []);
   const activeCandidates = applicants.filter((a) => !["selected", "rejected"].includes(a.stage)).length;
+  const STAGE_ORDER = ["screening", "technical_interview", "final_round", "selected", "rejected"] as const;
+  const activeByStage = Object.fromEntries(STAGE_ORDER.map((s) => [s, 0])) as Record<string, number>;
+  for (const a of applicants) {
+    const st = String((a as { stage?: string }).stage ?? "");
+    if (st in activeByStage) activeByStage[st] += 1;
+  }
 
   // Onboarding journeys are derived from the CANONICAL adaptive plans: a worker
   // in scope has one active plan (latest non-superseded version). A journey is
@@ -1173,6 +1179,20 @@ Deno.serve(async (req) => {
       available: { departments: availableDepartments, requisitions: availableRequisitions },
     },
     review_cases: reviewCases,
+    // Phase 14: decision-oriented distributions — hiring funnel by stage and
+    // review-band counts, each with denominators (sample sizes) so no number
+    // floats without context.
+    hiring_funnel: STAGE_ORDER.map((stage) => ({
+      stage,
+      count: activeByStage[stage] ?? 0,
+    })),
+    review_band_counts: {
+      low: reviewCases.filter((c) => c.priority === "low").length,
+      medium: reviewCases.filter((c) => c.priority === "medium").length,
+      high: reviewCases.filter((c) => c.priority === "high").length,
+      review: reviewCases.filter((c) => c.priority === "review").length,
+      total: reviewCases.length,
+    },
     cards: {
       headcount,
       open_requisitions: openReqs.length,
