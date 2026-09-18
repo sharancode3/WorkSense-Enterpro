@@ -596,3 +596,23 @@ The one working cross-source journey (Demand → evidence → explainable compar
 **Tests run:** `pnpm check` green (399 tests / 39 files, no drift). `pnpm build` green. Live `verify-batch-8.mjs` 8/8; prior suites unchanged (5: 15, 6: 19, 7: 13). Demo left pristine.
 
 **Remaining:** Batch 9 (regression + release proof; add the missing tests — stale proposal handling, assessment errors vs empty, etc. — then final report).
+
+## 48. Role workspaces spec — Batch 9 (FINAL: regression + release proof)
+
+**Missing test added — stale-proposal handling: COMPLETED.** New pure helper `src/lib/staffing-staleness.ts` (dependency-free) with two predicates and 8 unit tests (`src/lib/__tests__/staffing-staleness.test.ts`): `isInputFingerprintOutdated(planPresent, inputFingerprint, currentFingerprint)` (dirty-input protection, replacing the inline `outdated` expression in staffing.tsx) and `isProposalStale(proposalScenarioVersion, currentScenarioVersion)` (a submitted proposal bound to an older assumptions version is flagged). staffing.tsx wires both in: the proposal-bound card now renders an amber alert whenever `proposal.scenario_version` differs from the current `plan.assumptions.version`, so a stale proposal is never mistaken for a fresh computation. The evidence→proposal staleness cascade (proposal-to-candidate id linkage) stays honestly deferred — it would require a `staffing_proposals` schema change plus engine rewrite, outside this batch's test-additive mandate (recorded in `docs/coverage-matrix.md`).
+
+**Other reviewer test items — verified already covered, not duplicated:** assessment errors-vs-empty (classifyQuery + SessionListError: `src/lib/__tests__/query-state.test.ts` 6 tests; live batch-5), candidate/application state isolation + idempotent retry (`_shared/onboarding-v2.test.ts`, `stage-engine.test.ts`, batch-5/6 live), evidence-driven fit invalidation (`_shared/fit-store.test.ts`, batch-6 live), IT dependency propagation (`_shared/onboarding-v2.test.ts`, batch-4 live). Re-running them is the regression proof rather than new code.
+
+**Six release checks — run separately, all green:**
+1. Frontend lint — `pnpm lint`: 0 errors, 2 pre-existing warnings (role-home.tsx exhaustive-deps, benign).
+2. App tsc — `tsc --noEmit -p tsconfig.app.json`: pass.
+3. Backend checks — `tsc -p tsconfig.functions.json` + `tsc -p tsconfig.functions-check.json`: pass.
+4. Bundle consistency — `node scripts/check-functions.mjs`: all 45 function entry points bundled & valid (28 shared modules), no drift.
+5. Unit/contract tests — `pnpm test`: **407 tests / 40 files passed** (was 399/39; +8 staleness tests).
+6. Production build — `pnpm build`: green (2029 modules).
+
+**Live regression — all 8 suites re-run green (106 checks):** batch-1 10/10, batch-2 17/17, batch-3 12/12, batch-4 12/12, batch-5 15/15, batch-6 19/19, batch-7 13/13, batch-8 8/8. Each suite ends with a reset-demo teardown; final state read-only query confirms demo pristine (candidate_sessions 9, staffing_proposals 0, no leftover test rows).
+
+**Browser verification:** not performed (all exercised pages are auth-gated and cannot be screenshotted); code/contract and live-API verification are the evidence above.
+
+**Spec complete:** all 9 batches delivered (1 nav/RBAC, 2 RLS/scope, 3 role landings + IT, 4 IT queue + handoff, 5 assessment discoverability, 6 cross-module handoffs, 7 role-relevant fixtures, 8 coverage matrix, 9 regression + release proof). Remaining items: none implementable — only browser-persona verification remains untested (a tooling limit, not a product gap). Concrete blockers: none.

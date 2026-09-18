@@ -12,6 +12,7 @@ import {
   type StaffingPlanResult,
 } from "@/lib/api";
 import { recommendOption, RECOMMENDATION_RULE, RECOMMENDATION_RULE_SHORT } from "@/lib/staffing-recommendation";
+import { isInputFingerprintOutdated, isProposalStale } from "@/lib/staffing-staleness";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -101,7 +102,12 @@ export default function StaffingPlanner() {
   const [runVersion, setRunVersion] = useState(0);
   const fingerprint = JSON.stringify({ scenario, skills });
 
-  const outdated = !!plan && !!inputFingerprint && inputFingerprint !== fingerprint;
+  // Batch 9: staleness is computed via pure, tested helpers. Dirty inputs
+  // block explain/propose; a proposal bound to an older scenario version is
+  // flagged so it is never mistaken for a fresh computation.
+  const outdated = isInputFingerprintOutdated(!!plan, inputFingerprint, fingerprint);
+  const proposalStale =
+    proposal !== null && plan !== null && isProposalStale(proposal.scenario_version, plan.assumptions.version);
   const stepIndex = !plan ? 0 : !selectedOption ? 1 : !proposal ? 2 : 3;
   const recommendedId = plan ? recommendOption(plan.options) : null;
   const selectedOptionRow = plan?.options.find((o) => o.id === selectedOption) ?? null;
@@ -544,6 +550,12 @@ export default function StaffingPlanner() {
                 <p className="mt-1 text-xs text-muted-foreground">
                   Scenario version: <code className="rounded bg-muted px-1.5 py-0.5">{proposal.scenario_version}</code> · Proposal {proposal.id.slice(0, 8)} — the human reviewer sees exactly these numbers, not a re-computation.
                 </p>
+                {proposalStale && (
+                  <div role="alert" className="mt-3 flex flex-wrap items-center gap-2 rounded-md bg-amber-100 px-3 py-2 text-xs font-semibold text-amber-900">
+                    <AlertTriangle className="h-4 w-4 shrink-0" />
+                    This proposal is bound to assumptions {proposal.scenario_version}, but the current plan runs on assumptions {plan.assumptions.version}. The reviewer will still see the bound numbers, but a fresh computation would differ — resubmit after recalculating if the inputs changed.
+                  </div>
+                )}
               </div>
             ) : selectedOptionRow && selectedOption ? (
               <div className="rounded-lg bg-white p-5">
