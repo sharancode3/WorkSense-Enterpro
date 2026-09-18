@@ -40,6 +40,7 @@ import {
   type PerformanceSummaryResult,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { supabase } from "@/integrations/supabase/client";
 
 // Canonical review bands — MUST match the backend REVIEW_BANDS so "review bands
@@ -256,6 +257,7 @@ export default function WorkforceReview() {
   });
 
   // Dismiss/defer dialog state.
+  const [detailOpen, setDetailOpen] = useState(() => !!searchParams.get("twin"));
   const [actionOpen, setActionOpen] = useState(false);
   const [actionKind, setActionKind] = useState<ActionKind>("deferred");
   const [actionReason, setActionReason] = useState("");
@@ -417,7 +419,7 @@ export default function WorkforceReview() {
                 return (
                   <li key={c.twin_id} data-case={c.twin_id}>
                     <button
-                      onClick={() => setSelectedId(c.twin_id)}
+                      onClick={() => { setSelectedId(c.twin_id); setDetailOpen(true); }}
                       className={`flex w-full items-center justify-between gap-3 px-5 py-3 text-left transition-colors hover:bg-muted ${activeId === c.twin_id ? "bg-primary/10 ring-1 ring-inset ring-primary/30" : ""}`}
                     >
                       <div className="min-w-0">
@@ -461,7 +463,12 @@ export default function WorkforceReview() {
           </div>
         )}
 
-        {/* Detail */}
+        {/* Master/detail: the list stays visible and the detail opens in a bounded
+          pane — no scroll-hunt below a long list. Mobile gets a near-full sheet. */}
+      <Dialog open={detailOpen} onOpenChange={(o) => { setDetailOpen(o); if (!o) setSelectedId(null); }}>
+        <DialogContent className="flex max-w-4xl max-h-[calc(100dvh-2rem)] flex-col p-0">
+          <div className="min-h-0 flex-1 overflow-y-auto p-6">
+      {/* Detail */}
         <div className="mt-8 flex flex-col gap-6">
           {caseQuery.isLoading || (isEmployee && !caseQuery.data) ? (
             <div className="flex items-center gap-3 rounded-lg bg-muted p-8 text-sm text-muted-foreground">
@@ -878,6 +885,9 @@ export default function WorkforceReview() {
           )}
         </div>
       </div>
+      </DialogContent>
+    </Dialog>
+    </div>
 
       {/* Dismiss / defer dialog */}
       {actionOpen && (

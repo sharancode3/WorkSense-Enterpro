@@ -131,6 +131,24 @@ export function CandidateDetail({ open, onOpenChange, candidate, req, app, onCha
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
+  // Batch A1: never show one candidate's cached fit/kit/resume beneath another
+  // name — switching candidates while the detail is open resets identity state.
+  useEffect(() => {
+    setTab("profile");
+    setFit(null);
+    setFitLineage(null);
+    setKit(null);
+    setEvalRes(null);
+    setEvalNotes("");
+    setEvents(null);
+    setProvenance(null);
+    setExtractResult(null);
+    setResumeMode("file");
+    setResumeText("");
+    void qc.invalidateQueries({ queryKey: ["candidate-resume-docs", candidate.id] });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [candidate.id]);
+
   const runStage = async (decision: "move_forward" | "reject" | "select") => {
     if (!app) return;
     setBusy(`${decision}-${candidate.id}`);
@@ -264,8 +282,8 @@ export function CandidateDetail({ open, onOpenChange, candidate, req, app, onCha
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl">
-        <DialogHeader>
+      <DialogContent className="flex max-w-4xl max-h-[calc(100dvh-2rem)] flex-col p-0">
+        <DialogHeader className="shrink-0 px-6 pt-6">
           <DialogTitle className="flex flex-wrap items-center gap-3">
             <span>{candidate.name}</span>
             <span className="text-sm font-medium text-muted-foreground">{candidate.email}</span>
@@ -277,6 +295,9 @@ export function CandidateDetail({ open, onOpenChange, candidate, req, app, onCha
           </DialogTitle>
         </DialogHeader>
 
+        {/* Bounded scrollable body: header + tabs stay, content scrolls, footer
+            (close/actions) stays reachable on small screens. */}
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6">
         <Tabs
           value={tab}
           onValueChange={(v) => {
@@ -604,6 +625,7 @@ export function CandidateDetail({ open, onOpenChange, candidate, req, app, onCha
             </TabsContent>
           )}
         </Tabs>
+        </div>
         {app && (
           <AssessmentReviewPanel
             open={assessOpen}
