@@ -46,6 +46,7 @@ const STATUS_CHIP: Record<string, { label: string; cls: string }> = {
   execution_pending: { label: "Execution pending", cls: "bg-foreground text-white" },
   in_progress: { label: "In progress", cls: "bg-secondary text-white" },
   completed: { label: "Completed", cls: "bg-secondary text-white" },
+  verified: { label: "Verified — outcome recorded", cls: "bg-primary text-white" },
   failed: { label: "Failed", cls: "bg-destructive text-white" },
   cancelled: { label: "Cancelled", cls: "bg-muted text-foreground" },
   stale: { label: "Stale — re-review", cls: "bg-destructive text-white" },
@@ -107,7 +108,10 @@ const REC_ACTIONS: Record<string, { action: string; label: string; fn: "review" 
     { action: "start", label: "Retry", fn: "execute" },
     { action: "cancel", label: "Cancel", fn: "execute", variant: "outline" },
   ],
-  completed: [],
+  completed: [
+    { action: "verify", label: "Verify outcome", fn: "execute" },
+  ],
+  verified: [],
   rejected: [],
   cancelled: [],
 };
@@ -187,7 +191,15 @@ function TasksPanel({ rec, onTaskAct }: { rec: RecommendationRow; onTaskAct: (ta
                 </div>
                 {t.instructions && <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">{t.instructions}</p>}
                 {t.resource_link && (
-                  <p className="mt-1 text-xs text-primary">{t.resource_link}</p>
+                  <p className="mt-1 text-xs">
+                    {/worksense\.demo|learning\.worksense/i.test(t.resource_link) ? (
+                      <span className="rounded bg-accent px-1.5 py-0.5 text-accent-foreground" title="Placeholder resource — replace with the real catalog link before linking owners to it">
+                        Resource: {t.resource_link} (placeholder — replace with the real L&D catalog link)
+                      </span>
+                    ) : (
+                      <span className="text-primary">Resource: {t.resource_link}</span>
+                    )}
+                  </p>
                 )}
                 {(t.required_evidence ?? []).length > 0 && (
                   <p className="mt-1 text-xs text-muted-foreground">Required evidence: {(t.required_evidence ?? []).join(", ")}</p>
@@ -250,6 +262,7 @@ function RecommendationCard({
   busy: boolean;
 }) {
   const [showAudit, setShowAudit] = useState(false);
+  const [showDetails, setShowDetails] = useState(false);
   const chip = STATUS_CHIP[rec.status] ?? STATUS_CHIP.suggested;
   const actions = REC_ACTIONS[rec.status] ?? [];
 
@@ -290,28 +303,43 @@ function RecommendationCard({
         </div>
       )}
 
-      {/* Evidence */}
-      <div className="mt-5">
-        <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
-          <FileSearch className="h-4 w-4" /> Evidence — every source with a concrete fact
-        </p>
-        <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
-          {rec.evidence_ledger.map((e) => (
-            <div key={e.source} className="rounded-md bg-muted p-3">
-              <span className="inline-block rounded bg-foreground px-1.5 py-0.5 font-mono text-[10px] font-bold text-white">{e.source}</span>
-              <p className="mt-1.5 text-sm leading-snug text-foreground">{e.fact}</p>
+      {/* Evidence + reasoning — collapsed until requested (Phase 11 item 3) */}
+      <button
+        type="button"
+        onClick={() => setShowDetails((v) => !v)}
+        className="mt-4 flex w-full items-center justify-between rounded-md bg-muted px-3 py-2 text-left"
+      >
+        <span className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
+          <FileSearch className="h-4 w-4" /> Evidence, reasoning & sources ({rec.evidence_ledger.length})
+        </span>
+        <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform duration-300 ${showDetails ? "rotate-180" : ""}`} />
+      </button>
+      {showDetails && (
+        <>
+          {/* Evidence */}
+          <div className="mt-3">
+            <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
+              <FileSearch className="h-4 w-4" /> Evidence — every source with a concrete fact
+            </p>
+            <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {rec.evidence_ledger.map((e) => (
+                <div key={e.source} className="rounded-md bg-muted p-3">
+                  <span className="inline-block rounded bg-foreground px-1.5 py-0.5 font-mono text-[10px] font-bold text-white">{e.source}</span>
+                  <p className="mt-1.5 text-sm leading-snug text-foreground">{e.fact}</p>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-      </div>
+          </div>
 
-      {/* Reasoning */}
-      <div className="mt-4 rounded-lg bg-primary/5 p-4">
-        <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-primary">
-          <Lightbulb className="h-4 w-4" /> Reasoning
-        </p>
-        <p className="mt-1.5 text-sm leading-relaxed text-foreground">{rec.executive_summary || rec.proposed_action.executive_summary || "No synthesis available."}</p>
-      </div>
+          {/* Reasoning */}
+          <div className="mt-4 rounded-lg bg-primary/5 p-4">
+            <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-primary">
+              <Lightbulb className="h-4 w-4" /> Reasoning
+            </p>
+            <p className="mt-1.5 text-sm leading-relaxed text-foreground">{rec.executive_summary || rec.proposed_action.executive_summary || "No synthesis available."}</p>
+          </div>
+        </>
+      )}
 
       {/* Recommended action */}
       <div className="mt-4">
@@ -402,6 +430,11 @@ export default function RecommendationHub() {
   const [evidence, setEvidence] = useState("");
   const [busy, setBusy] = useState(false);
   const [scanning, setScanning] = useState(false);
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [categoryFilter, setCategoryFilter] = useState("all");
+  const [ownerFilter, setOwnerFilter] = useState("all");
+  const [page, setPage] = useState(0);
+  const PAGE_SIZE = 10;
 
   const recs = useQuery({
     queryKey: ["hub-recs", user?.id ?? "anon"],
@@ -506,6 +539,16 @@ export default function RecommendationHub() {
   const taskOwnerLabel = (task: ActionTaskRow) =>
     task.owner_twin_id === twin?.id ? " (you)" : "";
 
+  // Phase 11 item 2: type/status/owner filters + pagination (client-side).
+  const allRecs = recs.data ?? [];
+  const filteredRecs = allRecs.filter((r) => {
+    if (statusFilter !== "all" && r.status !== statusFilter) return false;
+    if (categoryFilter !== "all" && r.category !== categoryFilter) return false;
+    if (ownerFilter !== "all" && r.required_signoff_role !== ownerFilter) return false;
+    return true;
+  });
+  const pageRecs = filteredRecs.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+
   return (
     <AppShell>
       <div className="mx-auto max-w-4xl px-4 py-10 sm:px-6">
@@ -535,36 +578,83 @@ export default function RecommendationHub() {
           </div>
         )}
 
-        <div className="mt-8 flex flex-col gap-6">
-          {recs.data && recs.data.length > 0 ? (
-            recs.data.map((rec) => (
-              <div key={rec.id} id={`rec-${rec.id}`} className="rounded-lg transition-all duration-500">
-                <RecommendationCard
-                  rec={rec}
-                  busy={busy}
-                  onAct={(r, action, fn) => {
-                    setDialog({ kind: "rec", rec: r, action, fn });
-                    setRationale("");
-                    setEvidence("");
-                  }}
-                  onTaskAct={(task, action) => {
-                    if (action === "complete") {
-                      setDialog({ kind: "task", task, action });
-                      setRationale("");
-                      setEvidence("");
-                    } else {
-                      setDialog({ kind: "task", task, action });
-                      setRationale("");
-                      setEvidence("");
-                    }
-                  }}
-                />
-              </div>
-            ))
-          ) : (
+        {/* Filters + pagination (Phase 11 items 2) */}
+        <div className="mt-8 flex flex-wrap items-center gap-2 rounded-lg bg-white p-3">
+          <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(0); }} aria-label="Filter by status" className="h-9 rounded-md border border-border bg-white px-2 text-sm font-medium text-foreground focus:border-primary focus:outline-none">
+            <option value="all">All statuses</option>
+            {Object.entries(STATUS_CHIP).map(([k, v]) => (
+              <option key={k} value={k}>{v.label}</option>
+            ))}
+          </select>
+          <select value={categoryFilter} onChange={(e) => { setCategoryFilter(e.target.value); setPage(0); }} aria-label="Filter by type" className="h-9 rounded-md border border-border bg-white px-2 text-sm font-medium text-foreground focus:border-primary focus:outline-none">
+            <option value="all">All types</option>
+            {Object.entries(CATEGORY_LABEL).map(([k, v]) => (
+              <option key={k} value={k}>{v}</option>
+            ))}
+          </select>
+          <select value={ownerFilter} onChange={(e) => { setOwnerFilter(e.target.value); setPage(0); }} aria-label="Filter by sign-off owner" className="h-9 rounded-md border border-border bg-white px-2 text-sm font-medium text-foreground focus:border-primary focus:outline-none">
+            <option value="all">All sign-off owners</option>
+            <option value="manager">Manager</option>
+            <option value="hr_executive">HR Executive</option>
+            <option value="recruiter">Recruiter</option>
+          </select>
+          <span className="ml-auto text-xs font-bold uppercase tracking-wider text-muted-foreground">
+            {filteredRecs.length} shown
+          </span>
+        </div>
+
+        <div className="mt-4 flex flex-col gap-6">
+          {recs.isLoading && (
+            <div className="flex items-center gap-3 rounded-lg bg-muted p-8 text-sm text-muted-foreground">
+              <Loader2 className="h-5 w-5 animate-spin text-primary" /> Loading recommendations…
+            </div>
+          )}
+          {recs.isError && (
+            <div className="rounded-lg bg-destructive/10 p-6 text-sm text-destructive">
+              <p className="font-bold">Could not load recommendations.</p>
+              <p className="mt-1">{recs.error instanceof Error ? recs.error.message : "unknown error"}</p>
+            </div>
+          )}
+          {!recs.isLoading && !recs.isError && recs.data && recs.data.length === 0 && (
             <div className="flex flex-col items-center gap-3 rounded-lg bg-muted px-6 py-16 text-center">
               <MessageSquareText className="h-8 w-8 text-muted-foreground" strokeWidth={2} />
               <p className="text-sm text-muted-foreground">No recommendations yet — run the intelligence scan.</p>
+            </div>
+          )}
+          {!recs.isLoading && !recs.isError && (recs.data?.length ?? 0) > 0 && filteredRecs.length === 0 && (
+            <div className="flex flex-col items-center gap-3 rounded-lg bg-muted px-6 py-10 text-center">
+              <p className="text-sm text-muted-foreground">No recommendations match the current filters.</p>
+            </div>
+          )}
+          {!recs.isLoading && !recs.isError && pageRecs.map((rec) => (
+            <div key={rec.id} id={`rec-${rec.id}`} className="rounded-lg transition-all duration-500">
+              <RecommendationCard
+                rec={rec}
+                busy={busy}
+                onAct={(r, action, fn) => {
+                  setDialog({ kind: "rec", rec: r, action, fn });
+                  setRationale("");
+                  setEvidence("");
+                }}
+                onTaskAct={(task, action) => {
+                  setDialog({ kind: "task", task, action });
+                  setRationale("");
+                  setEvidence("");
+                }}
+              />
+            </div>
+          ))}
+          {(recs.data?.length ?? 0) > PAGE_SIZE && (
+            <div className="flex items-center justify-center gap-3">
+              <Button variant="outline" size="sm" disabled={page === 0} onClick={() => setPage((p) => Math.max(0, p - 1))}>
+                Previous
+              </Button>
+              <span className="text-xs font-semibold text-muted-foreground">
+                Page {page + 1} of {Math.max(1, Math.ceil(filteredRecs.length / PAGE_SIZE))}
+              </span>
+              <Button variant="outline" size="sm" disabled={(page + 1) * PAGE_SIZE >= filteredRecs.length} onClick={() => setPage((p) => p + 1)}>
+                Next
+              </Button>
             </div>
           )}
         </div>
@@ -598,6 +688,44 @@ export default function RecommendationHub() {
                     ? "Completing a task requires at least one evidence reference. The recommendation outcome view updates automatically."
                     : `The ${dialog.kind === "task" ? "task" : "recommendation"} will move through its enforced state machine.`}
               </p>
+
+              {/* Phase 11 item 11-14: specific approval preview, not a vague approve-approve dialog */}
+              {dialog.kind === "rec" && dialog.action === "approve" && (
+                <div className="rounded-lg bg-muted p-3 text-sm">
+                  <p className="font-bold text-foreground">What you are approving</p>
+                  <p className="mt-1 text-foreground">
+                    <b>{dialog.rec.proposed_action.title}</b> for{" "}
+                    <b>{dialog.rec.category.replace(/_/g, " ")}</b>
+                    {dialog.rec.resource_ref ? ` · resource ${dialog.rec.resource_ref.slice(0, 8)}` : ""}.
+                  </p>
+                  <p className="mt-1 text-muted-foreground">{dialog.rec.proposed_action.description}</p>
+                  <p className="mt-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">Planned tasks after dispatch</p>
+                  <ul className="mt-1 flex flex-col gap-1">
+                    {(dialog.rec.proposed_action.steps ?? []).map((s) => (
+                      <li key={s.order} className="flex items-start gap-1.5 text-xs text-foreground">
+                        <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded bg-foreground text-[9px] font-bold text-white">{s.order}</span>
+                        {s.action}
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Approver: {dialog.rec.required_signoff_role?.replace(/_/g, " ") ?? "—"} · a typed justification is required below.
+                    {dialog.rec.stale && <b className="text-destructive"> This case is STALE — approve is blocked; use Re-review first.</b>}
+                  </p>
+                </div>
+              )}
+
+              {dialog.kind === "rec" && dialog.action === "verify" && (
+                <div className="rounded-lg bg-muted p-3 text-sm">
+                  <p className="font-bold text-foreground">Verifying the outcome</p>
+                  <p className="mt-1 text-muted-foreground">
+                    Marking this recommendation <b>verified</b> records that the completed work produced traceable
+                    outcome evidence. A task being created is never treated as success — verification is a separate,
+                    explicit step.
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">Attach evidence references in the evidence box below.</p>
+                </div>
+              )}
               <Textarea
                 rows={3}
                 value={rationale}

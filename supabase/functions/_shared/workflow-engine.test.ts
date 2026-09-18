@@ -65,3 +65,29 @@ describe("workflow-engine (Phase 11)", () => {
     expect(a).not.toBe(candidateSourceHash({ category: "mobility", twin_id: "t1", evidence: [{ source: "SKILL_GRAPH", fact: "y" }] }));
   });
 });
+
+describe("workflow-engine (Phase 11 — closed-loop)", () => {
+  it("a stale recommendation CANNOT be approved directly (re-review required)", () => {
+    expect(canTransitionRec("stale", "approve")).toBe(false);
+    expect(canTransitionRec("stale", "re_review")).toBe(true);
+    expect(nextRecStatus("stale", "re_review")).toBe("needs_review");
+    // After re-review it becomes approvable again.
+    expect(canTransitionRec("needs_review", "approve")).toBe(true);
+  });
+
+  it("verification is the true success state, reached only from completed work", () => {
+    expect(canTransitionRec("completed", "verify")).toBe(true);
+    expect(nextRecStatus("completed", "verify")).toBe("verified");
+    // Not reachable from execution_pending or in_progress directly.
+    expect(canTransitionRec("execution_pending", "verify")).toBe(false);
+    expect(canTransitionRec("in_progress", "verify")).toBe(false);
+    // completed itself is not success — verified is.
+    expect(nextRecStatus("in_progress", "complete")).toBe("completed");
+    expect(nextRecStatus("completed", "verify")).toBe("verified");
+  });
+
+  it("a task being created is not success: dispatch only reaches execution_pending", () => {
+    expect(nextRecStatus("approved", "dispatch")).toBe("execution_pending");
+    expect(canTransitionRec("execution_pending", "complete")).toBe(true);
+  });
+});

@@ -18,6 +18,7 @@ export type RecStatus =
   | "execution_pending"
   | "in_progress"
   | "completed"
+  | "verified"
   | "failed"
   | "cancelled"
   | "stale";
@@ -29,19 +30,25 @@ export type RecAction =
   | "dispatch"
   | "start"
   | "complete"
+  | "verify"
   | "fail"
   | "cancel"
   | "mark_stale"
   | "re_review";
 
-// Allowed transitions — never arbitrary status assignment.
+// Allowed transitions — never arbitrary status assignment. Phase 11: a stale
+// recommendation CANNOT be approved directly — it must be re-reviewed first
+// (item 10: stale facts cannot be approved silently). "verified" is the true
+// success state reached only from completed work with recorded outcome evidence
+// (item 25/28: a task being created is not success).
 export const REC_ACTION_TABLE: Record<RecAction, { from: RecStatus[]; to: RecStatus }> = {
   submit: { from: ["suggested"], to: "needs_review" },
-  approve: { from: ["needs_review", "stale"], to: "approved" },
+  approve: { from: ["needs_review"], to: "approved" },
   reject: { from: ["suggested", "needs_review", "stale", "approved"], to: "rejected" },
   dispatch: { from: ["approved"], to: "execution_pending" },
   start: { from: ["execution_pending", "failed"], to: "in_progress" },
   complete: { from: ["in_progress", "execution_pending"], to: "completed" },
+  verify: { from: ["completed"], to: "verified" },
   fail: { from: ["in_progress", "execution_pending"], to: "failed" },
   cancel: { from: ["needs_review", "approved", "execution_pending", "in_progress", "failed"], to: "cancelled" },
   mark_stale: { from: ["needs_review", "approved", "execution_pending", "in_progress", "failed"], to: "stale" },

@@ -56,7 +56,7 @@ Deno.serve(async (req) => {
   const action = (body.action ?? "").trim();
   const rationale = String(body.rationale ?? "").trim();
   const requestId = (body.request_id ?? "").trim() || crypto.randomUUID();
-  if (!recId || !["dispatch", "start", "complete", "fail", "cancel", "retry"].includes(action)) {
+  if (!recId || !["dispatch", "start", "complete", "verify", "fail", "cancel", "retry"].includes(action)) {
     return json({ error: "VALIDATION_ERROR", message: "rec_id and a valid execution action are required." }, 400);
   }
   if (rationale.length < 5) {
