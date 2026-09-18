@@ -366,3 +366,12 @@ Bounded repair loop: max 3 attempts per external blocker, then stop + report evi
 - **Candidate**: 4-step application stepper (Applied → Technical Interview → Final Round → Selected) on `/candidate-status`.
 - **Typography**: Outfit font applied to the base layer.
 - Backend untouched (no function/RPC/schema changes). `pnpm check` 223/223 · `pnpm build` green. Deferred (scope): dedicated recruiter candidate-directory page and literal Recharts dependency.
+
+## 28. Onboarding page UX redesign (frontend only, `src/pages/onboarding.tsx`)
+
+- **Hero "Next action" banner**: picks the first incomplete task (preferring unblocked) and shows title, step context, due/blocked note, with a "View step / View blocked step" button that smooth-scrolls to the dependency graph.
+- **Milestone stepper**: horizontal stepper above the DAG — numbered dots with complete/active/pending states and human step titles (1 Setup & Provisioning, 2 System Access & SSO, 3 Team Orientation, 4 First Contribution, 5 Final Verification).
+- **Readiness widget**: clean "Onboarding Readiness" card with big %, flat progress bar, "X of Y completed · Z blocked by prerequisites · Dd on critical path".
+- **Task cards**: compact summary (title, status chip, owner/due, blocker tag, actions, resolve) with a "View details & evidence" toggle that hides prerequisites/completion/waiver/adaptation/WhyEvidence by default — blockers and actions stay visible for the demo.
+- **Regenerate** → "Generate new plan version" with subtext "the active plan is never modified in place"; bottom governance text → collapsible "Governance & safeguards" accordion.
+- No backend function/RPC/schema changes. `pnpm check` 223/223 · `pnpm build` green.

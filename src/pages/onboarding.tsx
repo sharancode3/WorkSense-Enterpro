@@ -110,9 +110,11 @@ function WhyEvidence({ task }: { task: PlanTaskView }) {
 }
 
 const STEP_LABELS: Record<number, { n: string; label: string }> = {
-  0: { n: "1", label: "IT & Pre-boarding Setup" },
-  1: { n: "2", label: "Core Orientation & Learning" },
-  2: { n: "3", label: "Role Verification & First Contribution" },
+  0: { n: "1", label: "Setup & Provisioning" },
+  1: { n: "2", label: "System Access & SSO" },
+  2: { n: "3", label: "Team Orientation" },
+  3: { n: "4", label: "First Contribution" },
+  4: { n: "5", label: "Final Verification" },
 };
 const stepFor = (level: number) =>
   STEP_LABELS[level] ?? { n: String(level + 1), label: `Step ${level + 1}` };
@@ -151,6 +153,7 @@ function TaskCard({
   onFail: (note: string) => void;
   busy: boolean;
 }) {
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const [blockerOpen, setBlockerOpen] = useState(false);
   const [blockerText, setBlockerText] = useState("");
   const [completeOpen, setCompleteOpen] = useState(false);
@@ -215,7 +218,17 @@ function TaskCard({
         <span>{task.duration_days}d</span>
       </div>
 
-      {(task.depends_on ?? []).length > 0 && (
+      <button
+        type="button"
+        onClick={() => setDetailsOpen((v) => !v)}
+        className="flex items-center gap-1 text-[11px] font-bold text-primary transition-opacity hover:opacity-80"
+        aria-expanded={detailsOpen}
+      >
+        <ChevronRight className={`h-3.5 w-3.5 transition-transform ${detailsOpen ? "rotate-90" : ""}`} />
+        {detailsOpen ? "Hide details & evidence" : "View details & evidence"}
+      </button>
+
+      {detailsOpen && (task.depends_on ?? []).length > 0 && (
         <p className="text-[11px] text-muted-foreground">
           <GitBranch className="mr-1 inline h-3 w-3" />
           Prerequisite: {(task.depends_on ?? []).map((d) => (titleFor ? titleFor(d) : d)).join(", ")} must be completed first.
@@ -248,7 +261,7 @@ function TaskCard({
         </div>
       )}
 
-      {task.completion_record && (
+      {detailsOpen && task.completion_record && (
         <div className="rounded-md bg-secondary/10 px-2 py-1.5 text-[11px] leading-snug">
           <p className="flex items-center gap-1 font-semibold text-secondary">
             <CheckCircle2 className="h-3 w-3" /> Completed by {task.completion_record.actor_name}
@@ -266,7 +279,7 @@ function TaskCard({
         </div>
       )}
 
-      {task.waiver && (
+      {detailsOpen && task.waiver && (
         <div className="rounded-md bg-primary/10 px-2 py-1.5 text-[11px] leading-snug">
           <p className="flex items-center gap-1 font-semibold text-primary">
             <Scale className="h-3 w-3" /> Waived by {task.waiver.by_name}
@@ -276,7 +289,7 @@ function TaskCard({
         </div>
       )}
 
-      {task.adaptation && (
+      {detailsOpen && task.adaptation && (
         <div className="rounded-md bg-accent/20 px-2 py-1.5 text-[11px] leading-snug">
           <p className="flex items-center gap-1 font-semibold text-foreground">
             <Sparkles className="h-3 w-3 text-primary" />
@@ -286,7 +299,7 @@ function TaskCard({
         </div>
       )}
 
-      <WhyEvidence task={task} />
+      {detailsOpen && <WhyEvidence task={task} />}
 
       {/* Actions */}
       {canComplete && task.state !== "done" && task.state !== "waived" && task.state !== "failed" && task.state !== "blocked" && (
@@ -440,6 +453,7 @@ export default function Onboarding() {
   const qc = useQueryClient();
   const [selected, setSelected] = useState<string>("");
   const [busy, setBusy] = useState<string | null>(null);
+  const [govOpen, setGovOpen] = useState(false);
   // Tracks whether the user explicitly picked an employee from the dropdown —
   // the demo fallback never overrides an explicit choice.
   const userPickedRef = useRef(false);
@@ -596,6 +610,12 @@ export default function Onboarding() {
   }, [tasks.data]);
 
   const allTasks = tasks.data ?? [];
+
+  // Phase 28: hero "next action" — first incomplete task (prefer unblocked).
+  const nextTask = allTasks.find((t) => t.state !== "done" && t.state !== "waived");
+  const nextUnblocked = allTasks.find((t) => t.state !== "done" && t.state !== "waived" && (t.state === "ready" || t.state === "in_progress"));
+  const heroTask = nextUnblocked ?? nextTask;
+  const heroLevel = heroTask?.topological_level ?? 0;
   const critical = useMemo(() => {
     // Critical path (longest remaining chain) — local UI estimate mirrors the engine.
     const list = tasks.data ?? [];
@@ -755,28 +775,30 @@ export default function Onboarding() {
                     {canRegen && (
                       <Button size="sm" variant="outline" onClick={() => void build(true)} disabled={busy === "gen"}>
                         {busy === "gen" ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                        Regenerate (new version)
+                        Generate new plan version
                       </Button>
                     )}
                   </div>
                 </div>
+                <p className="text-[11px] text-muted-foreground">
+                  Generates a new plan version — the active plan is never modified in place.
+                </p>
               </div>
 
               {readiness && (
-                <div className="mt-4 flex flex-col gap-2 rounded-md bg-muted p-3">
-                  <div className="flex flex-wrap items-center gap-3">
-                    <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Estimated readiness</span>
-                    <span className="text-xl font-extrabold text-foreground">{readiness.ready_pct}%</span>
-                    <span className="text-xs text-muted-foreground">
-                      {readiness.satisfied}/{readiness.total} tasks · {readiness.remaining_critical_days}d remaining on critical path
-                    </span>
-                    {readiness.blocked_count > 0 && (
-                      <span className="flex items-center gap-1 rounded bg-destructive/10 px-2 py-0.5 text-[11px] font-bold text-destructive">
-                        <AlertTriangle className="h-3 w-3" /> {readiness.blocked_count} blocked
-                      </span>
-                    )}
+                <div className="mt-4 rounded-lg bg-muted p-4">
+                  <div className="flex flex-wrap items-end justify-between gap-2">
+                    <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Onboarding Readiness</p>
+                    <p className="text-3xl font-extrabold leading-none text-foreground">{readiness.ready_pct}%</p>
                   </div>
-                  <p className="text-[11px] leading-snug text-muted-foreground">{readiness.note}</p>
+                  <div className="mt-3 flex h-3 w-full overflow-hidden rounded-full bg-white">
+                    <div className="h-full bg-primary transition-all duration-500" style={{ width: `${readiness.ready_pct}%` }} />
+                  </div>
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    {readiness.satisfied} of {readiness.total} tasks completed{readiness.blocked_count > 0 ? ` · ${readiness.blocked_count} blocked by prerequisites` : ""}
+                    {readiness.remaining_critical_days != null ? ` · ${readiness.remaining_critical_days}d on critical path` : ""}
+                  </p>
+                  {readiness.note && <p className="mt-1 text-[11px] leading-snug text-muted-foreground">{readiness.note}</p>}
                 </div>
               )}
 
@@ -786,6 +808,56 @@ export default function Onboarding() {
                 </p>
               )}
             </div>
+
+            {/* Phase 28: hero next-action callout */}
+            {heroTask && (
+              <div className="flex flex-col gap-3 rounded-lg border-2 border-primary/20 bg-primary/5 p-5">
+                <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-primary">
+                  <ArrowRight className="h-4 w-4" strokeWidth={2.5} /> Next action
+                </p>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-lg font-extrabold text-foreground">{heroTask.title}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {heroTask.state === "blocked"
+                        ? `Blocked by a prerequisite — resolve it to continue (Step ${stepFor(heroLevel).n}: ${stepFor(heroLevel).label}).`
+                        : `Step ${stepFor(heroLevel).n}: ${stepFor(heroLevel).label} · due ${heroTask.due_date ? fmt(heroTask.due_date) : "—"}`}
+                    </p>
+                  </div>
+                  <Button
+                    size="sm"
+                    onClick={() => document.getElementById("onboarding-dag")?.scrollIntoView({ behavior: "smooth", block: "start" })}
+                  >
+                    {heroTask.state === "blocked" ? <AlertTriangle className="h-4 w-4" /> : <ArrowRight className="h-4 w-4" />}
+                    {heroTask.state === "blocked" ? "View blocked step" : "View step"}
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {/* Phase 28: sticky milestone stepper */}
+            {columns.length > 0 && (
+              <div className="flex w-full items-start justify-between gap-1 overflow-x-auto rounded-lg bg-white p-4">
+                {columns.map((col, level) => {
+                  const active = level === heroLevel;
+                  const complete = col.every((t) => t.state === "done" || t.state === "waived");
+                  return (
+                    <div key={level} className="flex min-w-[96px] flex-1 flex-col items-center gap-1.5">
+                      <span
+                        className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold ${
+                          complete ? "bg-secondary text-white" : active ? "bg-primary text-white" : "bg-muted text-muted-foreground"
+                        }`}
+                      >
+                        {complete ? <CheckCircle2 className="h-4 w-4" /> : stepFor(level).n}
+                      </span>
+                      <span className={`text-center text-[11px] font-semibold leading-tight ${active ? "text-primary" : "text-muted-foreground"}`}>
+                        Step {stepFor(level).n}: {stepFor(level).label}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
 
             {/* Critical path strip */}
             {critical.length > 0 && (
@@ -804,7 +876,7 @@ export default function Onboarding() {
             )}
 
             {/* DAG view */}
-            <div>
+            <div id="onboarding-dag" className="scroll-mt-24">
               <h2 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
                 Dependency graph — step by step
               </h2>
@@ -867,13 +939,27 @@ export default function Onboarding() {
               </div>
             </div>
 
-            <p className="rounded-lg bg-muted p-4 text-xs leading-relaxed text-muted-foreground">
-              Every task has a strict owner (employee, manager, HR, or IT Security) — HR has no access to
-              service-owner tasks, and employees cannot claim IT provisioning. Approvals bind to the exact plan
-              version+hash; regenerating or adapting invalidates approvals and preserves completed work via an
-              explicit mapping. Blockers can be reported in parallel; each must be resolved separately. Readiness
-              is an estimate, never a guarantee.
-            </p>
+            <div className="rounded-lg bg-muted p-4 text-xs leading-relaxed text-muted-foreground">
+              <button
+                type="button"
+                onClick={() => setGovOpen((v) => !v)}
+                className="flex w-full items-center justify-between text-left font-bold text-foreground"
+                aria-expanded={govOpen}
+              >
+                <span className="flex items-center gap-2">
+                  <ShieldCheck className="h-4 w-4 text-primary" /> Governance &amp; safeguards
+                </span>
+                <ChevronDown className={`h-4 w-4 transition-transform ${govOpen ? "" : "-rotate-90"}`} />
+              </button>
+              {govOpen && (
+                <ul className="mt-3 flex list-none flex-col gap-1.5">
+                  <li>Defined task ownership: employee, manager, HR, or IT Security — HR never touches service-owner tasks, and employees cannot claim IT provisioning.</li>
+                  <li>Version-bound approvals: approvals bind to the exact plan version+hash; regenerating or adapting invalidates approvals and preserves completed work via an explicit mapping.</li>
+                  <li>Blocker detection: blockers can be reported in parallel; each must be resolved separately — no out-of-order completion.</li>
+                  <li>Readiness is an estimate, never a guarantee.</li>
+                </ul>
+              )}
+            </div>
           </div>
         )}
 
