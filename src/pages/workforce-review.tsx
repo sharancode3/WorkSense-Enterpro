@@ -344,16 +344,20 @@ export default function WorkforceReview() {
                   <p className="mt-4 rounded-md bg-destructive/10 p-4 text-sm text-destructive">
                     Performance summary unavailable: {perfQuery.error instanceof Error ? perfQuery.error.message : "unknown"}
                   </p>
+                ) : !perf.summary ? (
+                  <p className="mt-4 rounded-lg bg-muted p-4 text-sm text-muted-foreground">
+                    No performance summary synthesized for this employee yet. Click "Regenerate" above to synthesize.
+                  </p>
                 ) : (
                   <div className="mt-4 flex flex-col gap-5">
                     {perf.cached && <p className="text-xs font-semibold text-muted-foreground">Cached from the same source version — regenerated only when underlying records change.</p>}
-                    <p className="rounded-lg bg-muted p-4 text-sm leading-relaxed text-foreground">{perf.summary.narrative}</p>
+                    <p className="rounded-lg bg-muted p-4 text-sm leading-relaxed text-foreground">{perf.summary?.narrative ?? "No narrative available."}</p>
 
                     <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
                       <div>
                         <h4 className="text-xs font-extrabold uppercase tracking-wider text-muted-foreground">Source facts (cited)</h4>
                         <ul className="mt-2 flex max-h-56 list-none flex-col gap-1.5 overflow-y-auto">
-                          {perf.facts.source_facts.map((sf) => (
+                          {(perf.facts?.source_facts ?? []).map((sf) => (
                             <li key={sf.ref} className="rounded-md bg-muted p-2.5 text-xs leading-relaxed text-foreground">
                               <span className="font-bold text-primary">[{sf.ref}]</span> <span className="font-semibold">{sf.source}</span> — {sf.fact}
                             </li>
@@ -363,13 +367,13 @@ export default function WorkforceReview() {
                       <div>
                         <h4 className="text-xs font-extrabold uppercase tracking-wider text-muted-foreground">Contradictions & sparse evidence</h4>
                         <ul className="mt-2 flex flex-col gap-2">
-                          {perf.summary.contradictions.map((c, i) => (
+                          {(perf.summary?.contradictions ?? []).map((c, i) => (
                             <li key={i} className="rounded-md bg-accent/60 p-3 text-xs leading-relaxed text-foreground">
                               <span className="font-bold">{c.title}.</span> {c.evidence.join(" ")}
                             </li>
                           ))}
-                          {perf.summary.contradictions.length === 0 && <li className="rounded-md bg-muted p-3 text-xs text-muted-foreground">No contradictory records found.</li>}
-                          {perf.summary.sparse_evidence.flags.map((f, i) => (
+                          {(perf.summary?.contradictions ?? []).length === 0 && <li className="rounded-md bg-muted p-3 text-xs text-muted-foreground">No contradictory records found.</li>}
+                          {(perf.summary?.sparse_evidence?.flags ?? []).map((f, i) => (
                             <li key={i} className="flex items-start gap-1.5 rounded-md bg-muted p-3 text-xs text-foreground">
                               <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" /> {f}
                             </li>
@@ -381,17 +385,17 @@ export default function WorkforceReview() {
                     <div>
                       <h4 className="text-xs font-extrabold uppercase tracking-wider text-muted-foreground">Inferred themes (labeled inference)</h4>
                       <ul className="mt-2 flex flex-col gap-1.5">
-                        {perf.summary.inferred_themes.map((t, i) => (
+                        {(perf.summary?.inferred_themes ?? []).map((t, i) => (
                           <li key={i} className="rounded-md bg-muted p-3 text-xs leading-relaxed text-foreground">
                             <span className="font-bold">{t.theme}.</span> {t.basis.join(" · ")} <span className="italic text-muted-foreground">{t.confidence_note ?? ""}</span>
                           </li>
                         ))}
-                        {perf.summary.inferred_themes.length === 0 && <li className="text-xs text-muted-foreground">None inferred.</li>}
+                        {(perf.summary?.inferred_themes ?? []).length === 0 && <li className="text-xs text-muted-foreground">None inferred.</li>}
                       </ul>
                     </div>
 
                     <p className="flex items-start gap-2 rounded-md bg-muted p-3 text-xs italic leading-relaxed text-muted-foreground">
-                      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /> {perf.summary.model_note}
+                      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /> {perf.summary?.model_note ?? ""}
                     </p>
                   </div>
                 )}
