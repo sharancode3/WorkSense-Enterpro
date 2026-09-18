@@ -59,9 +59,9 @@ function HealthChip({
   return <span className={`rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${cls}`}>{label}</span>;
 }
 
-// ---- Phase 27: role-scoped navigation --------------------------------------
-// One flat row of icon-backed tabs, each gated by the same server-enforced
-// actions as the page it opens. No locked placeholders, no category labels.
+// ---- Phase 27/29: role-scoped navigation ------------------------------------
+// One flat list of icon-backed tabs, each gated by the same server-enforced
+// actions as the page it opens. No locked placeholders.
 interface NavLinkDef {
   label: string;
   to: string;
@@ -82,6 +82,9 @@ const NAV_LINKS: NavLinkDef[] = [
   { label: "System health", to: "/status", icon: Activity, show: (role) => can(role, "manage_users") },
   { label: "Data quality", to: "/workforce/data-quality", icon: Database, show: (role) => can(role, "manage_users") },
 ];
+
+const isGovernance = (l: NavLinkDef) =>
+  l.to.startsWith("/admin") || l.to.startsWith("/status") || l.to.startsWith("/workforce/data-quality");
 
 function visibleLinks(role: Role): NavLinkDef[] {
   return NAV_LINKS.filter((l) => l.show(role));
@@ -116,6 +119,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   };
 
   const links = role ? visibleLinks(role) : [];
+  const mainLinks = links.filter((l) => !isGovernance(l));
+  const governanceLinks = links.filter(isGovernance);
   const aiState = health.data
     ? health.data.model_ready
       ? "AI gateway: ready"
@@ -124,9 +129,24 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       ? "AI gateway: unreachable"
       : "AI gateway: checking…";
 
-  const renderLink = (l: NavLinkDef, mobile = false) => {
+  // Renders ONE navigation link. Kept separate from the layout below.
+  const renderLink = (l: NavLinkDef, variant: "sidebar" | "mobile" = "sidebar") => {
     const active = location.pathname === l.to;
+    const cls =
+      variant === "mobile"
+        ? "flex items-center gap-2 rounded-md px-3 py-2 text-sm font-semibold text-foreground transition-colors hover:bg-muted"
+        : `flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-semibold transition-colors ${
+            active ? "bg-primary/10 text-primary" : "text-foreground/80 hover:bg-muted hover:text-foreground"
+          }`;
     return (
+      <Link key={l.to} to={l.to} className={cls} aria-current={active ? "page" : undefined}>
+        <l.icon className="h-4 w-4 shrink-0 text-primary" />
+        {l.label}
+      </Link>
+    );
+  };
+
+  return (
     <div className="flex min-h-screen bg-background">
       {/* Fixed vertical left sidebar (desktop) */}
       <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col border-r border-border bg-white md:flex">
@@ -278,5 +298,4 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </div>
     </div>
   );
-}
 }
