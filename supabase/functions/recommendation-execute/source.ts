@@ -46,7 +46,7 @@ Deno.serve(async (req) => {
     .maybeSingle();
   if (!caller) return json({ error: "UNAUTHENTICATED" }, 401);
 
-  let body: { rec_id?: string; action?: string; rationale?: string; request_id?: string; reviewer_feedback?: string } = {};
+  let body: { rec_id?: string; action?: string; rationale?: string; request_id?: string; reviewer_feedback?: string; evidence?: unknown } = {};
   try {
     body = await req.json();
   } catch {
@@ -61,6 +61,21 @@ Deno.serve(async (req) => {
   }
   if (rationale.length < 5) {
     return json({ error: "VALIDATION_ERROR", message: "A short written rationale is required before the state can change." }, 400);
+  }
+  // Phase 15 (Batch A4): Verify requires accepted evidence references, bounded
+  // and non-empty, so "verified" is never granted on a bare button click.
+  let evidence: string[] = [];
+  if (action === "verify") {
+    if (!Array.isArray(body.evidence) || body.evidence.length === 0) {
+      return json({ error: "VALIDATION_ERROR", message: "Outcome verification requires at least one evidence reference." }, 400);
+    }
+    evidence = (body.evidence as unknown[])
+      .map((e) => String(e ?? "").trim())
+      .filter((e) => e.length > 0)
+      .slice(0, 20);
+    if (evidence.length === 0) {
+      return json({ error: "VALIDATION_ERROR", message: "Outcome verification requires at least one evidence reference." }, 400);
+    }
   }
 
   const { data: rec, error: recErr } = await supabase
@@ -82,6 +97,8 @@ Deno.serve(async (req) => {
   if (!allowed) return json({ error: "FORBIDDEN", message: "Only HR or the responsible manager can drive execution." }, 403);
 
   const payload: Record<string, unknown> = {};
+  // Phase 15 (Batch A4): persist accepted outcome evidence on verify.
+  if (action === "verify" && evidence.length > 0) payload.evidence = evidence;
 
   // Dispatch: build the reviewed tasks from the deterministic templates and
   // resolve owner twins from the org roster. The RPC inserts them in the same

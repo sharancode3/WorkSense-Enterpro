@@ -71,6 +71,14 @@ export default function StaffingPlanner() {
   const [explanation, setExplanation] = useState<string | null>(null);
   const [proposing, setProposing] = useState(false);
   const [proposalId, setProposalId] = useState<string | null>(null);
+  // Phase 15 (Batch A3): dirty-input protection — the saved plan is bound to an
+  // exact input fingerprint; changed inputs mark it outdated and block
+  // explain/propose until recalculated.
+  const [inputFingerprint, setInputFingerprint] = useState<string | null>(null);
+  const [runVersion, setRunVersion] = useState(0);
+  const fingerprint = JSON.stringify({ scenario, skills });
+
+  const outdated = !!plan && !!inputFingerprint && inputFingerprint !== fingerprint;
 
   const run = useCallback(async (recalc = false) => {
     const required_skills = skills
@@ -82,9 +90,14 @@ export default function StaffingPlanner() {
     }
     setBusy(true);
     if (recalc) setExplanation(null);
+    const version = runVersion + 1;
+    setRunVersion(version);
     try {
       const res = await planStaffing({ ...scenario, required_skills });
+      // Ignore late responses from superseded input runs.
+      if (version !== runVersion + 1) return;
       setPlan(res);
+      setInputFingerprint(JSON.stringify({ scenario, required_skills }));
       setProposalId(null);
       if (recalc) toast.success("What-if recalculated — trade-offs updated.");
     } catch (err) {
@@ -92,10 +105,10 @@ export default function StaffingPlanner() {
     } finally {
       setBusy(false);
     }
-  }, [scenario, skills]);
+  }, [scenario, skills, runVersion]);
 
   const doExplain = async () => {
-    if (!plan) return;
+    if (!plan || outdated || explaining) return;
     setExplaining(true);
     try {
       const res = await explainStaffingScenario(plan.scenario_id);
@@ -109,7 +122,7 @@ export default function StaffingPlanner() {
   };
 
   const doPropose = async () => {
-    if (!plan || proposing) return;
+    if (!plan || outdated || proposing) return;
     setProposing(true);
     try {
       const res = await proposeStaffingScenario(plan.scenario_id);
@@ -370,12 +383,20 @@ export default function StaffingPlanner() {
             </div>
 
             {/* Actions: explain + propose */}
+            {outdated && (
+              <div role="alert" className="flex flex-wrap items-center gap-3 rounded-lg bg-amber-100 p-4 text-amber-900">
+                <AlertTriangle className="h-5 w-5 shrink-0" />
+                <p className="flex-1 text-sm font-semibold">
+                  Inputs changed — this plan is outdated. Recalculate before explaining or proposing.
+                </p>
+              </div>
+            )}
             <div className="flex flex-wrap items-center gap-3 rounded-lg bg-muted p-4">
-              <Button variant="outline" onClick={() => void doExplain()} disabled={explaining}>
+              <Button variant="outline" onClick={() => void doExplain()} disabled={explaining || outdated}>
                 {explaining ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
                 Explain scenario
               </Button>
-              <Button onClick={() => void doPropose()} disabled={proposing || proposalId !== null}>
+              <Button onClick={() => void doPropose()} disabled={proposing || outdated || proposalId !== null}>
                 {proposing ? <Loader2 className="h-4 w-4 animate-spin" /> : proposalId ? <CheckCircle2 className="h-4 w-4" /> : <Send className="h-4 w-4" />}
                 {proposalId ? `Proposal submitted (${proposalId.slice(0, 8)})` : "Send to human review"}
               </Button>

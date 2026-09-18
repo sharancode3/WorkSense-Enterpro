@@ -241,6 +241,9 @@ function TasksPanel({ rec, onTaskAct }: { rec: RecommendationRow; onTaskAct: (ta
                 <span className="ml-1 text-muted-foreground">
                   · {e.reason} · req {e.request_id.slice(0, 8)} · {new Date(e.created_at).toLocaleString()}
                 </span>
+                {e.new_status === "verified" && Array.isArray(e.payload?.evidence) && (e.payload.evidence as string[]).length > 0 && (
+                  <p className="mt-1 text-foreground">Outcome evidence: {(e.payload.evidence as string[]).join(" · ")}</p>
+                )}
               </li>
             ))}
           </ul>
@@ -500,17 +503,28 @@ export default function RecommendationHub() {
     if (!dialog || rationale.trim().length < 5) return;
     setBusy(true);
     try {
-      if (dialog.kind === "rec") {
-        const res =
-          dialog.fn === "review"
-            ? await recommendationReview(dialog.rec.id, dialog.action, rationale.trim())
-            : await recommendationExecute(dialog.rec.id, dialog.action, rationale.trim());
-        toast.success(
-          res.effect
-            ? `Status: ${res.status.replace(/_/g, " ")} — ${res.effect}`
-            : `Status: ${res.status.replace(/_/g, " ")}`
-        );
-      } else {
+        if (dialog.kind === "rec") {
+          // Verify outcome requires accepted evidence references (Batch A4).
+          if (dialog.action === "verify") {
+            const evs = evidence.split("\n").map((s) => s.trim()).filter(Boolean);
+            if (evs.length === 0) {
+              toast.error("Outcome verification requires at least one evidence reference.");
+              return;
+            }
+            const res = await recommendationExecute(dialog.rec.id, dialog.action, rationale.trim(), undefined, undefined, evs);
+            toast.success(res.effect ? `Status: ${res.status.replace(/_/g, " ")} — ${res.effect}` : `Status: ${res.status.replace(/_/g, " ")}`);
+          } else {
+            const res =
+              dialog.fn === "review"
+                ? await recommendationReview(dialog.rec.id, dialog.action, rationale.trim())
+                : await recommendationExecute(dialog.rec.id, dialog.action, rationale.trim());
+            toast.success(
+              res.effect
+                ? `Status: ${res.status.replace(/_/g, " ")} — ${res.effect}`
+                : `Status: ${res.status.replace(/_/g, " ")}`
+            );
+          }
+        } else {
         const res = await actionTaskUpdate(
           dialog.task.id,
           dialog.action,
@@ -732,17 +746,23 @@ export default function RecommendationHub() {
                 onChange={(e) => setRationale(e.target.value)}
                 placeholder="Type your rationale (required)…"
               />
-              {dialog.kind === "task" && dialog.action === "complete" && (
+              {(dialog.kind === "task" && dialog.action === "complete") || (dialog.kind === "rec" && dialog.action === "verify") ? (
                 <Textarea
                   rows={2}
                   value={evidence}
                   onChange={(e) => setEvidence(e.target.value)}
-                  placeholder="Evidence references (one per line)…"
+                  placeholder="Evidence references (one per line) — required…"
+                  aria-label="Evidence references"
                 />
-              )}
+              ) : null}
               <Button
                 onClick={() => void confirm()}
-                disabled={busy || rationale.trim().length < 5 || (dialog.kind === "task" && dialog.action === "complete" && evidence.trim().length === 0)}
+                disabled={
+                  busy ||
+                  rationale.trim().length < 5 ||
+                  ((dialog.kind === "task" && dialog.action === "complete") || (dialog.kind === "rec" && dialog.action === "verify")) &&
+                    evidence.trim().length === 0
+                }
               >
                 {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
                 Confirm {dialog.action.replace(/_/g, " ")}

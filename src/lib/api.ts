@@ -527,6 +527,7 @@ export interface WorkflowEventRow {
   reason: string | null;
   source_version: string | null;
   request_id: string;
+  payload?: Record<string, unknown>;
   created_at: string;
 }
 
@@ -539,10 +540,10 @@ export const recommendationReview = (recId: string, action: string, rationale: s
     { rec_id: recId, action, rationale, request_id: requestId, superseded_by: supersededBy }
   );
 
-export const recommendationExecute = (recId: string, action: string, rationale: string, requestId?: string, reviewerFeedback?: string) =>
+export const recommendationExecute = (recId: string, action: string, rationale: string, requestId?: string, reviewerFeedback?: string, evidence?: string[]) =>
   invoke<{ ok: true; request_id: string; prior_status: string; status: string; created_tasks: number; idempotent: boolean; effect?: string | null }>(
     "recommendation-execute",
-    { rec_id: recId, action, rationale, request_id: requestId, reviewer_feedback: reviewerFeedback }
+    { rec_id: recId, action, rationale, request_id: requestId, reviewer_feedback: reviewerFeedback, evidence }
   );
 
 export const actionTaskUpdate = (taskId: string, action: string, rationale: string, requestId?: string, evidence?: string[], outcome?: Record<string, unknown>) =>
