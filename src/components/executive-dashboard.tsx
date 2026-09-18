@@ -241,7 +241,7 @@ export function ExecutiveDashboard() {
           value={d.cards.journeys_in_progress}
           tone="dark"
           sub={d.cards.journeys_in_progress > 0 ? `${d.cards.journeys_on_track} on track · ${d.cards.journeys_blocked} blocked` : undefined}
-          definition="Active or pending onboarding journeys for workers in scope."
+          definition="Workers in scope with an active adaptive onboarding plan; blocked means a plan task is in state blocked or failed."
           to={can(role, "view_onboarding") ? "/onboarding" : undefined}
         />
         <StatCard

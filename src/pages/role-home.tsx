@@ -26,7 +26,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { can, ROLE_LABEL, type Role } from "@/lib/rbac";
 import { actionTaskUpdate, type ActionTaskRow, type Twin } from "@/lib/api";
-import { decode, requisitionRowSchema, type RequisitionRow } from "@/lib/contracts";
+import { decode, planTaskViewSchema, planViewSchema, requisitionRowSchema, type RequisitionRow } from "@/lib/contracts";
+import { nextActionTask, derivePlanCounts, TASK_STATE_META } from "@/lib/onboarding-progress";
 
 // My Action Tasks: tasks assigned to me from dispatched recommendations
 // (Phase 11). Owners act on their own tasks with evidence + rationale.
@@ -318,7 +319,7 @@ function AdminGovernancePanel() {
 }
 
 export default function RoleHome() {
-  const { role, twin } = useAuth();
+  const { role, twin, user } = useAuth();
 
   const org = useQuery({
     queryKey: ["org"],
@@ -328,17 +329,44 @@ export default function RoleHome() {
     },
   });
 
-  const myJourney = useQuery({
-    queryKey: ["my-journey", twin?.id ?? "anon"],
-    enabled: role === "employee",
+  // Employee home onboarding facts read the SAME canonical adaptive plan the
+  // onboarding center reads (onboarding_plans + onboarding_tasks) — never the
+  // legacy journey. Counts therefore derive from identical rows and rules.
+  const myPlan = useQuery({
+    queryKey: ["plan", user?.id ?? "anon", twin?.id ?? "none"],
+    enabled: role === "employee" && !!twin,
     queryFn: async () => {
       if (!twin) return null;
-      const { data } = await supabase
-        .from("onboarding_journeys")
+      const { data, error } = await supabase
+        .from("onboarding_plans")
         .select("*")
         .eq("twin_id", twin.id)
+        .eq("org_id", twin.org_id)
+        .order("version", { ascending: false })
+        .limit(1)
         .maybeSingle();
-      return data ?? null;
+      if (error) throw error;
+      return data ? decode(planViewSchema, data, "plan-row") : null;
+    },
+  });
+
+  const myPlanTasks = useQuery({
+    queryKey: ["plan-tasks", user?.id ?? "anon", myPlan.data?.id ?? "none"],
+    enabled: role === "employee" && !!myPlan.data?.id,
+    queryFn: async () => {
+      if (!myPlan.data) return [];
+      const { data, error } = await supabase
+        .from("onboarding_tasks")
+        .select("*")
+        .eq("plan_id", myPlan.data.id)
+        .order("topological_level", { ascending: true });
+      if (error) throw error;
+      return (data ?? []).map((t) => {
+        // onboarding_tasks has no blocked_reasons column; the contract needs
+        // it, so normalize like the onboarding center does.
+        const row = { ...t, blocked_reasons: (t as { blocked_reasons?: unknown }).blocked_reasons ?? [] };
+        return decode(planTaskViewSchema, row, "plan-task-row");
+      });
     },
   });
 
@@ -381,9 +409,10 @@ export default function RoleHome() {
 
   if (!role || !twin) return null;
 
-  const tasks = (myJourney.data?.tasks ?? []) as { id: string; title: string; status: string; depends_on: string[] }[];
-  const doneCount = tasks.filter((t) => t.status === "done").length;
-  const nextTask = tasks.find((t) => t.status !== "done");
+  const journeyTasks = myPlanTasks.data ?? [];
+  const journeyCounts = derivePlanCounts(journeyTasks);
+  const nextTask = nextActionTask(journeyTasks);
+  const readiness = myPlan.data?.readiness ?? null;
 
   return (
     <AppShell>
@@ -436,9 +465,9 @@ export default function RoleHome() {
                 <>
                   <StatBlock
                     label="Onboarding tasks done"
-                    value={myJourney.data ? `${doneCount}/${tasks.length}` : null}
+                    value={readiness ? `${readiness.satisfied}/${readiness.total}` : null}
                     tone="primary"
-                    definition="Tasks completed in your active journey."
+                    definition="Tasks satisfied (completed or waived) in your active plan — the same count as the onboarding center."
                   />
                   <StatBlock
                     label="Active recommendations"
@@ -526,37 +555,37 @@ export default function RoleHome() {
               {role === "employee" && (
                 <div className="rounded-lg bg-white p-6 lg:col-span-2">
                   <h2 className="text-lg font-extrabold text-foreground">Your onboarding journey</h2>
-                  {myJourney.data ? (
+                  {readiness && journeyTasks.length > 0 ? (
                     <div className="mt-4">
                       <div className="flex items-center justify-between text-sm font-semibold text-muted-foreground">
                         <span>Progress</span>
                         <span>
-                          {doneCount}/{tasks.length} complete
+                          {readiness.satisfied}/{readiness.total} complete
                         </span>
                       </div>
                       <div className="mt-2 h-3 w-full overflow-hidden rounded-full bg-muted">
                         <div
                           className="h-full bg-primary transition-all duration-300"
-                          style={{ width: tasks.length ? `${(doneCount / tasks.length) * 100}%` : "0%" }}
+                          style={{ width: `${readiness.ready_pct}%` }}
                         />
                       </div>
+                      <p className="mt-2 text-[11px] text-muted-foreground">
+                        {journeyCounts.blocked > 0
+                          ? `${journeyCounts.blocked} task${journeyCounts.blocked > 1 ? "s" : ""} blocked by a prerequisite or open blocker.`
+                          : readiness.note}
+                      </p>
                       <ul className="mt-5 flex flex-col divide-y-2 divide-border">
-                        {tasks.map((t) => (
-                          <li key={t.id} className="flex items-center justify-between gap-3 py-3">
-                            <span className="text-sm font-medium text-foreground">{t.title}</span>
-                            <span
-                              className={`rounded-md px-2.5 py-1 text-xs font-bold uppercase tracking-wider ${
-                                t.status === "done"
-                                  ? "bg-secondary text-white"
-                                  : t.status === "in_progress"
-                                    ? "bg-primary text-white"
-                                    : "bg-muted text-foreground"
-                              }`}
-                            >
-                              {t.status.replace(/_/g, " ")}
-                            </span>
-                          </li>
-                        ))}
+                        {journeyTasks.map((t) => {
+                          const chip = TASK_STATE_META[t.state] ?? TASK_STATE_META.pending;
+                          return (
+                            <li key={t.task_code} className="flex items-center justify-between gap-3 py-3">
+                              <span className="text-sm font-medium text-foreground">{t.title}</span>
+                              <span className={`shrink-0 rounded-md px-2.5 py-1 text-xs font-bold uppercase tracking-wider ${chip.cls}`}>
+                                {chip.label}
+                              </span>
+                            </li>
+                          );
+                        })}
                       </ul>
                       {nextTask && (
                         <p className="mt-4 rounded-md bg-muted px-4 py-3 text-sm text-foreground">
@@ -565,7 +594,7 @@ export default function RoleHome() {
                       )}
                     </div>
                   ) : (
-                    <p className="mt-4 text-sm text-muted-foreground">No active onboarding journey.</p>
+                    <p className="mt-4 text-sm text-muted-foreground">No active onboarding plan yet.</p>
                   )}
                 </div>
               )}

@@ -601,6 +601,8 @@ const DEFINITIONS = {
     "Job requisitions with status 'open'. Requisitions on hold, filled, or closed are counted separately and excluded.",
   active_candidates:
     "Applicants on open requisitions whose stage is still in progress (not selected or rejected).",
+  journeys:
+    "Workers in scope with an active adaptive onboarding plan (latest non-superseded version). A journey is blocked when any plan task is in state blocked or failed — the same rule the onboarding center uses.",
   heatmap:
     "Per open requisition and future skill, every scoped worker falls into exactly one bucket: ready (verified direct match at/above target), below_target (direct match below the target bar), adjacent_support (adjacent/transferable path, no direct match), insufficient_evidence (no verified path — only claimed/extracted assertions), or missing (no evidence of any kind).",
 };
@@ -727,10 +729,11 @@ Deno.serve(async (req) => {
   const headcount = scoped.length;
   const reviewPriorityCases = reviewCases.filter((c) => c.index >= REVIEW_THRESHOLD || c.priority === "review" || c.priority === "high").length;
 
-  const [reqsRes, recsRes, journeysRes] = await Promise.all([
+  const [reqsRes, recsRes, plansRes, tasksRes] = await Promise.all([
     supabase.from("job_requisitions").select("id, title, department, status, applicants, future_skills, required_skills, seniority_level").eq("org_id", caller.org_id),
     supabase.from("recommendations").select("id, twin_id, category, urgency, status, proposed_action, executive_summary").eq("org_id", caller.org_id).eq("status", "needs_review"),
-    supabase.from("onboarding_journeys").select("twin_id, status, tasks").eq("org_id", caller.org_id),
+    supabase.from("onboarding_plans").select("id, twin_id, version, status").eq("org_id", caller.org_id).not("status", "eq", "superseded"),
+    supabase.from("onboarding_tasks").select("plan_id, state").eq("org_id", caller.org_id),
   ]);
 
   const reqs = (reqsRes.data ?? []) as {
@@ -749,8 +752,25 @@ Deno.serve(async (req) => {
   const applicants = scopedReqs.flatMap((r) => r.applicants ?? []);
   const activeCandidates = applicants.filter((a) => !["selected", "rejected"].includes(a.stage)).length;
 
-  const journeys = (journeysRes.data ?? []).filter((j) => scopedIds.has(j.twin_id) && ["active", "pending"].includes(j.status));
-  const journeysBlocked = journeys.filter((j) => (j.tasks ?? []).some((t: { status?: string }) => t.status === "blocked")).length;
+  // Onboarding journeys are derived from the CANONICAL adaptive plans: a worker
+  // in scope has one active plan (latest non-superseded version). A journey is
+  // blocked when any task is in state blocked or failed — the same rule as the
+  // engine's readiness.blocked_count, so the dashboard agrees with the
+  // onboarding center.
+  const activePlansByTwin = new Map<string, { id: string; twin_id: string; version: number; status: string }>();
+  for (const p of (plansRes.data ?? []) as { id: string; twin_id: string; version: number; status: string }[]) {
+    if (!scopedIds.has(p.twin_id)) continue;
+    const cur = activePlansByTwin.get(p.twin_id);
+    if (!cur || p.version > cur.version) activePlansByTwin.set(p.twin_id, p);
+  }
+  const activePlans = [...activePlansByTwin.values()];
+  const stateByPlan = new Map<string, string[]>();
+  for (const t of (tasksRes.data ?? []) as { plan_id: string; state: string }[]) {
+    stateByPlan.set(t.plan_id, [...(stateByPlan.get(t.plan_id) ?? []), t.state]);
+  }
+  const journeysInProgress = activePlans.length;
+  const journeysBlocked = activePlans.filter((p) => (stateByPlan.get(p.id) ?? []).some((s) => s === "blocked" || s === "failed")).length;
+  const journeysOnTrack = journeysInProgress - journeysBlocked;
 
   const pendingRecs = (recsRes.data ?? []).filter((r) => scope === "org" || (r.twin_id && scopedIds.has(r.twin_id)));
 
@@ -871,8 +891,8 @@ Deno.serve(async (req) => {
       open_requisitions: openReqs.length,
       requisition_statuses: reqStatusCounts,
       active_candidates: activeCandidates,
-      journeys_in_progress: journeys.length,
-      journeys_on_track: journeys.length - journeysBlocked,
+      journeys_in_progress: journeysInProgress,
+      journeys_on_track: journeysOnTrack,
       journeys_blocked: journeysBlocked,
       review_priority_cases: reviewPriorityCases,
       pending_recommendations: pendingRecs.length,

@@ -311,9 +311,9 @@ export const RECOMMENDATIONS = [
     evidence_ledger: [
       { source: "SKILL_GRAPH", fact: "78% current fit vs Senior Backend Engineer; Docker → Containerization → Kubernetes adjacent ladder." },
       { source: "PERFORMANCE", fact: "Latest rating: On Track — 80% goals met in first cycle." },
-      { source: "ONBOARDING_PROGRESS", fact: "3/12 onboarding tasks complete; first contribution pending approval." },
+      { source: "ONBOARDING_PROGRESS", fact: "Onboarding plan v1 (approved role Senior Backend Engineer): 1/12 tasks satisfied; System Access & SSO blocked pending IT provisioning (laptop WS-8842)." },
     ],
-    executive_summary: "Alex is mid-onboarding but already shows a clear adjacent path toward Containerization and Kubernetes within the current team. The skill graph supports early exposure to Kubernetes work as a low-urgency growth step.",
+    executive_summary: "Alex is mid-onboarding (plan v1: 1/12 tasks satisfied, System Access & SSO blocked pending IT provisioning) but already shows a clear adjacent path toward Containerization and Kubernetes within the current team. The skill graph supports early exposure to Kubernetes work as a low-urgency growth step.",
     proposed_action: {
       title: "Expose Alex to Kubernetes work",
       description: "Assign a Kubernetes-adjacent task in the next sprint to build the adjacent-skill bridge.",

@@ -529,6 +529,7 @@ export interface DashboardData {
     headcount: string;
     open_requisitions: string;
     active_candidates: string;
+    journeys: string;
     heatmap: string;
   };
   filters: {

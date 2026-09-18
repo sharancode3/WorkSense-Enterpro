@@ -110,6 +110,27 @@ describe("recommendation trigger engine (deterministic)", () => {
     expect(replan?.evidence_ledger[0].source).toBe("ONBOARDING_BLOCKER");
   });
 
+  it("fires ONBOARDING_REPLAN from the adaptive-plan mapping with the open blocker note", () => {
+    // recommendation-scan maps adaptive onboarding_tasks.state + open blockers
+    // into this journey shape; the note must survive into the evidence ledger.
+    const input = base({
+      journeys: [
+        {
+          twin_id: "t2",
+          status: "approved",
+          tasks: [
+            { id: "access_sso", title: "System Access & SSO Enrollment", status: "blocked", blocked: { note: "SSO enrollment blocked — laptop WS-8842 pending provisioning" } },
+            { id: "team_intro", title: "Team Introduction", status: "blocked", blocked: null },
+          ],
+        },
+      ],
+    });
+    const recs = scanForRecommendations(input);
+    const replan = recs.find((r) => r.category === "ONBOARDING_REPLAN");
+    expect(replan).toBeDefined();
+    expect(replan?.evidence_ledger[0].fact).toContain("laptop WS-8842 pending provisioning");
+  });
+
   it("lists every contributing source with a concrete fact", () => {
     const input = base({
       journeys: [{ twin_id: "t2", status: "active", tasks: [{ id: "it", title: "IT", status: "blocked", blocked: { note: "x" } }] }],

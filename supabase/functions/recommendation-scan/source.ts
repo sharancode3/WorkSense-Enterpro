@@ -43,16 +43,41 @@ Deno.serve(async (req) => {
   }
 
   // Load the org's data sources.
-  const [twinsRes, reqsRes, graphRes, journeysRes, openRecsRes, obsRes, appsRes, assertionsRes] = await Promise.all([
+  const [twinsRes, reqsRes, graphRes, plansRes, tasksRes, openRecsRes, obsRes, appsRes, assertionsRes] = await Promise.all([
     supabase.from("digital_twins").select("id, name, role, status, signals, performance_history, verified_skills, seniority_level, job_title, attendance, delivery, promotion_lag_months, manager_id").eq("org_id", caller.org_id),
     supabase.from("job_requisitions").select("id, title, required_skills, future_skills, seniority_level").eq("org_id", caller.org_id),
     supabase.from("skill_graph").select("skill, category, outgoing_edges").eq("org_id", caller.org_id),
-    supabase.from("onboarding_journeys").select("twin_id, status, tasks").eq("org_id", caller.org_id),
+    supabase.from("onboarding_plans").select("id, twin_id, version, status").eq("org_id", caller.org_id).not("status", "eq", "superseded"),
+    supabase.from("onboarding_tasks").select("plan_id, task_code, title, state, blockers").eq("org_id", caller.org_id),
     supabase.from("recommendations").select("id, twin_id, category, status, source_hash").eq("org_id", caller.org_id).in("status", OPEN_STATUSES),
     supabase.from("workforce_observations").select("twin_id, metric, period_start, value, missing").eq("org_id", caller.org_id),
     supabase.from("applications").select("candidate_twin_id, requisition_id, stage, application_code").eq("org_id", caller.org_id).in("stage", ["screening", "technical_interview", "final_round"]),
     supabase.from("skill_assertions").select("twin_id, review_state").eq("org_id", caller.org_id).eq("review_state", "claimed"),
   ]);
+
+  // Onboarding replan triggers come from the CANONICAL adaptive plans: map the
+  // latest non-superseded plan per twin into the engine's journey shape. A
+  // task in state blocked carries its first open blocker's note as evidence.
+  const activePlanByTwin = new Map<string, { id: string; twin_id: string; version: number; status: string }>();
+  for (const p of (plansRes.data ?? []) as { id: string; twin_id: string; version: number; status: string }[]) {
+    const cur = activePlanByTwin.get(p.twin_id);
+    if (!cur || p.version > cur.version) activePlanByTwin.set(p.twin_id, p);
+  }
+  const tasksByPlan = new Map<string, { task_code: string; title: string; state: string; blockers?: { status?: string; note?: string }[] }[]>();
+  for (const t of (tasksRes.data ?? []) as { plan_id: string; task_code: string; title: string; state: string; blockers?: { status?: string; note?: string }[] }[]) {
+    tasksByPlan.set(t.plan_id, [...(tasksByPlan.get(t.plan_id) ?? []), t]);
+  }
+  const journeys = [...activePlanByTwin.values()].map((p) => {
+    const tasks = (tasksByPlan.get(p.id) ?? []).map((t) => ({
+      id: t.task_code,
+      title: t.title,
+      status: t.state,
+      blocked: (t.blockers ?? []).find((b) => b.status === "open")
+        ? { note: (t.blockers ?? []).find((b) => b.status === "open")?.note ?? "blocker reported" }
+        : null,
+    }));
+    return { twin_id: p.twin_id, status: p.status, tasks };
+  });
 
   // Unverified claim counts per candidate — recruitment recommendations
   // require actual application evidence AND visible assessment gaps.
@@ -105,7 +130,7 @@ Deno.serve(async (req) => {
     twins: twinsWithIndex,
     requisitions: reqsRes.data ?? [],
     graph: graphRes.data ?? [],
-    journeys: journeysRes.data ?? [],
+    journeys,
     applications,
   });
 

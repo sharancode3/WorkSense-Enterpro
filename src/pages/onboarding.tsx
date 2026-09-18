@@ -40,6 +40,7 @@ import {
   type PlanView,
 } from "@/lib/api";
 import { decode, planTaskViewSchema, planViewSchema } from "@/lib/contracts";
+import { TASK_STATE_META } from "@/lib/onboarding-progress";
 
 const OWNER_LABEL: Record<PlanTaskView["owner_role"], string> = {
   employee: "Employee",
@@ -73,16 +74,8 @@ function fmt(d: string | null | undefined) {
 }
 
 function StatusChip({ state }: { state: PlanTaskView["state"] }) {
-  const map: Record<PlanTaskView["state"], { label: string; cls: string }> = {
-    done: { label: "Done", cls: "bg-secondary text-white" },
-    waived: { label: "Waived", cls: "bg-primary/15 text-primary" },
-    blocked: { label: "Blocked", cls: "bg-destructive text-white" },
-    pending: { label: "Queued", cls: "bg-muted text-foreground" },
-    ready: { label: "Ready", cls: "bg-accent text-foreground" },
-    in_progress: { label: "In progress", cls: "bg-accent text-foreground" },
-    failed: { label: "Failed", cls: "bg-destructive/15 text-destructive" },
-  };
-  const chip = map[state] ?? map.pending;
+  // Single source of task-state presentation, shared with the employee home.
+  const chip = TASK_STATE_META[state] ?? TASK_STATE_META.pending;
   return <span className={`shrink-0 rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${chip.cls}`}>{chip.label}</span>;
 }
 
