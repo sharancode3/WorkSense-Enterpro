@@ -1,6 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
 import { resolveSkillId } from "../_shared/evidence.ts";
 import { computeFit } from "../_shared/skill-graph-engine.ts";
+import { upsertSkillFit } from "../_shared/fit-store.ts";
 import { normalizeSkillName, quoteMatchesSource } from "../_shared/resume.ts";
 
 const corsHeaders = {
@@ -210,6 +211,19 @@ Deno.serve(async (req) => {
         target: { type: "requisition", id: reqRow.id, title: reqRow.title },
         scenario: "current",
         computedAt: now,
+      });
+      // Batch 6: persist to the CANONICAL skill_fits row (comparison reads it)
+      // plus the legacy mirror, so a resume review invalidates the stale fit.
+      await upsertSkillFit(supabase, {
+        orgId: caller.org_id,
+        twinId,
+        targetId: reqRow.id,
+        scenario: "current",
+        fit,
+        computedAt: now,
+        actor: caller.email ?? uid,
+        action: "resume_reviewed",
+        note: `Resume v${version} reviewed (${dedupedClaims.length} claims — extracted, not verified). Fit current ${fit.score.toFixed(3)}.`,
       });
     }
   }

@@ -43,13 +43,14 @@ const assessment = stripAllImports(read("supabase/functions/_shared/assessment.t
 const candidateCompare = stripAllImports(read("supabase/functions/_shared/candidate-compare.ts"));
 const onboardingQueue = stripAllImports(read("supabase/functions/_shared/onboarding-queue.ts"));
 const assessmentQueue = stripAllImports(read("supabase/functions/_shared/assessment-queue.ts"));
+const fitStore = stripAllImports(read("supabase/functions/_shared/fit-store.ts"));
 const pcontext = stripAllImports(read("supabase/functions/_shared/policy-context.ts"));
 const leave = stripAllImports(read("supabase/functions/_shared/leave-calc.ts"));
 const llmcache = stripAllImports(read("supabase/functions/_shared/llm-cache.ts"));
 const policyseed = stripAllImports(read("supabase/functions/_shared/policy-seed.ts"));
 
 const planner = stripAllImports(read("supabase/functions/_shared/staffing-planner.ts"));
-const SHARED = { planner, engine, onboarding, onboardingV2, qwen, policy, reviewIndex, performance, recEngine, workflow, jobs, validate, evidence, resume, generated, journey, fixtures, seed, stageEngine, assessment, pcontext, leave, policyseed, llmcache, myWorkEngine, candidateCompare, onboardingQueue, assessmentQueue };
+const SHARED = { planner, engine, onboarding, onboardingV2, qwen, policy, reviewIndex, performance, recEngine, workflow, jobs, validate, evidence, resume, generated, journey, fixtures, seed, stageEngine, assessment, pcontext, leave, policyseed, llmcache, myWorkEngine, candidateCompare, onboardingQueue, assessmentQueue, fitStore };
 
 // Function -> shared dependencies (in import order) it needs inlined.
 const FNS = {
@@ -87,12 +88,12 @@ const FNS = {
   "model-job": ["jobs"],
   "health": ["qwen"],
   "resume-import": ["qwen", "jobs", "validate", "resume"],
-  "resume-review": ["engine", "evidence", "resume"],
+  "resume-review": ["engine", "evidence", "resume", "fitStore"],
   "resume-download": [],
   "assessment-blueprint": ["assessment"],
   "assessment-session": ["jobs"],
   "assessment-evaluate": ["qwen", "jobs", "validate", "assessment"],
-  "assessment-review": ["engine", "evidence", "assessment"],
+  "assessment-review": ["engine", "evidence", "assessment", "fitStore"],
   "application-stage": ["engine", "stageEngine"],
   "candidate-compare": ["candidateCompare"],
   "onboarding-queue": ["onboardingQueue"],

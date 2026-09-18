@@ -1,6 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
 import { computeFit } from "../_shared/skill-graph-engine.ts";
 import { loadAssertions, resolveSkillClaims, resolveSkillId } from "../_shared/evidence.ts";
+import { upsertSkillFit } from "../_shared/fit-store.ts";
 import {
   answerFor,
   answersBlob,
@@ -348,25 +349,31 @@ Deno.serve(async (req) => {
         scenario: "future",
         computedAt: now,
       });
-      const fits = (twin.computed_fits ?? []) as { target_id: string; scenario: string }[];
-      const nextFits = fits
-        .filter((f) => !(f.target_id === reqRow.id && (f.scenario === "current" || f.scenario === "future")))
-        .concat([fitCurrent, fitFuture] as unknown as { target_id: string; scenario: string }[]);
-      await supabase
-        .from("digital_twins")
-        .update({
-          computed_fits: nextFits,
-          audit_events: [
-            ...(twin.audit_events ?? []),
-            {
-              actor: caller.email ?? uid,
-              action: "assessment_reviewed",
-              note: `Assessment reviewed (${determination}); ${written.length} supported evidence record(s) written. Fit current ${fitCurrent.score.toFixed(3)} / future ${fitFuture.score.toFixed(3)}.`,
-              timestamp: now,
-            },
-          ],
-        })
-        .eq("id", twin.id);
+      // Batch 6: write the recomputed fits to the CANONICAL skill_fits rows
+      // (candidate-compare reads skill_fits first) plus the legacy mirror —
+      // so a reviewed assessment immediately updates the hiring comparison.
+      await upsertSkillFit(supabase, {
+        orgId: caller.org_id,
+        twinId: twin.id,
+        targetId: reqRow.id,
+        scenario: "current",
+        fit: fitCurrent,
+        computedAt: now,
+        actor: caller.email ?? uid,
+        action: "assessment_reviewed",
+        note: `Assessment reviewed (${determination}); ${written.length} supported evidence record(s) written. Fit current ${fitCurrent.score.toFixed(3)}.`,
+      });
+      await upsertSkillFit(supabase, {
+        orgId: caller.org_id,
+        twinId: twin.id,
+        targetId: reqRow.id,
+        scenario: "future",
+        fit: fitFuture,
+        computedAt: now,
+        actor: caller.email ?? uid,
+        action: "assessment_reviewed",
+        note: `Assessment reviewed (${determination}); fit future ${fitFuture.score.toFixed(3)}.`,
+      });
       fit = { current: fitCurrent.score, future: fitFuture.score };
     }
   }
