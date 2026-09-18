@@ -5714,6 +5714,13 @@ async function reseed(supabase, authIds: Record<string, string>) {
   // resume archetypes, duplicate-import and prompt-injection fixtures.
   await seedDemoStories(supabase, DEMO_ORG_ID, fx.clock);
   await seedDemoResumes(supabase, DEMO_ORG_ID, fx.clock);
+
+  // 9d) Batch 7 (late): differentiated candidate-session states for Ravi.
+  // Runs AFTER seedDemoStories — Ravi's WS-SYN-* application is a story row.
+  // Reuses the blueprint objects already resolved above (same scope).
+  if (workBlueprint && interviewBlueprint && knowledgeBlueprint) {
+    await seedCandidateSessionStates(supabase, DEMO_ORG_ID, fx.clock, { workBlueprint, interviewBlueprint, knowledgeBlueprint });
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -6139,6 +6146,127 @@ async function seedRecruitmentWorkspace(supabase, orgId: string, clock: string) 
 }
 
 
+// ---------------------------------------------------------------------------
+// Batch 7: differentiated candidate-session states for Ravi Shah — one
+// submitted→evaluated→HUMAN-REVIEWED work sample (evidence loop closed with a
+// source-linked quote), one in-progress interview (drafts only), one expired
+// knowledge check. Priya's three sessions stay pristine (live acceptance
+// surface) and the disposable twin stays the isolated sandbox.
+// ---------------------------------------------------------------------------
+async function seedCandidateSessionStates(
+  supabase,
+  orgId: string,
+  clock: string,
+  bps: { workBlueprint: BlueprintSeed; interviewBlueprint: BlueprintSeed; knowledgeBlueprint: BlueprintSeed }
+) {
+  const raviId = "22222222-2222-2222-2222-222222222240";
+  const { data: raviApp } = await supabase
+    .from("applications")
+    .select("id, requisition_id")
+    .eq("org_id", orgId)
+    .eq("candidate_twin_id", raviId)
+    .eq("requisition_id", bps.workBlueprint.requisition_id)
+    .maybeSingle();
+  if (!raviApp) throw new Error(`seedCandidateSessionStates: Ravi application missing (req ${bps.workBlueprint.requisition_id})`);
+  const { data: chris } = await supabase
+    .from("digital_twins")
+    .select("id")
+    .eq("email", "chris@worksense.demo")
+    .eq("org_id", orgId)
+    .maybeSingle();
+  const reviewerId = chris?.id ?? raviApp.id;
+  const addDays = (iso: string, days: number) => new Date(new Date(iso).getTime() + days * 86400000).toISOString();
+  const now = clock;
+
+  // --- Work sample: submitted, evaluated, human-reviewed --------------------
+  const workAnswers = {
+    q1: "I would make payment webhook processing idempotent with an idempotency key stored under a unique constraint; parallel duplicates race on that constraint and the loser returns the stored result instead of processing twice. The failure window between INSERT and COMMIT is where a duplicate can slip through, so I would confirm the commit outcome on retry.",
+    q2: "I would start with EXPLAIN ANALYZE on the slow orders query, confirm the planner is doing a sequential scan, then propose a covering index for the filtered columns and verify the fix against the same query shape on a staging copy before shipping it.",
+    q3: "I would make the third-party call resilient with bounded retries and exponential backoff, add a circuit breaker so we stop hammering a degraded upstream, and time out the request so it cannot distort latency. If the upstream stays degraded for minutes, I would serve a stale cached fallback and alert on the breaker state.",
+  };
+  const workSessionId = "77777777-7777-7777-7777-777777777711";
+  const assessmentId = crypto.randomUUID();
+  const judgments = [
+    { competency: "Event-driven design", judgment: "4", dimensions: { correctness: "4", reasoning: "4", trade_offs: "4", communication: "3" }, evidence_quotes: ["idempotency key stored under a unique constraint"], anchor_ref: "4", uncertainty: 0.15, suggested_follow_up: "", review_required: false },
+    { competency: "Database performance", judgment: "4", dimensions: { correctness: "4", reasoning: "4", trade_offs: "4", communication: "3" }, evidence_quotes: ["EXPLAIN ANALYZE on the slow orders query"], anchor_ref: "4", uncertainty: 0.2, suggested_follow_up: "", review_required: false },
+    { competency: "API resilience", judgment: "3", dimensions: { correctness: "3", reasoning: "4", trade_offs: "4", communication: "3" }, evidence_quotes: ["bounded retries and exponential backoff"], anchor_ref: "3", uncertainty: 0.25, suggested_follow_up: "", review_required: false },
+  ];
+  const result = {
+    type: "assessment_judgment",
+    assessment_id: assessmentId,
+    session_id: workSessionId,
+    session_type: "work_sample",
+    blueprint_id: bps.workBlueprint.id,
+    blueprint_title: bps.workBlueprint.title ?? "Payments service design",
+    competency: "Event-driven design",
+    code_execution: { available: false, note: "Work samples are reviewed as written work only — no code is executed." },
+    ai: {
+      judgments,
+      summary: "A precise, evidence-linked work sample. The candidate names concrete mechanisms (idempotency key + unique constraint, EXPLAIN ANALYZE, circuit breaker) rather than padding.",
+      evaluated_at: addDays(now, -1),
+      evaluator: "seeded@worksense.demo",
+      model: "seeded-canonical",
+    },
+    review_required: false,
+    reviewed: {
+      determination: "confirm",
+      judgments,
+      reason: "Human reviewer confirmed — every quote was verified against the stored answer text.",
+      overrides: [],
+      by: "chris@worksense.demo",
+      by_twin_id: reviewerId,
+      at: now,
+    },
+  };
+  const { error: raviWorkErr } = await supabase.from("candidate_sessions").insert({
+    id: workSessionId, org_id: orgId, application_id: raviApp.id, twin_id: raviId,
+    blueprint_id: bps.workBlueprint.id, rubric_id: null, session_type: "work_sample",
+    invitation_token: "ws-demo-ravi-work-2026", status: "submitted",
+    expires_at: addDays(now, 30), submitted_at: addDays(now, -2),
+    time_policy: bps.workBlueprint.time_policy ?? null,
+    accommodation: {}, answers: workAnswers, drafts: {}, follow_ups: [],
+    submission_hash: "8f3a2c1d4b6e0a11", updated_at: addDays(now, -2), created_at: addDays(now, -6),
+  });
+  if (raviWorkErr) throw new Error(`ravi work session insert: ${raviWorkErr.message}`);
+  const { error: raviAssErr } = await supabase.from("assessments").insert({
+    id: assessmentId, org_id: orgId, twin_id: raviId, requisition_id: raviApp.requisition_id,
+    type: "work_sample", result, reviewed_by: reviewerId, reviewed_at: now,
+  });
+  if (raviAssErr) throw new Error(`ravi assessment insert: ${raviAssErr.message}`);
+  const { error: raviEvErr } = await supabase.from("evidence_items").insert({
+    org_id: orgId, twin_id: raviId, source_type: "work_sample",
+    source_id: `assessment:${assessmentId}:Event-driven design`, source_version: "v1",
+    captured_at: now, quote: "idempotency key stored under a unique constraint",
+    review_state: "assessment_supported", reviewed_by: reviewerId, reviewed_at: now,
+    metadata: { session_id: workSessionId, assessment_id: assessmentId, competency: "Event-driven design", anchor: "4", skill: "Event-driven architecture" },
+  });
+  if (raviEvErr) throw new Error(`ravi evidence insert: ${raviEvErr.message}`);
+
+  // --- Interview: in_progress (drafts only, never submitted) ----------------
+  const { error: raviIntErr } = await supabase.from("candidate_sessions").insert({
+    org_id: orgId, application_id: raviApp.id, twin_id: raviId,
+    blueprint_id: bps.interviewBlueprint.id, rubric_id: null, session_type: "interview",
+    invitation_token: "ws-demo-ravi-interview-2026", status: "in_progress",
+    expires_at: addDays(now, 14), submitted_at: null,
+    time_policy: bps.interviewBlueprint.time_policy ?? null,
+    accommodation: {}, answers: {}, drafts: { q1: "I would first check the error rate by service and confirm whether the failure is isolated to payments before waking the wider team…" }, follow_ups: [],
+    submission_hash: null, updated_at: now, created_at: addDays(now, -3),
+  });
+  if (raviIntErr) throw new Error(`ravi interview insert: ${raviIntErr.message}`);
+
+  // --- Knowledge check: expired (deadline passed, never submitted) ----------
+  const { error: raviKnoErr } = await supabase.from("candidate_sessions").insert({
+    org_id: orgId, application_id: raviApp.id, twin_id: raviId,
+    blueprint_id: bps.knowledgeBlueprint.id, rubric_id: null, session_type: "knowledge_assessment",
+    invitation_token: "ws-demo-ravi-knowledge-2026", status: "expired",
+    expires_at: addDays(now, -2), submitted_at: null,
+    time_policy: bps.knowledgeBlueprint.time_policy ?? null,
+    accommodation: {}, answers: {}, drafts: {}, follow_ups: [],
+    submission_hash: null, updated_at: addDays(now, -2), created_at: addDays(now, -5),
+  });
+  if (raviKnoErr) throw new Error(`ravi knowledge insert: ${raviKnoErr.message}`);
+}
+
 // Phase 15 (Batch B2): idempotent synthetic resume documents for the guided
 // demo applicants, stored in the private `resumes` bucket via the same path
 // convention resume-import/resume-download use. Labeled synthetic; never grants
@@ -6281,8 +6409,8 @@ Deno.serve(async (req) => {
         recommendations: RECOMMENDATIONS.length,
         assessment_blueprints: ASSESSMENT_SEEDS.length,
         assessment_rubrics: ASSESSMENT_SEEDS.reduce((n, s) => n + s.rubrics.length, 0),
-        candidate_sessions: 6,
-        evidence_items: fx.employees.reduce((n, e) => n + (e.assertions ?? []).length, 0) + fx.candidates.reduce((n, c) => n + (c.assertions ?? []).length, 0) + fx.org2.employees.reduce((n, e) => n + (e.assertions ?? []).length, 0) + 17,
+        candidate_sessions: 9,
+        evidence_items: fx.employees.reduce((n, e) => n + (e.assertions ?? []).length, 0) + fx.candidates.reduce((n, c) => n + (c.assertions ?? []).length, 0) + fx.org2.employees.reduce((n, e) => n + (e.assertions ?? []).length, 0) + 18,
         skill_assertions: fx.employees.reduce((n, e) => n + (e.assertions ?? []).length, 0) + fx.candidates.reduce((n, c) => n + (c.assertions ?? []).length, 0) + fx.org2.employees.reduce((n, e) => n + (e.assertions ?? []).length, 0) + 16,
         applications: fx.requisitions.reduce((n, r) => n + (r.applicants ?? []).length, 0) + 6,
         workforce_observations: fx.observations.length,

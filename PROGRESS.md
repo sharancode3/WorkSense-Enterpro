@@ -571,3 +571,18 @@ Contract map audited: canonical sources (person/role, application+stage, resume 
 **Browser verification:** not performed (auth-gated pages cannot be screenshotted). Live API verification via `scripts/verify-batch-6.mjs` — 19/19 (canonical fit after review, comparison reflects without reset, source-linked evidence, select→convert→same-twin, STALE_STATE on duplicate select, plan from approved role with IT/employee/manager/HR owners, pristine reset). Batch 5 re-run green (15/15). Demo left pristine.
 
 **Remaining:** Batch 7 (role-relevant fictional data — check fixtures first), Batch 8 (honest coverage matrix), Batch 9 (regression + release proof, incl. stale-proposal handling test).
+
+## 46. Role workspaces spec — Batch 7 (role-relevant fictional data)
+
+Inspected existing fixtures first (54 employees with coherent manager reporting, 30 candidates, 6 requisitions with differentiated stages, 184 reviewer_confirmed / 124 assessment_supported / 88 claimed / 5 extracted assertions, review-case priority mix low 33 / medium 17 / high 6 / review 1, 5 onboarding plans). Enriched the designated demo org only; no destructive reset, no production backfill.
+
+- **7.1 — Differentiated candidate-session states: COMPLETED.** Previously all 6 sessions were `invited`. New `seedCandidateSessionStates` in reset-demo gives a second candidate (Ravi Shah, real WS-SYN-RAVI-2026 application) the realistic mix: **work_sample submitted → evaluated → HUMAN-REVIEWED** (seeded canonical assessment with `reviewed_at`, determination confirm, verbatim evidence quotes), **interview in_progress** (drafts saved, awaiting candidate), **knowledge_check expired** (deadline in the past). Priya's 3 sessions and the disposable twin's 3 sessions stay pristine as the live acceptance surface.
+- **7.2 — Reviewed evidence loop: COMPLETED.** The seeded review persists a source-linked `evidence_items` row (source_type work_sample, quote is a verbatim substring of the stored answer — no generic "Evidence: resume"), referenced by the assessment. The reviewer view (`assessment-session fetch`) returns the reviewed evaluation.
+- **7.3 — Partial-data honesty: COMPLETED (verified).** Juno Park stays a low-text/keyword-only resume (no fabricated dates); the risk mix is not uniformly high (low 33 > high 6). The queue correctly shows Ravi's reviewed submission under "submitted" and NOT under "incomplete scorecards" (it has a scorecard).
+- **7.4 — Live acceptance surfaces preserved: COMPLETED.** Priya + disposable invited sessions still 6; prior verify suites re-run green with the new fixture (upcoming interviews now 3 — Ravi's in-progress interview joins the two invited ones).
+
+**Tests run:** `pnpm check` green — 399 tests / 39 files, no drift. `pnpm build` green. Deployed `reset-demo` (v1) with the enriched fixtures.
+
+**Browser verification:** not performed (auth-gated pages cannot be screenshotted). Live API verification via `scripts/verify-batch-7.mjs` — 13/13 (differentiated session states, past expiry, reviewed evaluation, verbatim source quote, linked evidence, Priya/disposable untouched, queue placement, partial-data candidate, non-uniform risk mix, pristine reset). Regressions: batch-5 15/15, batch-6 19/19, batch-4 12/12, batch-3 12/12. Demo left pristine.
+
+**Remaining:** Batch 8 (honest coverage matrix), Batch 9 (regression + release proof, incl. stale-proposal handling test).

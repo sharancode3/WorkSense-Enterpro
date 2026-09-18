@@ -58,7 +58,9 @@ const invitedCount = q1.j?.queues?.invitations_awaiting_response?.length ?? -1;
 check("5.2 invitations awaiting = the 6 seeded invited sessions (no fabrication)", invitedCount === 6, `count=${invitedCount}`);
 
 const upcoming = q1.j?.queues?.upcoming_interviews ?? [];
-check("5.2 upcoming interviews are only interview sessions", upcoming.length === 2 && upcoming.every((s) => s.session_type === "interview"), `count=${upcoming.length}`);
+// Batch 7 fixture: Ravi's in-progress interview joins Priya + disposable
+// invited interviews -> 3 upcoming interviews, all interview sessions.
+check("5.2 upcoming interviews are only interview sessions", upcoming.length === 3 && upcoming.every((s) => s.session_type === "interview"), `count=${upcoming.length}`);
 const priyaInterview = upcoming.find((s) => s.candidate?.id === PRIYA);
 check("5.2 queue item links candidate + application + role", Boolean(priyaInterview && priyaInterview.role.title && priyaInterview.role.application_code && priyaInterview.role.application_id), `title=${priyaInterview?.role?.title} app=${priyaInterview?.role?.application_code}`);
 
