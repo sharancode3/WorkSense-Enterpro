@@ -1,0 +1,153 @@
+-- Batch 2.2: replace org-wide read policies with role-scoped reads.
+-- A shared security-definer helper encodes the scope model:
+--   self / manager-team / HR-org / recruiter-candidates.
+-- IT keeps org reads on onboarding plans+tasks only (provisioning subjects);
+-- everything else (evidence, fits, resumes, sessions, performance, staffing)
+-- is scoped away from IT and from unrelated employees/recruiters.
+
+create or replace function public.can_view_twin(p_twin_id uuid)
+returns boolean language sql stable security definer set search_path = public as $$
+  select exists (
+    select 1
+    from public.current_twin() ct
+    join public.digital_twins t on t.id = p_twin_id
+    where ct.id = t.id
+       or (ct.role in ('hr_executive','hr_partner') and ct.org_id = t.org_id)
+       or (ct.role = 'manager' and ct.org_id = t.org_id and public.is_team_member(t.id))
+       or (ct.role = 'recruiter' and ct.org_id = t.org_id and t.role = 'candidate')
+  );
+$$;
+
+-- digital_twins: HR partner sees org WORKFORCE only (candidates belong to recruiters).
+drop policy if exists twin_select_hr_partner on public.digital_twins;
+create policy twin_select_hr_partner on public.digital_twins for select using (
+  (select role from public.current_twin()) = 'hr_partner'
+  and org_id = (select org_id from public.current_twin())
+  and public.digital_twins.role <> 'candidate'
+);
+
+-- onboarding plans / tasks: self, manager team, HR org, IT org (provisioning subjects).
+drop policy if exists onboarding_plans_read on public.onboarding_plans;
+create policy onboarding_plans_read on public.onboarding_plans for select using (
+  public.can_view_twin(public.onboarding_plans.twin_id)
+  or exists (select 1 from public.current_twin() ct where ct.role = 'it_security' and ct.org_id = public.onboarding_plans.org_id)
+);
+drop policy if exists onboarding_tasks_read on public.onboarding_tasks;
+create policy onboarding_tasks_read on public.onboarding_tasks for select using (
+  exists (select 1 from public.onboarding_plans p where p.id = public.onboarding_tasks.plan_id and (public.can_view_twin(p.twin_id) or exists (select 1 from public.current_twin() ct where ct.role = 'it_security' and ct.org_id = p.org_id)))
+);
+drop policy if exists onboarding_events_read on public.onboarding_task_events;
+create policy onboarding_events_read on public.onboarding_task_events for select using (
+  exists (select 1 from public.onboarding_plans p where p.id = public.onboarding_task_events.plan_id and public.can_view_twin(p.twin_id))
+);
+
+-- skill fits
+ drop policy if exists skill_fits_read on public.skill_fits;
+create policy skill_fits_read on public.skill_fits for select using (
+  public.can_view_twin(public.skill_fits.twin_id)
+);
+
+-- evidence + skill assertions
+drop policy if exists evidence_read on public.evidence_items;
+create policy evidence_read on public.evidence_items for select using (
+  public.can_view_twin(public.evidence_items.twin_id)
+);
+drop policy if exists assertions_read on public.skill_assertions;
+create policy assertions_read on public.skill_assertions for select using (
+  public.can_view_twin(public.skill_assertions.twin_id)
+);
+
+-- applications + stage events (candidate-owned)
+drop policy if exists applications_read on public.applications;
+create policy applications_read on public.applications for select using (
+  public.can_view_twin(public.applications.candidate_twin_id)
+);
+drop policy if exists stage_events_read on public.application_stage_events;
+create policy stage_events_read on public.application_stage_events for select using (
+  exists (select 1 from public.applications a where a.id = public.application_stage_events.application_id and public.can_view_twin(a.candidate_twin_id))
+);
+
+-- candidate sessions + assessments
+drop policy if exists sessions_read on public.candidate_sessions;
+create policy sessions_read on public.candidate_sessions for select using (
+  public.can_view_twin(public.candidate_sessions.twin_id)
+);
+drop policy if exists assessments_read on public.assessments;
+create policy assessments_read on public.assessments for select using (
+  public.can_view_twin(public.assessments.twin_id)
+);
+drop policy if exists blueprints_read on public.assessment_blueprints;
+create policy blueprints_read on public.assessment_blueprints for select using (
+  exists (select 1 from public.current_twin() ct where ct.org_id = public.assessment_blueprints.org_id and ct.role in ('hr_executive','hr_partner','recruiter'))
+);
+drop policy if exists rubrics_read on public.assessment_rubrics;
+create policy rubrics_read on public.assessment_rubrics for select using (
+  exists (select 1 from public.current_twin() ct where ct.org_id = public.assessment_rubrics.org_id and ct.role in ('hr_executive','hr_partner','recruiter'))
+);
+
+-- resume documents + versions
+drop policy if exists resume_docs_read on public.resume_documents;
+create policy resume_docs_read on public.resume_documents for select using (
+  public.can_view_twin(public.resume_documents.twin_id)
+);
+drop policy if exists resume_versions_read on public.resume_versions;
+create policy resume_versions_read on public.resume_versions for select using (
+  public.can_view_twin(public.resume_versions.twin_id)
+);
+
+-- action tasks (owner scope)
+drop policy if exists action_tasks_read on public.action_tasks;
+create policy action_tasks_read on public.action_tasks for select using (
+  public.can_view_twin(public.action_tasks.owner_twin_id)
+);
+
+-- workflow events: HR org, actor self, or via the resource subject scope.
+drop policy if exists workflow_events_read on public.workflow_events;
+create policy workflow_events_read on public.workflow_events for select using (
+  exists (select 1 from public.current_twin() ct where ct.org_id = public.workflow_events.org_id and ct.role in ('hr_executive','hr_partner'))
+  or exists (select 1 from public.current_twin() ct where ct.id = public.workflow_events.actor_twin_id)
+  or (public.workflow_events.resource_type = 'recommendation' and exists (select 1 from public.recommendations r where r.id = public.workflow_events.resource_id and public.can_view_twin(r.twin_id)))
+  or (public.workflow_events.resource_type = 'action_task' and exists (select 1 from public.action_tasks a where a.id = public.workflow_events.resource_id and public.can_view_twin(a.owner_twin_id)))
+);
+
+-- performance + workforce review data
+drop policy if exists performance_summaries_read on public.performance_summaries;
+create policy performance_summaries_read on public.performance_summaries for select using (
+  public.can_view_twin(public.performance_summaries.twin_id)
+);
+drop policy if exists observations_read on public.workforce_observations;
+create policy observations_read on public.workforce_observations for select using (
+  public.can_view_twin(public.workforce_observations.twin_id)
+);
+drop policy if exists review_cases_read on public.workforce_review_cases;
+create policy review_cases_read on public.workforce_review_cases for select using (
+  public.can_view_twin(public.workforce_review_cases.twin_id)
+);
+drop policy if exists review_case_actions_read on public.review_case_actions;
+create policy review_case_actions_read on public.review_case_actions for select using (
+  public.can_view_twin(public.review_case_actions.twin_id)
+);
+
+-- staffing scenarios/proposals: HR org, author scope, or manager team via scenario creator
+drop policy if exists staffing_scenarios_read on public.staffing_scenarios;
+create policy staffing_scenarios_read on public.staffing_scenarios for select using (
+  public.can_view_twin(public.staffing_scenarios.created_by)
+);
+drop policy if exists staffing_proposals_read on public.staffing_proposals;
+create policy staffing_proposals_read on public.staffing_proposals for select using (
+  public.can_view_twin(public.staffing_proposals.submitted_by)
+  or (exists (select 1 from public.current_twin() ct where ct.role = 'manager' and ct.org_id = public.staffing_proposals.org_id) and exists (select 1 from public.staffing_scenarios s where s.id = public.staffing_proposals.scenario_id and public.can_view_twin(s.created_by)))
+);
+
+-- recommendation comments: same scope as the recommendation itself
+drop policy if exists rec_comments_select on public.recommendation_comments;
+create policy rec_comments_select on public.recommendation_comments for select using (
+  exists (select 1 from public.current_twin() ct where ct.org_id = public.recommendation_comments.org_id and ct.role in ('hr_executive','hr_partner'))
+  or exists (select 1 from public.recommendations r where r.id = public.recommendation_comments.recommendation_id and public.can_view_twin(r.twin_id))
+);
+
+-- admin audit trail: hr_executive only
+drop policy if exists admin_actions_read on public.admin_actions;
+create policy admin_actions_read on public.admin_actions for select using (
+  (select role from public.current_twin()) = 'hr_executive' and org_id = (select org_id from public.current_twin())
+);

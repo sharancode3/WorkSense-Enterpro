@@ -732,7 +732,17 @@ function JourneysQueue({
   );
 }
 
-function ProvisioningQueue({ items, names, onOpen }: { items: QueueTaskRef[]; names: Map<string, string>; onOpen: (twinId: string, code: string) => void }) {
+function ProvisioningQueue({
+  items,
+  names,
+  people,
+  onOpen,
+}: {
+  items: QueueTaskRef[];
+  names: Map<string, string>;
+  people: Map<string, { start_date: string | null; manager_name: string | null }>;
+  onOpen: (twinId: string, code: string) => void;
+}) {
   return (
     <div className="rounded-lg bg-white p-5">
       <div className="flex items-center gap-2">
@@ -741,27 +751,36 @@ function ProvisioningQueue({ items, names, onOpen }: { items: QueueTaskRef[]; na
       </div>
       {items.length === 0 && <p className="mt-2 text-sm text-muted-foreground">No provisioning or access tasks are waiting right now.</p>}
       <div className="mt-2 flex flex-col gap-2">
-        {items.map((t) => (
-          <button
-            key={`${t.twin_id}-${t.task_code}`}
-            type="button"
-            onClick={() => onOpen(t.twin_id, t.task_code)}
-            className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-muted px-3 py-2 text-left transition-all duration-200 hover:bg-border"
-          >
-            <div className="min-w-0">
-              <p className="truncate text-sm font-semibold text-foreground">{t.title}</p>
-              <p className="text-[11px] text-muted-foreground">
-                for {names.get(t.twin_id) ?? "employee"} · due {fmt(t.due_date)}
-              </p>
-            </div>
-            <span className={`shrink-0 rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${(TASK_STATE_META[t.state as PlanTaskView["state"]] ?? TASK_STATE_META.pending).cls}`}>
-              {TASK_STATE_META[t.state as PlanTaskView["state"]]?.label ?? t.state}
-            </span>
-            <Button size="sm" variant="outline" className="h-7">
-              Open task <ArrowUpRight className="h-3.5 w-3.5" />
-            </Button>
-          </button>
-        ))}
+        {items.map((t) => {
+          const person = people.get(t.twin_id);
+          return (
+            <button
+              key={`${t.twin_id}-${t.task_code}`}
+              type="button"
+              onClick={() => onOpen(t.twin_id, t.task_code)}
+              className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-muted px-3 py-2 text-left transition-all duration-200 hover:bg-border"
+            >
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-foreground">{t.title}</p>
+                <p className="text-[11px] text-muted-foreground">
+                  for {names.get(t.twin_id) ?? "employee"}
+                  {person?.start_date ? ` · starts ${fmt(person.start_date)}` : ""}
+                  {person?.manager_name ? ` · manager ${person.manager_name}` : ""}
+                  {t.blockers && t.blockers.length > 0 ? ` · ${t.blockers.length} blocker(s)` : ""}
+                  {t.depends_on && t.depends_on.length > 0 ? ` · waits on ${t.depends_on.join(", ")}` : ""}
+                  {t.evidence_requirements && t.evidence_requirements.length > 0 ? ` · evidence required` : ""}
+                  {` · due ${fmt(t.due_date)}`}
+                </p>
+              </div>
+              <span className={`shrink-0 rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${(TASK_STATE_META[t.state as PlanTaskView["state"]] ?? TASK_STATE_META.pending).cls}`}>
+                {TASK_STATE_META[t.state as PlanTaskView["state"]]?.label ?? t.state}
+              </span>
+              <Button size="sm" variant="outline" className="h-7">
+                Open task <ArrowUpRight className="h-3.5 w-3.5" />
+              </Button>
+            </button>
+          );
+        })}
       </div>
     </div>
   );
@@ -1428,7 +1447,7 @@ export default function Onboarding() {  const { role, twin, user } = useAuth();
             <Loader2 className="h-4 w-4 animate-spin" /> Loading your onboarding queue…
           </div>
         )}
-        {queue.data && queue.data.journeys.length > 0 && (
+        {queue.data && (queue.data.journeys.length > 0 || (role === "it_security" && queue.data.provisioning.length > 0)) && (
           <div className="mt-8 flex flex-col gap-4">
             {role === "employee" && <EmployeeQueue journey={queue.data.journeys[0]} onOpen={(code) => setActiveCode(code)} />}
             {(role === "manager" || role === "hr_executive" || role === "hr_partner") && (
@@ -1473,7 +1492,8 @@ export default function Onboarding() {  const { role, twin, user } = useAuth();
             {role === "it_security" && (
               <ProvisioningQueue
                 items={queue.data.provisioning}
-                names={new Map(queue.data.journeys.map((j) => [j.twin_id, j.employee_name]))}
+                names={new Map((queue.data.people ?? []).map((p) => [p.twin_id, p.name]))}
+                people={new Map((queue.data.people ?? []).map((p) => [p.twin_id, { start_date: p.start_date, manager_name: p.manager_name }]))}
                 onOpen={(twinId, code) => {
                   setSelected(twinId);
                   setActiveCode(code);

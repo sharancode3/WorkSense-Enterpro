@@ -235,6 +235,9 @@ const queueTaskRefSchema = z.object({
   topological_level: z.number(),
   plan_id: z.string(),
   twin_id: z.string(),
+  depends_on: z.array(z.string()).optional(),
+  blockers: z.array(z.object({ status: z.string(), at: z.string() })).optional(),
+  evidence_requirements: z.array(z.unknown()).optional(),
 });
 
 export const onboardingQueueSchema = z.object({
@@ -269,6 +272,17 @@ export const onboardingQueueSchema = z.object({
     })
   ),
   provisioning: z.array(queueTaskRefSchema),
+  // IT-only minimal identity projection: never readiness/gates/approvals.
+  people: z
+    .array(
+      z.object({
+        twin_id: z.string(),
+        name: z.string(),
+        start_date: z.string().nullable(),
+        manager_name: z.string().nullable(),
+      })
+    )
+    .default([]),
   filters: z.object({ all: z.number(), pending_approval: z.number(), overdue: z.number(), stalled: z.number() }),
 }) as z.ZodType<OnboardingQueue>;
 export interface OnboardingQueue {
@@ -276,6 +290,7 @@ export interface OnboardingQueue {
   role: "employee" | "manager" | "hr" | "it_security";
   journeys: QueueJourney[];
   provisioning: QueueTaskRef[];
+  people: { twin_id: string; name: string; start_date: string | null; manager_name: string | null }[];
   filters: { all: number; pending_approval: number; overdue: number; stalled: number };
 }
 export interface QueueTaskRef {
@@ -288,6 +303,9 @@ export interface QueueTaskRef {
   topological_level: number;
   plan_id: string;
   twin_id: string;
+  depends_on?: string[];
+  blockers?: { status: string; at: string }[];
+  evidence_requirements?: unknown[];
 }
 export interface QueueJourney {
   twin_id: string;

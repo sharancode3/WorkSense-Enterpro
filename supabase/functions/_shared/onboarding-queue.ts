@@ -24,6 +24,10 @@ export interface QueueTaskRef {
   topological_level: number;
   plan_id: string;
   twin_id: string;
+  /** Dependency and blocker context (Batch 2.3 — IT operational projection). */
+  depends_on?: string[];
+  blockers?: { status: string; at: string }[];
+  evidence_requirements?: unknown[];
 }
 
 export interface QueueJourney {
@@ -63,6 +67,8 @@ export interface OnboardingQueueResult {
   journeys: QueueJourney[];
   /** IT-only: provisioning/access tasks across active journeys. */
   provisioning: QueueTaskRef[];
+  /** IT-only minimal identity projection (never HR/performance fields). */
+  people: { twin_id: string; name: string; start_date: string | null; manager_name: string | null }[];
   filters: { all: number; pending_approval: number; overdue: number; stalled: number };
 }
 
@@ -88,6 +94,7 @@ interface JourneyInput {
     topological_level: number;
     depends_on: string[];
     blockers: { status: string; at: string }[];
+    evidence_requirements?: unknown[];
   }[];
 }
 
@@ -193,6 +200,7 @@ export function buildOnboardingQueue(input: {
     role: input.role,
     journeys: sorted,
     provisioning,
+    people: [],
     filters: {
       all: sorted.length,
       pending_approval: sorted.filter((j) => j.pending_manager_approval || j.pending_hr_approval).length,
@@ -212,4 +220,7 @@ const toRef = (j: JourneyInput, t: JourneyInput["tasks"][number]): QueueTaskRef 
   topological_level: t.topological_level,
   plan_id: j.plan.id,
   twin_id: j.employee.id,
+  depends_on: t.depends_on ?? [],
+  blockers: (t.blockers ?? []) as { status: string; at: string }[],
+  evidence_requirements: t.evidence_requirements ?? [],
 });

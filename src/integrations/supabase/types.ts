@@ -5734,6 +5734,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      can_view_twin: {
+        Args: { p_twin_id: string }
+        Returns: boolean
+      }
       convert_candidate_to_employee: {
         Args: { p_req_id: string; p_twin_id: string }
         Returns: Json

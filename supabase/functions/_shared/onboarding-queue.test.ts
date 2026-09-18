@@ -90,3 +90,26 @@ describe("buildOnboardingQueue — Batch D overview fields", () => {
     expect(res.journeys[0].pending_hr_approval).toBe(true);
   });
 });
+
+describe("buildOnboardingQueue — Batch 2 IT minimal projection", () => {
+  it("returns provisioning/access tasks only for it_security, with dependency context", () => {
+    const res = buildOnboardingQueue({ role: "it_security", journeys: [journey()], now });
+    const codes = res.provisioning.map((t) => t.task_code);
+    expect(codes).toContain("access_sso");
+    expect(codes).not.toContain("security_training"); // employee-owned
+    expect(codes).not.toContain("team_intro"); // manager-owned
+    // Dependency + blocker context is present on the ref (not hidden in React).
+    const sso = res.provisioning.find((t) => t.task_code === "access_sso");
+    expect(sso?.depends_on).toEqual(["it_provisioning", "security_training"]);
+    expect(sso?.blockers).toHaveLength(1);
+    expect(Array.isArray(sso?.evidence_requirements)).toBe(true);
+    // The engine builds journeys (provisioning is derived from them); the
+    // FUNCTION strips journeys for IT and attaches the minimal people array.
+    expect(res.people).toEqual([]);
+  });
+
+  it("employee/hr/manager results carry an empty people projection", () => {
+    expect(buildOnboardingQueue({ role: "hr", journeys: [journey()], now }).people).toEqual([]);
+    expect(buildOnboardingQueue({ role: "employee", journeys: [journey()], now }).people).toEqual([]);
+  });
+});
