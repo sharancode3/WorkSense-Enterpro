@@ -80,3 +80,13 @@ describe("rbac", () => {
     expect(roles).toEqual(ROLES);
   });
 });
+
+describe("Phase 8 — skill development access", () => {
+  it("managers can explore the skill graph (team capability view)", () => {
+    expect(can("manager", "explore_skill_graph")).toBe(true);
+    expect(can("recruiter", "explore_skill_graph")).toBe(true);
+    expect(can("employee", "explore_skill_graph")).toBe(true);
+    expect(can("hr_executive", "explore_skill_graph")).toBe(true);
+    expect(can("it_security", "explore_skill_graph")).toBe(false);
+  });
+});

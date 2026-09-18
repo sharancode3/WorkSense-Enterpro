@@ -1,6 +1,14 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
-import { computeFit, fitKey, DEFAULT_EVIDENCE_THRESHOLD, type FitRecord } from "../_shared/skill-graph-engine.ts";
-import { resolveLineage, resolveSkillClaims } from "../_shared/evidence.ts";
+import {
+  claimHash,
+  computeFit,
+  fitKey,
+  fitIsStale,
+  requisitionContentHash,
+  DEFAULT_EVIDENCE_THRESHOLD,
+  type FitRecord,
+} from "../_shared/skill-graph-engine.ts";
+import { resolveEvidenceArtifacts, resolveLineage, resolveSkillClaims } from "../_shared/evidence.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -64,14 +72,14 @@ Deno.serve(async (req) => {
 
   const { data: caller, error: callerErr } = await supabase
     .from("digital_twins")
-    .select("id, org_id, role")
+    .select("id, org_id, role, name, email")
     .eq("auth_user_id", uid)
     .maybeSingle();
   if (callerErr || !caller) return jsonResponse({ error: "UNAUTHENTICATED" }, 401);
 
   const { data: targetTwin, error: twinErr } = await supabase
     .from("digital_twins")
-    .select("id, org_id, role, verified_skills, seniority_level, computed_fits, audit_events")
+    .select("id, org_id, role, name, verified_skills, seniority_level, computed_fits, audit_events")
     .eq("id", twinId)
     .maybeSingle();
   if (twinErr || !targetTwin) {
@@ -82,19 +90,26 @@ Deno.serve(async (req) => {
   // core workflow — the Fit card in the Recruitment Studio); manager sees own
   // team; employee self.
   let allowed = false;
-  if (caller.role === "hr_executive" && caller.org_id === targetTwin.org_id) allowed = true;
-  else if (caller.role === "recruiter" && caller.org_id === targetTwin.org_id && targetTwin.role === "candidate") {
+  let scope: "org" | "candidates" | "team" | "self";
+  if (caller.role === "hr_executive" && caller.org_id === targetTwin.org_id) {
     allowed = true;
+    scope = "org";
+  } else if (caller.role === "recruiter" && caller.org_id === targetTwin.org_id && targetTwin.role === "candidate") {
+    allowed = true;
+    scope = "candidates";
   } else if (caller.role === "manager" || caller.role === "employee") {
     allowed = targetTwin.id === caller.id || (await isTeamMember(supabase, caller.id, targetTwin.id));
+    scope = targetTwin.id === caller.id ? "self" : "team";
+  } else {
+    scope = "org";
   }
   if (!allowed) {
-    return jsonResponse({ error: "FORBIDDEN", message: "You may only view matches for yourself or your team." }, 403);
+    return jsonResponse({ error: "FORBIDDEN", message: "You may only view matches for yourself, your team, or authorized candidates." }, 403);
   }
 
   const { data: reqRow, error: reqErr } = await supabase
     .from("job_requisitions")
-    .select("id, org_id, title, required_skills, future_skills, seniority_level, audit_events")
+    .select("id, org_id, title, required_skills, future_skills, seniority_level")
     .eq("id", targetId)
     .maybeSingle();
   if (reqErr || !reqRow) {
@@ -105,22 +120,47 @@ Deno.serve(async (req) => {
   }
 
   const requiredSkills = scenario === "future" ? reqRow.future_skills : reqRow.required_skills;
+  const requisitionVersion = requisitionContentHash(
+    reqRow.required_skills ?? [],
+    reqRow.future_skills ?? [],
+    reqRow.seniority_level ?? 3
+  );
 
-  // Cache: reuse a fresh persisted fit; recompute only when missing or stale
-  // (requisition requirements changed after computation) or force requested.
+  const claims = await resolveSkillClaims(supabase, { id: targetTwin.id, verified_skills: targetTwin.verified_skills });
+  const artifacts = await resolveEvidenceArtifacts(supabase, targetTwin.id);
+
+  // Cache: durable skill_fits row (atomic upsert => no concurrent
+  // read-modify-write that could overwrite another stored result), with a
+  // legacy fallback to twin.computed_fits. Recompute only when missing, stale
+  // (engine / evidence / requisition version changed) or force requested.
+  const { data: storedRows } = await supabase
+    .from("skill_fits")
+    .select("fit")
+    .eq("org_id", caller.org_id)
+    .eq("twin_id", twinId)
+    .eq("target_type", "requisition")
+    .eq("target_id", targetId)
+    .eq("scenario", scenario)
+    .maybeSingle();
   const fits: FitRecord[] = (targetTwin.computed_fits ?? []) as FitRecord[];
-  const cached = fits.find(
+  const legacyFit = fits.find(
     (f) => f.target_type === "requisition" && f.target_id === targetId && f.scenario === scenario
   );
-  const stale =
-    (reqRow.audit_events ?? []).some(
-      (a: { timestamp?: string }) =>
-        cached && new Date(a.timestamp ?? 0).getTime() > new Date(cached.computed_at).getTime()
-    ) || false;
+  const cached: FitRecord | null = (storedRows?.fit as FitRecord | undefined) ?? legacyFit ?? null;
+
+  const stale = fitIsStale(cached, { engine: "2", evidence: claimHash(claims), requisition: requisitionVersion });
 
   if (cached && !body.force && !stale) {
     const lineage = await resolveLineage(supabase, targetTwin.id);
-    return jsonResponse({ ok: true, cached: true, fit: cached, lineage });
+    return jsonResponse({
+      ok: true,
+      cached: true,
+      scope,
+      person: { id: targetTwin.id, name: targetTwin.name, role: targetTwin.role },
+      fit: cached,
+      lineage,
+      evidence_artifacts: artifacts,
+    });
   }
 
   const { data: graphRows, error: graphErr } = await supabase
@@ -130,7 +170,6 @@ Deno.serve(async (req) => {
   if (graphErr) throw graphErr;
 
   const now = new Date().toISOString();
-  const claims = await resolveSkillClaims(supabase, { id: targetTwin.id, verified_skills: targetTwin.verified_skills });
   const fit = computeFit({
     candidateSkills: claims,
     candidateLevel: targetTwin.seniority_level ?? 3,
@@ -140,9 +179,30 @@ Deno.serve(async (req) => {
     target: { type: "requisition", id: reqRow.id, title: reqRow.title },
     scenario,
     computedAt: now,
+    evidenceArtifactCount: artifacts.count,
+    requisitionVersion,
   });
 
-  // Persist: replace any same-key entry and append an audit event.
+  // Durable write: atomic upsert — two concurrent recomputes for different
+  // targets both persist; nothing is lost (no read-modify-write on an array).
+  const { error: upErr } = await supabase
+    .from("skill_fits")
+    .upsert(
+      {
+        org_id: caller.org_id,
+        twin_id: twinId,
+        target_type: "requisition",
+        target_id: targetId,
+        scenario,
+        fit,
+        computed_at: now,
+      },
+      { onConflict: "twin_id,target_type,target_id,scenario" }
+    );
+  if (upErr) throw upErr;
+
+  // Best-effort legacy mirror into twin.computed_fits (same key replaced,
+  // other keys preserved). The durable source of truth is skill_fits.
   const key = fitKey(fit);
   const nextFits = fits.filter((f) => fitKey(f) !== key).concat(fit);
   const nextAudit = [
@@ -150,17 +210,23 @@ Deno.serve(async (req) => {
     {
       actor: caller.email ?? uid,
       action: scenario === "future" ? "match_future_computed" : "match_computed",
-      note: `Match vs ${reqRow.title} (${scenario}): ${fit.score.toFixed(3)} — viewed in a decision context.`,
+      note: `Match vs ${reqRow.title} (${scenario}): ${fit.score.toFixed(3)} — engine v${fit.versions?.engine}, evidence ${fit.versions?.evidence ?? "?"}, requisition ${fit.versions?.requisition ?? "?"}.`,
       timestamp: now,
     },
   ];
-
-  const { error: updateErr } = await supabase
+  await supabase
     .from("digital_twins")
     .update({ computed_fits: nextFits, audit_events: nextAudit })
     .eq("id", targetTwin.id);
-  if (updateErr) throw updateErr;
 
   const lineage = await resolveLineage(supabase, targetTwin.id);
-  return jsonResponse({ ok: true, cached: false, fit, lineage });
+  return jsonResponse({
+    ok: true,
+    cached: false,
+    scope,
+    person: { id: targetTwin.id, name: targetTwin.name, role: targetTwin.role },
+    fit,
+    lineage,
+    evidence_artifacts: artifacts,
+  });
 });

@@ -21,7 +21,8 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
               "candidate_proficiency": 3,
               "edge": null,
               "contribution": 0.75,
-              "reason": "Holds Go at 3/4 — below the required bar."
+              "reason": "Holds Go at 3/4 — below the required bar.",
+              "limitation": null
             },
             {
               "skill": "Docker",
@@ -30,7 +31,8 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
               "candidate_proficiency": 2,
               "edge": null,
               "contribution": 0.6666666666666666,
-              "reason": "Holds Docker at 2/3 — below the required bar."
+              "reason": "Holds Docker at 2/3 — below the required bar.",
+              "limitation": null
             }
           ]
         },
@@ -48,7 +50,8 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
                 "weight": 0.6
               },
               "contribution": 0.36,
-              "reason": "No direct REST APIs; backed by Go → REST APIs (ADJACENT_TO, 0.60)."
+              "reason": "No direct REST APIs; backed by Go → REST APIs (ADJACENT_TO, 0.60).",
+              "limitation": "Adjacent support is NOT direct equivalence: this person has no evidence for the required skill itself. Confirm real capability before relying on it."
             }
           ]
         },
@@ -72,7 +75,8 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
             "candidate_proficiency": 3,
             "edge": null,
             "contribution": 0.75,
-            "reason": "Holds Go at 3/4 — below the required bar."
+            "reason": "Holds Go at 3/4 — below the required bar.",
+            "limitation": null
           },
           {
             "skill": "Docker",
@@ -81,7 +85,8 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
             "candidate_proficiency": 2,
             "edge": null,
             "contribution": 0.6666666666666666,
-            "reason": "Holds Docker at 2/3 — below the required bar."
+            "reason": "Holds Docker at 2/3 — below the required bar.",
+            "limitation": null
           }
         ],
         "adjacent": [
@@ -96,7 +101,8 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
               "weight": 0.6
             },
             "contribution": 0.36,
-            "reason": "No direct REST APIs; backed by Go → REST APIs (ADJACENT_TO, 0.60)."
+            "reason": "No direct REST APIs; backed by Go → REST APIs (ADJACENT_TO, 0.60).",
+            "limitation": "Adjacent support is NOT direct equivalence: this person has no evidence for the required skill itself. Confirm real capability before relying on it."
           }
         ],
         "transferable": [
@@ -107,10 +113,20 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
             "candidate_proficiency": null,
             "edge": null,
             "contribution": null,
-            "reason": "No direct or adjacent path; SQL shares the same category (Data)."
+            "reason": "No direct or adjacent path; SQL shares the same category (Data).",
+            "limitation": "Transferable support is the weakest signal: it does not establish any proficiency in the required skill and contributes no points to the score. Treat it as a development candidate, not capability."
           }
         ],
         "gaps": []
+      },
+      "versions": {
+        "engine": "2",
+        "evidence": "9882b815",
+        "requisition": "unknown"
+      },
+      "assumptions": {
+        "horizon": "Current",
+        "note": "Current requirements — as recorded on the requisition today."
       },
       "computed_at": "2026-09-15T09:00:00Z"
     },
@@ -151,7 +167,8 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
             "candidate_proficiency": null,
             "edge": null,
             "contribution": null,
-            "reason": "No direct or adjacent path; Docker shares the same category (DevOps)."
+            "reason": "No direct or adjacent path; Docker shares the same category (DevOps).",
+            "limitation": "Transferable support is the weakest signal: it does not establish any proficiency in the required skill and contributes no points to the score. Treat it as a development candidate, not capability."
           }
         ],
         "gaps": [
@@ -162,9 +179,19 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
             "candidate_proficiency": null,
             "edge": null,
             "contribution": null,
-            "reason": "No direct, adjacent, or transferable path found for Event-driven architecture."
+            "reason": "No direct, adjacent, or transferable path found for Event-driven architecture.",
+            "limitation": null
           }
         ]
+      },
+      "versions": {
+        "engine": "2",
+        "evidence": "9882b815",
+        "requisition": "unknown"
+      },
+      "assumptions": {
+        "horizon": "12–24 month outlook",
+        "note": "12–24 month outlook — derived from the requisition's future_skills. Assumption: these skills are the expected demand; edit the requisition to change them."
       },
       "computed_at": "2026-09-15T09:00:00Z"
     }
@@ -187,7 +214,8 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
               "candidate_proficiency": 4,
               "edge": null,
               "contribution": 1,
-              "reason": "Holds SQL at 4/4 required."
+              "reason": "Holds SQL at 4/4 required.",
+              "limitation": null
             },
             {
               "skill": "Python",
@@ -196,7 +224,8 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
               "candidate_proficiency": 3,
               "edge": null,
               "contribution": 1,
-              "reason": "Holds Python at 3/3 required."
+              "reason": "Holds Python at 3/3 required.",
+              "limitation": null
             },
             {
               "skill": "Data Modeling",
@@ -205,7 +234,8 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
               "candidate_proficiency": 2,
               "edge": null,
               "contribution": 0.6666666666666666,
-              "reason": "Holds Data Modeling at 2/3 — below the required bar."
+              "reason": "Holds Data Modeling at 2/3 — below the required bar.",
+              "limitation": null
             },
             {
               "skill": "Tableau",
@@ -214,7 +244,8 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
               "candidate_proficiency": 3,
               "edge": null,
               "contribution": 1,
-              "reason": "Holds Tableau at 3/2 required."
+              "reason": "Holds Tableau at 3/2 required.",
+              "limitation": null
             }
           ]
         },
@@ -242,7 +273,8 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
             "candidate_proficiency": 4,
             "edge": null,
             "contribution": 1,
-            "reason": "Holds SQL at 4/4 required."
+            "reason": "Holds SQL at 4/4 required.",
+            "limitation": null
           },
           {
             "skill": "Python",
@@ -251,7 +283,8 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
             "candidate_proficiency": 3,
             "edge": null,
             "contribution": 1,
-            "reason": "Holds Python at 3/3 required."
+            "reason": "Holds Python at 3/3 required.",
+            "limitation": null
           },
           {
             "skill": "Data Modeling",
@@ -260,7 +293,8 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
             "candidate_proficiency": 2,
             "edge": null,
             "contribution": 0.6666666666666666,
-            "reason": "Holds Data Modeling at 2/3 — below the required bar."
+            "reason": "Holds Data Modeling at 2/3 — below the required bar.",
+            "limitation": null
           },
           {
             "skill": "Tableau",
@@ -269,12 +303,22 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
             "candidate_proficiency": 3,
             "edge": null,
             "contribution": 1,
-            "reason": "Holds Tableau at 3/2 required."
+            "reason": "Holds Tableau at 3/2 required.",
+            "limitation": null
           }
         ],
         "adjacent": [],
         "transferable": [],
         "gaps": []
+      },
+      "versions": {
+        "engine": "2",
+        "evidence": "bc60c95a",
+        "requisition": "unknown"
+      },
+      "assumptions": {
+        "horizon": "Current",
+        "note": "Current requirements — as recorded on the requisition today."
       },
       "computed_at": "2026-09-15T09:00:00Z"
     }
@@ -297,7 +341,8 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
               "candidate_proficiency": 4,
               "edge": null,
               "contribution": 1,
-              "reason": "Holds Go at 4/4 required."
+              "reason": "Holds Go at 4/4 required.",
+              "limitation": null
             },
             {
               "skill": "PostgreSQL",
@@ -306,7 +351,8 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
               "candidate_proficiency": 4,
               "edge": null,
               "contribution": 1,
-              "reason": "Holds PostgreSQL at 4/3 required."
+              "reason": "Holds PostgreSQL at 4/3 required.",
+              "limitation": null
             },
             {
               "skill": "Docker",
@@ -315,7 +361,8 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
               "candidate_proficiency": 3,
               "edge": null,
               "contribution": 1,
-              "reason": "Holds Docker at 3/3 required."
+              "reason": "Holds Docker at 3/3 required.",
+              "limitation": null
             }
           ]
         },
@@ -333,7 +380,8 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
                 "weight": 0.6
               },
               "contribution": 0.48,
-              "reason": "No direct REST APIs; backed by Go → REST APIs (ADJACENT_TO, 0.60)."
+              "reason": "No direct REST APIs; backed by Go → REST APIs (ADJACENT_TO, 0.60).",
+              "limitation": "Adjacent support is NOT direct equivalence: this person has no evidence for the required skill itself. Confirm real capability before relying on it."
             }
           ]
         },
@@ -357,7 +405,8 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
             "candidate_proficiency": 4,
             "edge": null,
             "contribution": 1,
-            "reason": "Holds Go at 4/4 required."
+            "reason": "Holds Go at 4/4 required.",
+            "limitation": null
           },
           {
             "skill": "PostgreSQL",
@@ -366,7 +415,8 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
             "candidate_proficiency": 4,
             "edge": null,
             "contribution": 1,
-            "reason": "Holds PostgreSQL at 4/3 required."
+            "reason": "Holds PostgreSQL at 4/3 required.",
+            "limitation": null
           },
           {
             "skill": "Docker",
@@ -375,7 +425,8 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
             "candidate_proficiency": 3,
             "edge": null,
             "contribution": 1,
-            "reason": "Holds Docker at 3/3 required."
+            "reason": "Holds Docker at 3/3 required.",
+            "limitation": null
           }
         ],
         "adjacent": [
@@ -390,11 +441,21 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
               "weight": 0.6
             },
             "contribution": 0.48,
-            "reason": "No direct REST APIs; backed by Go → REST APIs (ADJACENT_TO, 0.60)."
+            "reason": "No direct REST APIs; backed by Go → REST APIs (ADJACENT_TO, 0.60).",
+            "limitation": "Adjacent support is NOT direct equivalence: this person has no evidence for the required skill itself. Confirm real capability before relying on it."
           }
         ],
         "transferable": [],
         "gaps": []
+      },
+      "versions": {
+        "engine": "2",
+        "evidence": "176605a3",
+        "requisition": "unknown"
+      },
+      "assumptions": {
+        "horizon": "Current",
+        "note": "Current requirements — as recorded on the requisition today."
       },
       "computed_at": "2026-09-15T09:00:00Z"
     }
@@ -417,7 +478,8 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
               "candidate_proficiency": 2,
               "edge": null,
               "contribution": 0.5,
-              "reason": "Holds Go at 2/4 — below the required bar."
+              "reason": "Holds Go at 2/4 — below the required bar.",
+              "limitation": null
             },
             {
               "skill": "REST APIs",
@@ -426,7 +488,8 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
               "candidate_proficiency": 3,
               "edge": null,
               "contribution": 1,
-              "reason": "Holds REST APIs at 3/3 required."
+              "reason": "Holds REST APIs at 3/3 required.",
+              "limitation": null
             }
           ]
         },
@@ -454,7 +517,8 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
             "candidate_proficiency": 2,
             "edge": null,
             "contribution": 0.5,
-            "reason": "Holds Go at 2/4 — below the required bar."
+            "reason": "Holds Go at 2/4 — below the required bar.",
+            "limitation": null
           },
           {
             "skill": "REST APIs",
@@ -463,7 +527,8 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
             "candidate_proficiency": 3,
             "edge": null,
             "contribution": 1,
-            "reason": "Holds REST APIs at 3/3 required."
+            "reason": "Holds REST APIs at 3/3 required.",
+            "limitation": null
           }
         ],
         "adjacent": [],
@@ -476,7 +541,8 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
             "candidate_proficiency": null,
             "edge": null,
             "contribution": null,
-            "reason": "No direct, adjacent, or transferable path found for PostgreSQL."
+            "reason": "No direct, adjacent, or transferable path found for PostgreSQL.",
+            "limitation": null
           },
           {
             "skill": "Docker",
@@ -485,9 +551,19 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
             "candidate_proficiency": null,
             "edge": null,
             "contribution": null,
-            "reason": "No direct, adjacent, or transferable path found for Docker."
+            "reason": "No direct, adjacent, or transferable path found for Docker.",
+            "limitation": null
           }
         ]
+      },
+      "versions": {
+        "engine": "2",
+        "evidence": "50873a41",
+        "requisition": "unknown"
+      },
+      "assumptions": {
+        "horizon": "Current",
+        "note": "Current requirements — as recorded on the requisition today."
       },
       "computed_at": "2026-09-15T09:00:00Z"
     }
@@ -510,7 +586,8 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
               "candidate_proficiency": 4,
               "edge": null,
               "contribution": 1,
-              "reason": "Holds SQL at 4/4 required."
+              "reason": "Holds SQL at 4/4 required.",
+              "limitation": null
             },
             {
               "skill": "Python",
@@ -519,7 +596,8 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
               "candidate_proficiency": 3,
               "edge": null,
               "contribution": 1,
-              "reason": "Holds Python at 3/3 required."
+              "reason": "Holds Python at 3/3 required.",
+              "limitation": null
             },
             {
               "skill": "Data Modeling",
@@ -528,7 +606,8 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
               "candidate_proficiency": 3,
               "edge": null,
               "contribution": 1,
-              "reason": "Holds Data Modeling at 3/3 required."
+              "reason": "Holds Data Modeling at 3/3 required.",
+              "limitation": null
             },
             {
               "skill": "Tableau",
@@ -537,7 +616,8 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
               "candidate_proficiency": 2,
               "edge": null,
               "contribution": 1,
-              "reason": "Holds Tableau at 2/2 required."
+              "reason": "Holds Tableau at 2/2 required.",
+              "limitation": null
             }
           ]
         },
@@ -565,7 +645,8 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
             "candidate_proficiency": 4,
             "edge": null,
             "contribution": 1,
-            "reason": "Holds SQL at 4/4 required."
+            "reason": "Holds SQL at 4/4 required.",
+            "limitation": null
           },
           {
             "skill": "Python",
@@ -574,7 +655,8 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
             "candidate_proficiency": 3,
             "edge": null,
             "contribution": 1,
-            "reason": "Holds Python at 3/3 required."
+            "reason": "Holds Python at 3/3 required.",
+            "limitation": null
           },
           {
             "skill": "Data Modeling",
@@ -583,7 +665,8 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
             "candidate_proficiency": 3,
             "edge": null,
             "contribution": 1,
-            "reason": "Holds Data Modeling at 3/3 required."
+            "reason": "Holds Data Modeling at 3/3 required.",
+            "limitation": null
           },
           {
             "skill": "Tableau",
@@ -592,12 +675,22 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
             "candidate_proficiency": 2,
             "edge": null,
             "contribution": 1,
-            "reason": "Holds Tableau at 2/2 required."
+            "reason": "Holds Tableau at 2/2 required.",
+            "limitation": null
           }
         ],
         "adjacent": [],
         "transferable": [],
         "gaps": []
+      },
+      "versions": {
+        "engine": "2",
+        "evidence": "ebe00abd",
+        "requisition": "unknown"
+      },
+      "assumptions": {
+        "horizon": "Current",
+        "note": "Current requirements — as recorded on the requisition today."
       },
       "computed_at": "2026-09-15T09:00:00Z"
     }

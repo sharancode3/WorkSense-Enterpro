@@ -5,10 +5,20 @@
 // WorkSense Skill Intelligence Graph engine — the shared, deterministic core.
 // Zero LLM calls. Imported by backend functions (Recruitment, Onboarding,
 // Recommendation Hub) — never recomputed per page view; results are persisted
-// into the subject's digital_twins.computed_fits[].
+// into digital_twins.computed_fits[] and, for skill-match, the durable
+// skill_fits table.
+//
+// Phase 8: every fit is versioned against the engine, the person's evidence
+// and the requisition content; cached results are marked stale when any of
+// them change. Adjacency and transferable support carry explicit limitations
+// (never direct equivalence). The evidence section counts DISTINCT artifacts,
+// not skill assertions.
 // ---------------------------------------------------------------------------
 
 export type VerificationRigor = "low" | "medium" | "high";
+
+/** Bump when the scoring semantics change — stale cached fits are recomputed. */
+export const ENGINE_VERSION = "2";
 
 export interface SkillClaim {
   name: string;
@@ -46,6 +56,9 @@ export interface FitItem {
   edge: { from_skill: string; type: EdgeType; weight: number } | null;
   contribution: number | null;
   reason: string;
+  /** Phase 8: honest limitation of this classification (never equivalence).
+   *  Optional so legacy generated fits remain valid. */
+  limitation?: string | null;
 }
 
 export interface FitRecord {
@@ -65,6 +78,18 @@ export interface FitRecord {
     adjacent: FitItem[];
     transferable: FitItem[];
     gaps: FitItem[];
+  };
+  /** Phase 8: what the fit is versioned against (stale detection). Optional so
+   *  legacy generated fits remain valid; missing versions are treated as stale. */
+  versions?: {
+    engine: string;
+    evidence: string;
+    requisition: string;
+  };
+  /** Phase 8: named horizon + assumption the fit was computed under. */
+  assumptions?: {
+    horizon: string;
+    note: string;
   };
   computed_at: string;
 }
@@ -96,6 +121,53 @@ export function findEdge(
 
 const round3 = (n: number) => Math.round(n * 1000) / 1000;
 
+/** Deterministic FNV-1a hex (uniquely named to avoid bundle collisions). */
+export function graphFnv1aHex(str: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(16).padStart(8, "0");
+}
+
+/** Version hash over the requisition's skill content (phase 8 stale check). */
+export function requisitionContentHash(
+  requiredSkills: RequiredSkill[],
+  futureSkills: RequiredSkill[],
+  seniorityLevel: number
+): string {
+  const payload = [
+    ...(requiredSkills ?? []).map((s) => `${s.skill}|${s.target_proficiency}`).sort(),
+    ...(futureSkills ?? []).map((s) => `future:${s.skill}|${s.target_proficiency}`).sort(),
+    `level:${seniorityLevel}`,
+  ].join(";");
+  return graphFnv1aHex(payload);
+}
+
+/** Version hash over the person's resolved skill claims (evidence version). */
+export function claimHash(claims: SkillClaim[]): string {
+  const payload = (claims ?? [])
+    .map((c) => `${c.name}|${c.proficiency}|${c.evidence_source}|${c.verification_rigor}`)
+    .sort()
+    .join(";");
+  return graphFnv1aHex(payload);
+}
+
+/** Phase 8: a cached fit is stale when the engine, the person's evidence or
+ *  the requisition content changed since it was computed. */
+export function fitIsStale(fit: FitRecord | null, current: { engine: string; evidence: string; requisition: string }): boolean {
+  if (!fit) return true;
+  const v = fit.versions;
+  if (!v) return true; // pre-version fits are always stale
+  return v.engine !== current.engine || v.evidence !== current.evidence || v.requisition !== current.requisition;
+}
+
+const HORIZON_LABEL: Record<string, string> = {
+  current: "Current requirements — as recorded on the requisition today.",
+  future: "12–24 month outlook — derived from the requisition's future_skills. Assumption: these skills are the expected demand; edit the requisition to change them.",
+};
+
 export function computeFit(params: {
   candidateSkills: SkillClaim[];
   candidateLevel: number;
@@ -106,6 +178,11 @@ export function computeFit(params: {
   target: { type: "requisition"; id: string; title: string };
   scenario: "current" | "future";
   computedAt?: string;
+  /** Phase 8: distinct artifact count behind the claims (dedup, never
+   *  one-per-assertion). Falls back to claim count when not supplied. */
+  evidenceArtifactCount?: number;
+  /** Phase 8: requisition content hash (stale detection). */
+  requisitionVersion?: string;
 }): FitRecord {
   const threshold = params.threshold ?? DEFAULT_EVIDENCE_THRESHOLD;
   const graph = params.skillGraph;
@@ -138,6 +215,7 @@ export function computeFit(params: {
           edge: null,
           contribution: ratio,
           reason: `Holds ${req.skill} at ${ownProficiency}/${req.target_proficiency} required.`,
+          limitation: null,
         });
       } else {
         directItems.push({
@@ -148,6 +226,7 @@ export function computeFit(params: {
           edge: null,
           contribution: ratio,
           reason: `Holds ${req.skill} at ${ownProficiency}/${req.target_proficiency} — below the required bar.`,
+          limitation: null,
         });
       }
       continue;
@@ -173,6 +252,7 @@ export function computeFit(params: {
         edge: { from_skill: bestAdj.from, type: "ADJACENT_TO", weight: bestAdj.edge.weight },
         contribution: bestAdj.value,
         reason: `No direct ${req.skill}; backed by ${bestAdj.from} → ${req.skill} (ADJACENT_TO, ${bestAdj.edge.weight.toFixed(2)}).`,
+        limitation: "Adjacent support is NOT direct equivalence: this person has no evidence for the required skill itself. Confirm real capability before relying on it.",
       });
       continue;
     }
@@ -207,6 +287,7 @@ export function computeFit(params: {
         reason: transfer.edge
           ? `No direct or adjacent path; ${transfer.from} → ${req.skill} is transferable.`
           : `No direct or adjacent path; ${transfer.from} shares the ${transfer.via}.`,
+        limitation: "Transferable support is the weakest signal: it does not establish any proficiency in the required skill and contributes no points to the score. Treat it as a development candidate, not capability.",
       });
       continue;
     }
@@ -219,6 +300,7 @@ export function computeFit(params: {
       edge: null,
       contribution: null,
       reason: `No direct, adjacent, or transferable path found for ${req.skill}.`,
+      limitation: null,
     });
   }
 
@@ -235,9 +317,12 @@ export function computeFit(params: {
         ? adjacentValues.reduce((a, b) => a + b, 0) / missing
         : 0;
 
-  const artifactCount = params.candidateSkills.filter(
-    (s) => s.verification_rigor === "high" || s.verification_rigor === "medium"
-  ).length;
+  // Phase 8: evidence counts DISTINCT artifacts (deduped by source), never one
+  // point per skill assertion. Fallback to the claim count for legacy callers.
+  const artifactCount =
+    params.evidenceArtifactCount !== undefined
+      ? params.evidenceArtifactCount
+      : params.candidateSkills.filter((s) => s.verification_rigor === "high" || s.verification_rigor === "medium").length;
   const S_evidence = Math.min(1, artifactCount / threshold);
 
   const S_seniority = Math.max(0, 1 - 0.2 * Math.abs(params.candidateLevel - params.roleLevel));
@@ -269,6 +354,15 @@ export function computeFit(params: {
       adjacent: adjacentItems,
       transferable: transferableItems,
       gaps: gapItems,
+    },
+    versions: {
+      engine: ENGINE_VERSION,
+      evidence: claimHash(params.candidateSkills),
+      requisition: params.requisitionVersion ?? "unknown",
+    },
+    assumptions: {
+      horizon: params.scenario === "future" ? "12–24 month outlook" : "Current",
+      note: HORIZON_LABEL[params.scenario],
     },
     computed_at: params.computedAt ?? new Date().toISOString(),
   };
@@ -1075,6 +1169,25 @@ export async function resolveLineage(
   const evidenceIds = [...new Set(assertions.flatMap((a) => a.evidence_ids ?? []))];
   const evidence = await loadEvidence(supabase, evidenceIds);
   return { assertions, evidence };
+}
+
+/** Phase 8: distinct supporting artifacts behind a twin's scored assertions.
+ *  An artifact is keyed by its source (e.g. one resume document or one work
+ *  sample). Multiple assertions from the SAME artifact deduplicate to ONE
+ *  artifact — a skill assertion is never counted as a separate independent
+ *  artifact, and one artifact cannot inflate the evidence score N times. */
+export function evidenceArtifactKey(e: { source_type?: string | null; source_id?: string | null; id: string }): string {
+  if (e.source_id) return `artifact:${e.source_type ?? "unknown"}|${e.source_id}`;
+  return `item:${e.id}`;
+}
+
+export async function resolveEvidenceArtifacts(
+  supabase,
+  twinId: string
+): Promise<{ artifact_keys: string[]; count: number }> {
+  const lineage = await resolveLineage(supabase, twinId);
+  const keys = [...new Set(lineage.evidence.map(evidenceArtifactKey))];
+  return { artifact_keys: keys, count: keys.length };
 }
 
 /** Claims for scoring: assertions when present (canonical), otherwise the

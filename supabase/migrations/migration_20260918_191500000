@@ -1,0 +1,22 @@
+-- Phase 8: durable, atomic skill-fit storage. Each (twin, requisition, scenario)
+-- fits exactly one row; skill-match upserts it so two concurrent recomputes
+-- never lose each other's result (no read-modify-write on a jsonb array).
+-- digital_twins.computed_fits[] stays as a best-effort legacy mirror.
+create table public.skill_fits (
+  id uuid primary key default gen_random_uuid(),
+  org_id uuid not null references public.organizations(id) on delete cascade,
+  twin_id uuid not null references public.digital_twins(id) on delete cascade,
+  target_type text not null check (target_type in ('requisition')),
+  target_id uuid not null references public.job_requisitions(id) on delete cascade,
+  scenario text not null check (scenario in ('current','future')),
+  fit jsonb not null default '{}'::jsonb,
+  computed_at timestamptz not null default now(),
+  created_at timestamptz not null default now(),
+  unique (twin_id, target_type, target_id, scenario)
+);
+create index skill_fits_org_idx on public.skill_fits (org_id, twin_id);
+create index skill_fits_target_idx on public.skill_fits (org_id, target_id, scenario);
+alter table public.skill_fits enable row level security;
+create policy skill_fits_read on public.skill_fits for select using (
+  exists (select 1 from public.current_twin() ct where ct.org_id = public.skill_fits.org_id)
+);

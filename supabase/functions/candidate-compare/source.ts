@@ -75,8 +75,25 @@ Deno.serve(async (req) => {
     ? await supabase.from("digital_twins").select("id, name, email, computed_fits").in("id", twinIds)
     : { data: [] as never[] };
 
+  // Durable fits first (skill_fits — atomic per target), then legacy fallback
+  // to the twin's computed_fits array.
+  const { data: storedFits } = twinIds.length > 0
+    ? await supabase
+        .from("skill_fits")
+        .select("twin_id, fit")
+        .eq("org_id", caller.org_id)
+        .eq("target_type", "requisition")
+        .eq("target_id", reqId)
+        .eq("scenario", "current")
+        .in("twin_id", twinIds)
+    : { data: [] as never[] };
+
   const fits = new Map<string, { score: number; computed_at: string; classification?: unknown }>();
+  for (const s of (storedFits ?? []) as { twin_id: string; fit?: unknown }[]) {
+    if (s?.fit) fits.set(s.twin_id, s.fit as { score: number; computed_at: string; classification?: unknown });
+  }
   for (const t of (twinRows ?? []) as { id: string; name: string; email: string | null; computed_fits?: unknown[] }[]) {
+    if (fits.has(t.id)) continue;
     const entry = (t.computed_fits ?? []).find(
       (f) =>
         (f as { target_type?: string; target_id?: string; scenario?: string }).target_type === "requisition" &&

@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
+  claimHash,
   computeFit,
   DEFAULT_EVIDENCE_THRESHOLD,
+  ENGINE_VERSION,
   findEdge,
+  fitIsStale,
   fitKey,
   MATCH_WEIGHTS,
+  requisitionContentHash,
   type GraphSkill,
   type RequiredSkill,
   type SkillClaim,
@@ -253,5 +257,116 @@ describe("findEdge & fitKey", () => {
     expect(fitKey({ target_type: "requisition", target_id: "r1", scenario: "current" })).not.toBe(
       fitKey({ target_type: "requisition", target_id: "r1", scenario: "future" })
     );
+  });
+});
+
+describe("skill-graph-engine (Phase 8 — evidence-based development)", () => {
+  const mkFit = (over: Partial<ReturnType<typeof computeFit>> = {}) => {
+    const base = computeFit({
+      candidateSkills: [claim("JavaScript", 4, "medium")],
+      candidateLevel: 3,
+      requiredSkills: [req("React", 3)],
+      roleLevel: 3,
+      skillGraph: graph,
+      target: { type: "requisition", id: "r1", title: "FE" },
+      scenario: "current",
+      evidenceArtifactCount: 2,
+      requisitionVersion: "abc",
+    });
+    return { ...base, ...over };
+  };
+
+  it("adjacent support is labeled as not-equivalent and carries its path + weight", () => {
+    const fit = mkFit();
+    const adj = fit.classification.adjacent[0];
+    expect(adj).toBeDefined();
+    expect(adj.limitation).toContain("NOT direct equivalence");
+    expect(adj.edge).toMatchObject({ from_skill: "JavaScript", type: "ADJACENT_TO", weight: 0.8 });
+    expect(adj.contribution).not.toBeNull();
+  });
+
+  it("transferable support earns no points and is labeled as the weakest signal", () => {
+    const fit = computeFit({
+      candidateSkills: [claim("Python", 4, "medium")],
+      candidateLevel: 3,
+      requiredSkills: [req("TypeScript", 3)],
+      roleLevel: 3,
+      skillGraph: graph,
+      target: { type: "requisition", id: "r1", title: "TS" },
+      scenario: "current",
+      evidenceArtifactCount: 1,
+      requisitionVersion: "abc",
+    });
+    const tr = fit.classification.transferable[0];
+    expect(tr).toBeDefined();
+    expect(tr.contribution).toBeNull();
+    expect(tr.limitation).toContain("weakest signal");
+  });
+
+  it("evidence section counts distinct artifacts, not assertions (dedup)", () => {
+    const a = mkFit({}); // evidenceArtifactCount = 2
+    expect(a.sections.evidence.artifact_count).toBe(2);
+    const b = computeFit({
+      candidateSkills: [claim("JavaScript", 4, "medium")],
+      candidateLevel: 3,
+      requiredSkills: [req("React", 3)],
+      roleLevel: 3,
+      skillGraph: graph,
+      target: { type: "requisition", id: "r1", title: "FE" },
+      scenario: "current",
+      evidenceArtifactCount: 1,
+      requisitionVersion: "abc",
+    });
+    expect(b.sections.evidence.artifact_count).toBe(1);
+    // Default fallback counts claims (legacy behavior preserved).
+    const legacy = computeFit({
+      candidateSkills: [claim("JavaScript", 4, "medium")],
+      candidateLevel: 3,
+      requiredSkills: [req("React", 3)],
+      roleLevel: 3,
+      skillGraph: graph,
+      target: { type: "requisition", id: "r1", title: "FE" },
+      scenario: "current",
+      requisitionVersion: "abc",
+    });
+    expect(legacy.sections.evidence.artifact_count).toBe(1); // one medium claim
+  });
+
+  it("versions record engine, evidence and requisition hashes", () => {
+    const fit = mkFit();
+    expect(fit.versions?.engine).toBe(ENGINE_VERSION);
+    expect(fit.versions?.evidence.length).toBeGreaterThan(0);
+    expect(fit.versions?.requisition).toBe("abc");
+    expect(fit.assumptions?.horizon).toBe("Current");
+    const future = computeFit({
+      candidateSkills: [claim("JavaScript", 4, "medium")],
+      candidateLevel: 3,
+      requiredSkills: [req("React", 3)],
+      roleLevel: 3,
+      skillGraph: graph,
+      target: { type: "requisition", id: "r1", title: "FE" },
+      scenario: "future",
+      evidenceArtifactCount: 1,
+      requisitionVersion: "abc",
+    });
+    expect(future.assumptions?.horizon).toBe("12–24 month outlook");
+  });
+
+  it("fitIsStale detects engine/evidence/requisition changes and legacy fits", () => {
+    const fit = mkFit();
+    const current = { engine: fit.versions!.engine, evidence: fit.versions!.evidence, requisition: fit.versions!.requisition };
+    expect(fitIsStale(fit, current)).toBe(false);
+    expect(fitIsStale(fit, { ...current, engine: "99" })).toBe(true);
+    expect(fitIsStale(fit, { ...current, evidence: "changed" })).toBe(true);
+    expect(fitIsStale(fit, { ...current, requisition: "changed" })).toBe(true);
+    expect(fitIsStale({ ...fit, versions: undefined }, current)).toBe(true); // legacy fit is stale
+    expect(fitIsStale(null, current)).toBe(true);
+  });
+
+  it("hashes are deterministic and content-sensitive", () => {
+    expect(claimHash([claim("Go", 4, "high")])).toBe(claimHash([claim("Go", 4, "high")]));
+    expect(claimHash([claim("Go", 4, "high")])).not.toBe(claimHash([claim("Go", 3, "high")]));
+    expect(requisitionContentHash([req("Go", 4)], [], 3)).toBe(requisitionContentHash([req("Go", 4)], [], 3));
+    expect(requisitionContentHash([req("Go", 4)], [], 3)).not.toBe(requisitionContentHash([req("Go", 5)], [], 3));
   });
 });

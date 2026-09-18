@@ -177,6 +177,25 @@ export async function resolveLineage(
   return { assertions, evidence };
 }
 
+/** Phase 8: distinct supporting artifacts behind a twin's scored assertions.
+ *  An artifact is keyed by its source (e.g. one resume document or one work
+ *  sample). Multiple assertions from the SAME artifact deduplicate to ONE
+ *  artifact — a skill assertion is never counted as a separate independent
+ *  artifact, and one artifact cannot inflate the evidence score N times. */
+export function evidenceArtifactKey(e: { source_type?: string | null; source_id?: string | null; id: string }): string {
+  if (e.source_id) return `artifact:${e.source_type ?? "unknown"}|${e.source_id}`;
+  return `item:${e.id}`;
+}
+
+export async function resolveEvidenceArtifacts(
+  supabase,
+  twinId: string
+): Promise<{ artifact_keys: string[]; count: number }> {
+  const lineage = await resolveLineage(supabase, twinId);
+  const keys = [...new Set(lineage.evidence.map(evidenceArtifactKey))];
+  return { artifact_keys: keys, count: keys.length };
+}
+
 /** Claims for scoring: assertions when present (canonical), otherwise the
  *  legacy verified_skills jsonb (golden seed / pre-migration records). */
 export async function resolveSkillClaims(

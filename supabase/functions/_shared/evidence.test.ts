@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildSkillClaims,
+  evidenceArtifactKey,
   evidenceSourceForState,
   resolveSkillClaims,
   type AssertionRow,
@@ -149,5 +150,24 @@ describe("type surface", () => {
       metadata: {},
     };
     expect(ev.source_type).toBe("resume_document");
+  });
+});
+
+describe("evidence (Phase 8 — artifact dedup)", () => {
+  it("deduplicates multiple assertions that come from the same artifact", () => {
+    const artifactKey = evidenceArtifactKey;
+    // Same source_id across three evidence items => ONE artifact key.
+    const keys = [
+      artifactKey({ source_type: "resume_document", source_id: "resume:job1", id: "e1" }),
+      artifactKey({ source_type: "resume_document", source_id: "resume:job1", id: "e2" }),
+      artifactKey({ source_type: "resume_document", source_id: "resume:job1", id: "e3" }),
+    ];
+    expect(new Set(keys).size).toBe(1);
+    // A different artifact => a different key.
+    expect(artifactKey({ source_type: "work_sample", source_id: "ws:42", id: "e4" })).not.toBe(keys[0]);
+    // Evidence without a source_id is its own item-level artifact.
+    const a = artifactKey({ source_type: "feedback", source_id: null, id: "e9" });
+    const b = artifactKey({ source_type: "feedback", source_id: null, id: "e10" });
+    expect(a).not.toBe(b);
   });
 });

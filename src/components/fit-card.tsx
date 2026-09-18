@@ -1,4 +1,4 @@
-import { ArrowLeftRight, BadgeCheck, FileText, RefreshCw, XCircle } from "lucide-react";
+import { ArrowLeftRight, BadgeCheck, FileText, Info, RefreshCw, XCircle } from "lucide-react";
 import { fitBand, type EvidenceItem, type FitItem, type FitLineage, type FitRecord } from "@/lib/skill-graph";
 
 const CLASS_META: Record<
@@ -44,17 +44,18 @@ function ScoreBlock({ fit }: { fit: FitRecord }) {
   );
 }
 
-function SectionBar({ label, value, detail }: { label: string; value: number; detail: string }) {
+function SectionBar({ label, value, detail, weightLabel }: { label: string; value: number; detail: string; weightLabel: string }) {
   return (
     <div className="rounded-lg bg-muted p-4">
       <div className="flex items-baseline justify-between">
         <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">{label}</span>
-        <span className="text-lg font-extrabold text-foreground">{pct(value)}</span>
+        <span className="text-lg font-extrabold text-foreground">{pct(value)}<span className="text-xs font-semibold text-muted-foreground">% of this section</span></span>
       </div>
       <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-white">
         <div className="h-full bg-foreground" style={{ width: `${value * 100}%` }} />
       </div>
       <p className="mt-2 text-xs text-muted-foreground">{detail}</p>
+      <p className="mt-1 text-[11px] font-semibold text-primary">{weightLabel}</p>
     </div>
   );
 }
@@ -76,17 +77,24 @@ function ItemRow({ item }: { item: FitItem }) {
           req {item.required_proficiency}
           {item.candidate_proficiency !== null && ` · holds ${item.candidate_proficiency}`}
         </span>
-        {item.contribution !== null && (
-          <span className="ml-auto text-xs font-semibold text-muted-foreground">+{Math.round(item.contribution * 100)} pts</span>
+        {item.contribution !== null && item.classification !== "transferable" && (
+          <span className="ml-auto text-xs font-semibold text-muted-foreground">
+            section contribution {item.contribution.toFixed(2)} (0–1)
+          </span>
         )}
       </div>
       {item.edge && (
         <span className="inline-flex w-fit items-center gap-1 rounded-md bg-muted px-2 py-0.5 font-mono text-xs text-foreground">
           {item.edge.from_skill} → {item.skill}
-          <span className="text-muted-foreground">· {item.edge.type} {item.edge.weight.toFixed(2)}</span>
+          <span className="text-muted-foreground">· {item.edge.type} weight {item.edge.weight.toFixed(2)}</span>
         </span>
       )}
       <p className="text-xs leading-relaxed text-muted-foreground">{item.reason}</p>
+      {item.limitation && (
+        <p className="flex items-start gap-1 rounded-md bg-amber-50 px-2 py-1 text-[11px] leading-relaxed text-amber-800">
+          <Info className="mt-0.5 h-3 w-3 shrink-0" /> {item.limitation}
+        </p>
+      )}
     </li>
   );
 }
@@ -170,18 +178,43 @@ export function FitCard({ fit, lineage }: { fit: FitRecord; lineage?: FitLineage
       <ScoreBlock fit={fit} />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <SectionBar label="Direct" value={sections.direct.value} detail={`${sections.direct.items.length} owned skill(s)`} />
-        <SectionBar label="Adjacent" value={sections.adjacent.value} detail={`${sections.adjacent.items.length} adjacent path(s)`} />
-        <SectionBar label="Evidence" value={sections.evidence.value} detail={`${sections.evidence.artifact_count}/${sections.evidence.threshold} verified artifacts`} />
-        <SectionBar label="Seniority" value={sections.seniority.value} detail={`Level ${sections.seniority.candidate_level} vs ${sections.seniority.role_level}`} />
+        <SectionBar label="Direct" value={sections.direct.value} detail={`${sections.direct.items.length} owned skill(s)`} weightLabel="weighted 50% of total score" />
+        <SectionBar label="Adjacent" value={sections.adjacent.value} detail={`${sections.adjacent.items.length} adjacent path(s) — not direct`} weightLabel="weighted 25% of total score" />
+        <SectionBar label="Evidence" value={sections.evidence.value} detail={`${sections.evidence.artifact_count}/${sections.evidence.threshold} independent artifacts`} weightLabel="weighted 15% of total score" />
+        <SectionBar label="Seniority" value={sections.seniority.value} detail={`Level ${sections.seniority.candidate_level} vs ${sections.seniority.role_level}`} weightLabel="weighted 10% of total score" />
       </div>
+
+      <p className="rounded-md bg-muted p-3 text-[11px] leading-relaxed text-muted-foreground">
+        <Info className="mr-1 inline h-3 w-3" />
+        Score components are 0–1 ratios, each multiplied by its fixed weight (50 / 25 / 15 / 10%) and summed to the
+        0–100 match percentage shown above. Adjacent paths are weighted support, never direct equivalence.
+      </p>
 
       <div className="flex flex-col gap-4">
         <ItemGroup title="Direct skills" items={fit.classification.direct} />
         <ItemGroup title="Adjacent skills" items={fit.classification.adjacent} hint="backed by a graph edge" />
-        <ItemGroup title="Transferable skills" items={fit.classification.transferable} hint="edge or same category" />
+        <ItemGroup title="Transferable skills" items={fit.classification.transferable} hint="no points — development signal only" />
         <ItemGroup title="Gaps" items={fit.classification.gaps} />
       </div>
+
+      {(fit.assumptions || fit.versions) && (
+        <div className="rounded-md bg-accent/50 p-3 text-xs text-foreground">
+          <p className="font-extrabold uppercase tracking-wider">Computation & assumptions</p>
+          {fit.assumptions && (
+            <>
+              <p className="mt-1">
+                <b>Horizon:</b> {fit.assumptions.horizon}.
+              </p>
+              <p className="text-muted-foreground">{fit.assumptions.note}</p>
+            </>
+          )}
+          {fit.versions && (
+            <p className="mt-1 font-mono text-[11px] text-muted-foreground">
+              engine v{fit.versions.engine} · evidence {fit.versions.evidence.slice(0, 8)} · requisition {fit.versions.requisition.slice(0, 8)} · computed {new Date(fit.computed_at).toLocaleDateString()}
+            </p>
+          )}
+        </div>
+      )}
 
       {lineage && <EvidenceLineagePanel lineage={lineage} />}
     </div>

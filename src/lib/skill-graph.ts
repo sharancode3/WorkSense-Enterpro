@@ -12,6 +12,7 @@ export interface FitItem {
   edge: { from_skill: string; type: string; weight: number } | null;
   contribution: number | null;
   reason: string;
+  limitation?: string | null;
 }
 
 export interface FitRecord {
@@ -32,6 +33,8 @@ export interface FitRecord {
     transferable: FitItem[];
     gaps: FitItem[];
   };
+  versions?: { engine: string; evidence: string; requisition: string };
+  assumptions?: { horizon: string; note: string };
   computed_at: string;
 }
 
@@ -62,8 +65,11 @@ export interface FitLineage {
 
 export interface SkillMatchResult {
   cached: boolean;
+  scope: "org" | "candidates" | "team" | "self";
+  person: { id: string; name: string; role: string };
   fit: FitRecord;
   lineage?: FitLineage;
+  evidence_artifacts?: { artifact_keys: string[]; count: number };
 }
 
 export interface GraphNode {
