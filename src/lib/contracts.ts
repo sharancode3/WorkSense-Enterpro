@@ -12,10 +12,12 @@ import type {
   InterviewKit,
   MeResult,
   MyWorkResult,
+  OverviewSearchResult,
   PlanTaskView,
   PlanView,
   RecommendationCommentRow,
   RecommendationRow,
+  SecurityAuditResult,
   StaffingPlanResult,
 } from "./api";
 
@@ -521,3 +523,88 @@ export const staffingPlannerResultSchema = z.object({
   decision_table: z.array(z.object({ option_id: z.string(), status: z.enum(["feasible", "conditional", "infeasible", "insufficient_data"]) })),
   note: z.string(),
 }) as unknown as z.ZodType<StaffingPlanResult>;
+
+// Batch F (F1): authorized overview search result contract.
+export const overviewSearchResultSchema = z.object({
+  ok: z.literal(true),
+  q: z.string(),
+  scope: z.enum(["org", "team"]),
+  people: z.array(z.object({ id: z.string(), name: z.string(), job_title: z.string().nullable(), department: z.string().nullable(), role: z.string() })),
+  candidates: z.array(z.object({ id: z.string(), name: z.string(), department: z.string().nullable() })),
+  roles: z.array(z.object({ id: z.string(), title: z.string(), department: z.string().nullable(), status: z.string() })),
+}) as z.ZodType<OverviewSearchResult>;
+
+// Batch G: persistent private policy conversation contracts. The stored
+// `answer` is the full validated PolicyAnswer payload (citations, retrieval,
+// computed facts, employee context) — kept opaque here; it is displayed from
+// the same shape the live policy-qa call returned.
+const policyMessageShape = z.object({
+  id: z.string(),
+  conversation_id: z.string(),
+  role: z.enum(["user", "assistant"]),
+  question: z.string().nullable(),
+  answer: z.unknown(),
+  escalation_id: z.string().nullable(),
+  created_at: z.string(),
+});
+
+export const policyConversationListSchema = z.object({
+  ok: z.literal(true),
+  conversations: z.array(
+    z.object({
+      id: z.string(),
+      org_id: z.string(),
+      owner_twin_id: z.string(),
+      title: z.string(),
+      created_at: z.string(),
+      updated_at: z.string(),
+      last_message: z.object({
+        role: z.string(),
+        question: z.string().nullable(),
+        answer: z.unknown(),
+        escalation_id: z.string().nullable(),
+        created_at: z.string(),
+      }).nullable(),
+    })
+  ),
+}) as unknown as z.ZodType<{ ok: true; conversations: import("./api").PolicyConversationRow[] }>;
+
+export const policyConversationMessagesSchema = z.object({
+  ok: z.literal(true),
+  conversation: z.object({ id: z.string(), title: z.string() }),
+  messages: z.array(policyMessageShape),
+}) as unknown as z.ZodType<{ ok: true; conversation: { id: string; title: string }; messages: import("./api").PolicyMessageRow[] }>;
+
+export const policyConversationSaveSchema = z.object({
+  ok: z.literal(true),
+  conversation_id: z.string(),
+  message_id: z.string(),
+  created: z.boolean(),
+}) as z.ZodType<{ ok: true; conversation_id: string; message_id: string; created: boolean }>;
+
+export const policyConversationLinkSchema = z.object({
+  ok: z.literal(true),
+  message_id: z.string(),
+  escalation_id: z.string(),
+}) as z.ZodType<{ ok: true; message_id: string; escalation_id: string }>;
+
+// Batch H (H1): honest security audit feed contract.
+export const securityAuditResultSchema = z.object({
+  ok: z.literal(true),
+  total: z.number(),
+  page: z.number(),
+  page_size: z.number(),
+  items: z.array(
+    z.object({
+      key: z.string(),
+      kind: z.enum(["access", "recruitment", "recommendations", "onboarding"]),
+      label: z.string(),
+      detail: z.string(),
+      actor: z.string().nullable(),
+      reason: z.string().nullable(),
+      at: z.string(),
+      href: z.string().nullable(),
+    })
+  ),
+  truncated_sources: z.array(z.string()),
+}) as z.ZodType<SecurityAuditResult>;

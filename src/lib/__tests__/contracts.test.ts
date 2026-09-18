@@ -12,6 +12,12 @@ import {
   interviewKitSchema,
   healthViewSchema,
   staffingPlannerResultSchema,
+  overviewSearchResultSchema,
+  policyConversationListSchema,
+  policyConversationMessagesSchema,
+  policyConversationSaveSchema,
+  policyConversationLinkSchema,
+  securityAuditResultSchema,
 } from "../contracts";
 
 describe("decode (unknown -> validated schema -> typed contract)", () => {
@@ -195,6 +201,79 @@ describe("decode (unknown -> validated schema -> typed contract)", () => {
     const parsed = decode(staffingPlannerResultSchema, staffing, "staffing");
     expect(parsed.options[0].id).toBe("hire");
     expect(parsed.options[0].status).toBe("infeasible");
+  });
+
+  it("validates the authorized overview search result contract", () => {
+    const res = {
+      ok: true,
+      q: "back",
+      scope: "org",
+      people: [{ id: "p1", name: "Alex Chen", job_title: "Engineer", department: "Platform", role: "employee" }],
+      candidates: [{ id: "c1", name: "Sofia Reyes", department: "Platform" }],
+      roles: [{ id: "r1", title: "Senior Backend Engineer", department: "Platform", status: "open" }],
+    };
+    expect(decode(overviewSearchResultSchema, res, "overview-search").roles[0].title).toBe("Senior Backend Engineer");
+    const short = { ...res, scope: "team" };
+    expect(decode(overviewSearchResultSchema, short, "overview-search").scope).toBe("team");
+    expect(() => decode(overviewSearchResultSchema, { ...res, q: 42 }, "overview-search")).toThrow(/contract check failed/);
+  });
+
+  it("validates the private policy conversation contracts", () => {
+    const list = {
+      ok: true,
+      conversations: [
+        {
+          id: "c1",
+          org_id: "o1",
+          owner_twin_id: "t1",
+          title: "How much leave?",
+          created_at: "2026-09-18T00:00:00Z",
+          updated_at: "2026-09-18T00:00:00Z",
+          last_message: { role: "assistant", question: null, answer: { status: "grounded" }, escalation_id: null, created_at: "2026-09-18T00:00:00Z" },
+        },
+        {
+          id: "c2",
+          org_id: "o1",
+          owner_twin_id: "t1",
+          title: "Remote work",
+          created_at: "2026-09-17T00:00:00Z",
+          updated_at: "2026-09-17T00:00:00Z",
+          last_message: null,
+        },
+      ],
+    };
+    expect(decode(policyConversationListSchema, list, "pc.list").conversations).toHaveLength(2);
+    const msgs = {
+      ok: true,
+      conversation: { id: "c1", title: "How much leave?" },
+      messages: [
+        { id: "m1", conversation_id: "c1", role: "user", question: "How much leave?", answer: null, escalation_id: null, created_at: "2026-09-18T00:00:00Z" },
+        { id: "m2", conversation_id: "c1", role: "assistant", question: null, answer: { status: "grounded", citations: [] }, escalation_id: "e1", created_at: "2026-09-18T00:00:01Z" },
+      ],
+    };
+    const parsed = decode(policyConversationMessagesSchema, msgs, "pc.messages");
+    expect(parsed.messages[1].escalation_id).toBe("e1");
+    expect(decode(policyConversationSaveSchema, { ok: true, conversation_id: "c1", message_id: "m2", created: true }, "pc.save").created).toBe(true);
+    expect(decode(policyConversationLinkSchema, { ok: true, message_id: "m2", escalation_id: "e1" }, "pc.link").escalation_id).toBe("e1");
+  });
+
+  it("validates the security audit feed contract", () => {
+    const feed = {
+      ok: true,
+      total: 3,
+      page: 1,
+      page_size: 20,
+      items: [
+        { key: "adm:1", kind: "access", label: "ACCOUNT_SUSPENDED", detail: "Emp · active → suspended", actor: "Dana Whitmore", reason: "review", at: "2026-09-18T00:00:00Z", href: "/admin/access" },
+        { key: "wfe:1", kind: "recommendations", label: "RECOMMENDATION_APPROVED", detail: "Upskilling · needs_review → approved", actor: "Jordan Reyes", reason: null, at: "2026-09-17T00:00:00Z", href: "/hub?rec=44444444-4444-4444-4444-444444444404" },
+      ],
+      truncated_sources: [],
+    };
+    const parsed = decode(securityAuditResultSchema, feed, "security-audit");
+    expect(parsed.total).toBe(3);
+    expect(parsed.items[1].kind).toBe("recommendations");
+    expect(parsed.items[1].href).toContain("/hub?rec=");
+    expect(() => decode(securityAuditResultSchema, { ...feed, items: [{ key: "x", kind: "bogus" }] }, "security-audit")).toThrow(/contract check failed/);
   });
 
   it("validates the me contract used at app bootstrap", () => {

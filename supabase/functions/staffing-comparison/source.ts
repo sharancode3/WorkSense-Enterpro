@@ -26,6 +26,18 @@ async function isTeamMember(supabase, rootTwinId: string, checkTwinId: string): 
 
 const NL = String.fromCharCode(10);
 
+// Deterministic, stable fingerprint of a scenario's input snapshot so a
+// proposal binds the exact input version it was generated from.
+function stableHash(s: string): string {
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0;
+  return h.toString(36);
+}
+function scenarioVersion(input: unknown, assumptions: unknown): string {
+  const v = (assumptions as { version?: string })?.version ?? "?";
+  return `v:${v}/input:${stableHash(JSON.stringify(input ?? {}))}`;
+}
+
 const EXPLAIN_SYSTEM = `You are the WorkSense staffing-planning narrator. You are given ONLY the validated numbers produced by the deterministic planner (options with status, cost, ready-day, verified/conditional coverage, mandatory gaps, deadline and budget).
 Your job is to explain those numbers clearly. HARD RULES:
 1. NEVER invent, recalculate, or change any number — restate exactly what the planner produced.
@@ -74,29 +86,51 @@ Deno.serve(async (req) => {
   }
 
   // ---- propose a saved scenario for human review -------------------------------
+  // Batch F: the proposal binds the SELECTED option and the scenario version it
+  // was computed at (option_id + a full option snapshot + input/assumptions
+  // fingerprint), so a review decision always points at the exact numbers seen.
   if (action === "propose") {
     const scenarioId = String(body.scenario_id ?? "").trim();
+    const optionId = String(body.option_id ?? "").trim();
     if (!scenarioId) return json({ error: "VALIDATION_ERROR", message: "scenario_id is required." }, 400);
+    if (!optionId) return json({ error: "VALIDATION_ERROR", message: "option_id is required — select an option in the comparison first." }, 400);
     const { data: scenario } = await supabase
       .from("staffing_scenarios")
-      .select("id")
+      .select("id, name, input_snapshot, assumptions, result")
       .eq("org_id", caller.org_id)
       .eq("id", scenarioId)
       .maybeSingle();
     if (!scenario) return json({ error: "NOT_FOUND" }, 404);
+    const result = (scenario.result ?? {}) as { options?: Record<string, unknown>[] };
+    const option = (result.options ?? []).find((o) => o.id === optionId) ?? null;
+    if (!option) {
+      return json({ error: "VALIDATION_ERROR", message: "option_id must match an option computed for this scenario." }, 400);
+    }
     const { data, error } = await supabase
       .from("staffing_proposals")
       .insert({
         org_id: caller.org_id,
         scenario_id: scenarioId,
+        option_id: optionId,
+        option_label: String(option.label ?? optionId),
+        option_snapshot: option,
+        scenario_version: scenarioVersion(scenario.input_snapshot, scenario.assumptions),
         status: "open",
         submitted_by: caller.id,
         review_note: "Submitted for human review from the staffing planner.",
       })
-      .select("id, status, created_at")
+      .select("id, status, created_at, option_id, option_label, scenario_version")
       .single();
     if (error) return json({ error: "INTERNAL", message: error.message }, 500);
-    return json({ ok: true, proposal_id: data.id, status: data.status, message: "Proposal submitted for human review." });
+    return json({
+      ok: true,
+      proposal_id: data.id,
+      status: data.status,
+      message: "Proposal submitted for human review.",
+      option_id: data.option_id,
+      option_label: data.option_label,
+      scenario_version: data.scenario_version,
+    });
   }
 
   // ---- explain a saved scenario (Qwen narrates ONLY the validated numbers) ------

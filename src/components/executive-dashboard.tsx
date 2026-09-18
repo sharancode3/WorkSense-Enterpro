@@ -19,6 +19,7 @@ import {
 import { fetchDashboard, type DashboardData, type DashboardFilters, type HeatmapBucket } from "@/lib/api";
 import { useAuth } from "@/contexts/auth-context";
 import { can } from "@/lib/rbac";
+import { OverviewSearch } from "@/components/overview-search";
 
 const URGENCY_CLS: Record<string, string> = {
   critical: "bg-destructive text-white",
@@ -146,6 +147,12 @@ export function ExecutiveDashboard() {
             Scope: <span className="font-bold capitalize">{isTeam ? "your team (incl. you)" : "entire organization"}</span> — enforced
             server-side from your role. Filters can only narrow it.
           </p>
+          {/* Batch F (F1): authorized overview search — people / candidates /
+              roles from the server at the caller's scope; module links from the
+              same RBAC-driven navigation as the app shell. */}
+          <div className="mt-3">
+            <OverviewSearch />
+          </div>
         </div>
 
         <div className="flex flex-wrap items-end gap-2" role="group" aria-label="Dashboard filters">
@@ -171,7 +178,10 @@ export function ExecutiveDashboard() {
               onChange={(e) => setFilters((f) => ({ ...f, requisition_id: e.target.value || null }))}
               className="h-9 rounded-md border border-border bg-white px-2 text-sm font-medium text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
             >
-              <option value="">All open</option>
+              {/* Batch F (F1): the dropdown lists requisitions of every status,
+                  so the empty option is reconciled to "All requisitions" — the
+                  aggregate cards still count only status 'open'. */}
+              <option value="">All requisitions</option>
               {d.filters.available.requisitions.map((r) => (
                 <option key={r.id} value={r.id}>
                   {r.title} ({r.status})

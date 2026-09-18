@@ -1162,10 +1162,157 @@ async function reseed(supabase, authIds: Record<string, string>) {
   // live model call; criteria drive the Compare workspace.
   await seedRecruitmentWorkspace(supabase, DEMO_ORG_ID, fx.clock);
 
+  // Batch H (H2): idempotent labeled synthetic audit events across modules so
+  // the Security Audit log opens to a coherent, connected demo story. Every
+  // record is labeled synthetic and internally consistent with current state
+  // (tearDownDemo deletes these tables first, so re-seeding never duplicates).
+  await seedAuditEvents(supabase, DEMO_ORG_ID, fx.clock);
+
   // Phase 12: explicitly fictional, internally consistent demo stories —
   // resume archetypes, duplicate-import and prompt-injection fixtures.
   await seedDemoStories(supabase, DEMO_ORG_ID, fx.clock);
   await seedDemoResumes(supabase, DEMO_ORG_ID, fx.clock);
+}
+
+// ---------------------------------------------------------------------------
+// Batch H (H2): idempotent labeled synthetic audit events across modules.
+// Every record is explicitly labeled synthetic and internally consistent with
+// the seeded state (an access story that ends "active", workflow events that
+// match the seeded recommendation statuses, stage events that match current
+// application stages). tearDownDemo wipes these tables first, so re-seeding
+// never duplicates.
+// ---------------------------------------------------------------------------
+async function seedAuditEvents(supabase, orgId: string, clock: string) {
+  const SYNT = "Synthetic demo audit record — fictional data only.";
+  const now = clock;
+
+  const { data: twins } = await supabase.from("digital_twins").select("id, name, email, role").eq("org_id", orgId);
+  const byEmail = (email: string) => (twins ?? []).find((t) => t.email === email);
+  const dana = byEmail("dana@worksense.demo");
+  const riley = byEmail("riley@worksense.demo");
+  const jordan = byEmail("jordan@worksense.demo");
+  const chris = byEmail("chris@worksense.demo");
+  if (!dana || !riley || !jordan || !chris) return;
+
+  const { data: employees } = await supabase
+    .from("digital_twins")
+    .select("id, name, email, role, status")
+    .eq("org_id", orgId)
+    .eq("role", "employee")
+    .eq("status", "active")
+    .order("name");
+  const empA = (employees ?? [])[5];
+  const empB = (employees ?? [])[7];
+  if (!empA || !empB) return;
+
+  // --- Access governance (net state stays "active", matching the roster) ------
+  const { error: admErr } = await supabase.from("admin_actions").insert([
+    { org_id: orgId, actor_twin_id: dana.id, action: "invite", target_twin_id: empA.id, target_email: empA.email, before_data: {}, after_data: { role: "employee", status: "active" }, reason: `${SYNT} ${empA.name} joined as an employee.` },
+    { org_id: orgId, actor_twin_id: dana.id, action: "update_role", target_twin_id: empB.id, target_email: empB.email, before_data: { role: "recruiter" }, after_data: { role: "employee" }, reason: `${SYNT} ${empB.name} moved to an employee role after the pilot ended.` },
+    { org_id: orgId, actor_twin_id: dana.id, action: "suspend", target_twin_id: empB.id, target_email: empB.email, before_data: { status: "active" }, after_data: { status: "suspended" }, reason: `${SYNT} Access review flagged the account pending confirmation.` },
+    { org_id: orgId, actor_twin_id: dana.id, action: "reactivate", target_twin_id: empB.id, target_email: empB.email, before_data: { status: "suspended" }, after_data: { status: "active" }, reason: `${SYNT} Identity confirmed; access restored.` },
+  ]);
+  if (admErr) throw new Error(`audit seed: admin_actions ${admErr.message}`);
+
+  // --- Recommendation lifecycle (canonical workflow_events, consistent) -------
+  const samiraRec = "44444444-4444-4444-4444-444444444401";
+  const upskillRec = "44444444-4444-4444-4444-444444444404";
+  const { data: pairTask } = await supabase
+    .from("action_tasks")
+    .select("id")
+    .eq("org_id", orgId)
+    .eq("recommendation_id", upskillRec)
+    .eq("task_code", "pair_data")
+    .maybeSingle();
+  const wfeRows: Record<string, unknown>[] = [
+    { org_id: orgId, resource_type: "recommendation", resource_id: samiraRec, actor_twin_id: riley.id, actor_role: "hr_partner", resource: "Samira Patel · retention review", prior_status: "suggested", new_status: "needs_review", reason: `${SYNT} Submitted by HR for manager review.`, source_version: "seed", request_id: "seed-audit-submit-samira", payload: { seed: true } },
+    { org_id: orgId, resource_type: "recommendation", resource_id: upskillRec, actor_twin_id: jordan.id, actor_role: "manager", resource: "Upskilling route (Data Analyst)", prior_status: "needs_review", new_status: "approved", reason: `${SYNT} Manager approved: cheaper and faster than hiring.`, source_version: "seed", request_id: "seed-audit-approve-upskill", payload: { seed: true } },
+  ];
+  if (pairTask) {
+    wfeRows.push({ org_id: orgId, resource_type: "action_task", resource_id: pairTask.id, actor_twin_id: "22222222-2222-2222-2222-222222222204", actor_role: "employee", resource: "Pair with the Data team on the dbt migration", prior_status: "execution_pending", new_status: "in_progress", reason: `${SYNT} Work started by the analyst.`, source_version: "seed", request_id: "seed-audit-start-pair", payload: { seed: true } });
+  }
+  const { error: wfeErr } = await supabase.from("workflow_events").insert(wfeRows);
+  if (wfeErr) throw new Error(`audit seed: workflow_events ${wfeErr.message}`);
+
+  // --- Candidate decisions (canonical conversion event, consistent with state)
+  // Alex's application row is stage 'selected' (he was converted), so a
+  // prior final_round → selected event is history, not a contradiction.
+  const { data: apps } = await supabase.from("applications").select("id, candidate_twin_id, stage, version").eq("org_id", orgId);
+  const alexApp = (apps ?? []).find((a) => a.candidate_twin_id === ALEX_TWIN_ID && a.stage === "selected");
+  const stageRows: Record<string, unknown>[] = [];
+  if (alexApp) {
+    const v = (alexApp.version ?? 2) as number;
+    stageRows.push({ org_id: orgId, application_id: alexApp.id, actor_twin_id: chris.id, prior_stage: "final_round", new_stage: "selected", reason: `${SYNT} Candidate converted to employee after the final round.`, at: now, version: v, audit_ref: `stage:${alexApp.id}:${v}` });
+  }
+  if (stageRows.length > 0) {
+    const { error: seErr } = await supabase.from("application_stage_events").insert(stageRows);
+    if (seErr) throw new Error(`audit seed: stage events ${seErr.message}`);
+  }
+
+  // --- Onboarding policy waiver (Samira's pending plan: survey pre-waived) ----
+  // Recomputes the plan readiness with the SAME deterministic engine the seed
+  // uses, so task states and the readiness estimate never diverge.
+  const { data: samiraPlan } = await supabase
+    .from("onboarding_plans")
+    .select("id, start_date")
+    .eq("org_id", orgId)
+    .eq("twin_id", SAMIRA_TWIN_ID)
+    .order("version", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (samiraPlan) {
+    const { data: surveyTask } = await supabase
+      .from("onboarding_tasks")
+      .select("id")
+      .eq("org_id", orgId)
+      .eq("plan_id", samiraPlan.id)
+      .eq("task_code", "survey")
+      .maybeSingle();
+    if (surveyTask) {
+      const { error: wvErr } = await supabase
+        .from("onboarding_tasks")
+        .update({
+          state: "waived",
+          waiver: {
+            by_twin_id: jordan.id,
+            by_name: jordan.name,
+            reason: `${SYNT} Feedback survey pre-waived for the demo walkthrough.`,
+            policy_basis: { doc_code: "POL-LND", version: null },
+            at: now,
+          },
+        })
+        .eq("id", surveyTask.id);
+      if (wvErr) throw new Error(`audit seed: waiver ${wvErr.message}`);
+      const { data: planTasks } = await supabase
+        .from("onboarding_tasks")
+        .select("*")
+        .eq("org_id", orgId)
+        .eq("plan_id", samiraPlan.id);
+      const { data: req } = await supabase
+        .from("job_requisitions")
+        .select("id, title, required_skills, future_skills, seniority_level")
+        .eq("id", DATA_ANALYST_REQ_ID)
+        .maybeSingle();
+      const { data: twin } = await supabase
+        .from("digital_twins")
+        .select("verified_skills")
+        .eq("id", SAMIRA_TWIN_ID)
+        .maybeSingle();
+      const { data: policyDocs } = await supabase
+        .from("policy_documents")
+        .select("doc_code, version, clauses")
+        .eq("org_id", orgId);
+      if (req && twin) {
+        const defs = buildPlanDefs({
+          role: req,
+          verified_skills: (twin.verified_skills ?? []) as { name: string; proficiency: number }[],
+          policy_docs: policyDocs ?? [],
+        });
+        const readiness = estimateReadiness(defs, (planTasks ?? []) as never, samiraPlan.start_date, now);
+        await supabase.from("onboarding_plans").update({ readiness }).eq("id", samiraPlan.id);
+      }
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------

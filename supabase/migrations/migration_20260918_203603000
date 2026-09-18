@@ -1,0 +1,36 @@
+-- Batch G: persistent, PRIVATE policy Q&A conversations.
+create table public.policy_conversations (
+  id uuid primary key default gen_random_uuid(),
+  org_id uuid not null references public.organizations(id) on delete cascade,
+  owner_twin_id uuid not null references public.digital_twins(id) on delete cascade,
+  title text not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index policy_conversations_owner_idx on public.policy_conversations (org_id, owner_twin_id, updated_at desc);
+alter table public.policy_conversations enable row level security;
+create policy policy_conversations_owner_read on public.policy_conversations for select using (
+  exists (select 1 from public.current_twin() ct
+    where ct.org_id = public.policy_conversations.org_id
+      and ct.id = public.policy_conversations.owner_twin_id)
+);
+
+create table public.policy_messages (
+  id uuid primary key default gen_random_uuid(),
+  conversation_id uuid not null references public.policy_conversations(id) on delete cascade,
+  org_id uuid not null references public.organizations(id) on delete cascade,
+  role text not null check (role in ('user', 'assistant')),
+  question text,
+  answer jsonb,
+  request_id text not null,
+  escalation_id uuid references public.policy_escalations(id) on delete set null,
+  created_at timestamptz not null default now(),
+  unique (conversation_id, request_id)
+);
+create index policy_messages_conv_idx on public.policy_messages (conversation_id, created_at);
+alter table public.policy_messages enable row level security;
+create policy policy_messages_owner_read on public.policy_messages for select using (
+  exists (select 1 from public.policy_conversations c
+    join public.current_twin() ct on ct.org_id = c.org_id and ct.id = c.owner_twin_id
+    where c.id = public.policy_messages.conversation_id)
+);

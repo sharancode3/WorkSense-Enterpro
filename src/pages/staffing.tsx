@@ -11,17 +11,21 @@ import {
   type StaffingPlanInput,
   type StaffingPlanResult,
 } from "@/lib/api";
+import { recommendOption, RECOMMENDATION_RULE, RECOMMENDATION_RULE_SHORT } from "@/lib/staffing-recommendation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   AlertTriangle,
+  BadgeCheck,
   CheckCircle2,
   Clock,
+  Edit3,
   Info,
   Loader2,
   Lock,
   MessageSquareText,
   Scale,
+  SearchCheck,
   Send,
   ShieldCheck,
   Sparkles,
@@ -50,6 +54,22 @@ interface SkillRow {
   mandatory: boolean;
 }
 
+// Batch F (F2): the staffing flow is explicit — Define → Compare → Review →
+// Approve. The stepper reflects where the user is; comparison comes FIRST.
+const STEPS = [
+  { key: "define", label: "Define", icon: Edit3 },
+  { key: "compare", label: "Compare", icon: Scale },
+  { key: "review", label: "Review", icon: SearchCheck },
+  { key: "approve", label: "Approve", icon: BadgeCheck },
+] as const;
+
+function summaryOf(o: PlannerOption): string {
+  if (o.subject) return o.subject;
+  const firstViolation = o.constraints_violated[0];
+  if (firstViolation) return firstViolation;
+  return o.status_reason.slice(0, 90);
+}
+
 export default function StaffingPlanner() {
   const { role, twin: me } = useAuth();
   const [scenario, setScenario] = useState<StaffingPlanInput>({
@@ -70,7 +90,10 @@ export default function StaffingPlanner() {
   const [explaining, setExplaining] = useState(false);
   const [explanation, setExplanation] = useState<string | null>(null);
   const [proposing, setProposing] = useState(false);
-  const [proposalId, setProposalId] = useState<string | null>(null);
+  // Batch F (F2): the user picks the option they want reviewed, and the
+  // proposal binds that option + the scenario version it was computed at.
+  const [selectedOption, setSelectedOption] = useState<string | null>(null);
+  const [proposal, setProposal] = useState<{ id: string; option_id: string; option_label: string; scenario_version: string } | null>(null);
   // Phase 15 (Batch A3): dirty-input protection — the saved plan is bound to an
   // exact input fingerprint; changed inputs mark it outdated and block
   // explain/propose until recalculated.
@@ -79,6 +102,9 @@ export default function StaffingPlanner() {
   const fingerprint = JSON.stringify({ scenario, skills });
 
   const outdated = !!plan && !!inputFingerprint && inputFingerprint !== fingerprint;
+  const stepIndex = !plan ? 0 : !selectedOption ? 1 : !proposal ? 2 : 3;
+  const recommendedId = plan ? recommendOption(plan.options) : null;
+  const selectedOptionRow = plan?.options.find((o) => o.id === selectedOption) ?? null;
 
   const run = useCallback(async (recalc = false) => {
     const required_skills = skills
@@ -98,7 +124,8 @@ export default function StaffingPlanner() {
       if (version !== runVersion + 1) return;
       setPlan(res);
       setInputFingerprint(JSON.stringify({ scenario, required_skills }));
-      setProposalId(null);
+      setSelectedOption(null);
+      setProposal(null);
       if (recalc) toast.success("What-if recalculated — trade-offs updated.");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Planning failed");
@@ -122,12 +149,13 @@ export default function StaffingPlanner() {
   };
 
   const doPropose = async () => {
-    if (!plan || outdated || proposing) return;
+    if (!plan || outdated || proposing || !selectedOption) return;
     setProposing(true);
     try {
-      const res = await proposeStaffingScenario(plan.scenario_id);
-      // "Proposal submitted" only after the backend row exists.
-      setProposalId(res.proposal_id);
+      const res = await proposeStaffingScenario(plan.scenario_id, selectedOption);
+      // "Proposal submitted" only after the backend row exists AND the selected
+      // option + scenario version were persisted with it.
+      setProposal({ id: res.proposal_id, option_id: res.option_id, option_label: res.option_label, scenario_version: res.scenario_version });
       toast.success("Proposal submitted for human review.");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Proposal failed — nothing was submitted.");
@@ -159,7 +187,7 @@ export default function StaffingPlanner() {
         <div className="flex flex-col gap-2">
           <span className="text-xs font-bold uppercase tracking-wider text-primary">Constrained staffing planner</span>
           <h1 className="text-3xl font-extrabold tracking-tight text-foreground md:text-4xl">
-            Scenario model. <span className="text-primary">Explicit constraints.</span>
+            Plan how to staff a role or project. <span className="text-primary">Explicit constraints.</span>
           </h1>
           <p className="max-w-3xl text-muted-foreground">
             Define the demand, required skills, capacity, deadline and budget. The engine computes each option
@@ -173,8 +201,31 @@ export default function StaffingPlanner() {
           </p>
         </div>
 
-        {/* Scenario inputs */}
-        <div className="mt-8 grid grid-cols-1 gap-4 rounded-lg bg-white p-5 lg:grid-cols-4">
+        {/* Batch F (F2): Define → Compare → Review → Approve stepper */}
+        <ol className="mt-6 flex flex-wrap items-center gap-y-2 rounded-lg bg-white p-3 shadow-sm" aria-label="Staffing flow">
+          {STEPS.map((s, i) => {
+            const Icon = s.icon;
+            const done = i < stepIndex;
+            const current = i === stepIndex;
+            return (
+              <li key={s.key} className="flex flex-1 items-center gap-2 last:flex-none">
+                <span
+                  className={`flex items-center gap-2 rounded-md px-3 py-2 text-sm font-bold ${
+                    current ? "bg-primary text-white" : done ? "bg-secondary/15 text-secondary" : "text-muted-foreground"
+                  }`}
+                >
+                  <Icon className="h-4 w-4" strokeWidth={2.5} />
+                  {s.label}
+                  {done && <CheckCircle2 className="h-3.5 w-3.5" />}
+                </span>
+                {i < STEPS.length - 1 && <span className="mx-2 hidden h-px flex-1 bg-border sm:block" aria-hidden="true" />}
+              </li>
+            );
+          })}
+        </ol>
+
+        {/* Scenario inputs — Define */}
+        <div className="mt-6 grid grid-cols-1 gap-4 rounded-lg bg-white p-5 lg:grid-cols-4">
           <label className="flex flex-col gap-1 text-sm">
             <span className="font-semibold text-muted-foreground">Scenario name</span>
             <Input value={scenario.name ?? ""} onChange={(e) => setScenario((s) => ({ ...s, name: e.target.value }))} />
@@ -250,7 +301,7 @@ export default function StaffingPlanner() {
 
         {plan && !busy && (
           <div className="mt-8 flex flex-col gap-6">
-            {/* Compact scenario + decision table */}
+            {/* Scenario summary bar */}
             <div className="rounded-lg bg-foreground p-6 text-white">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
@@ -262,127 +313,200 @@ export default function StaffingPlanner() {
                   </p>
                 </div>
               </div>
+              <p className="mt-3 flex items-start gap-1.5 text-[11px] text-white/70">
+                <Info className="mt-0.5 h-3 w-3 shrink-0" /> {plan.note}
+              </p>
+            </div>
+
+            {/* Batch F (F2): COMPARISON FIRST — the decision table is the first
+                thing after the scenario. The recommendation rule is stated
+                explicitly and the recommended option is highlighted. */}
+            <div className="rounded-lg bg-white p-5">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="flex items-center gap-2 text-lg font-extrabold tracking-tight text-foreground">
+                  <Scale className="h-5 w-5 text-primary" strokeWidth={2.5} /> Compare options
+                </h2>
+                {recommendedId && (
+                  <span className="ml-auto flex items-center gap-1 rounded-md bg-secondary/15 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider text-secondary">
+                    <BadgeCheck className="h-3.5 w-3.5" /> Recommended
+                  </span>
+                )}
+              </div>
+              <p className="mt-1 flex items-start gap-1.5 rounded-md bg-muted p-3 text-xs leading-relaxed text-foreground">
+                <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
+                <span>
+                  <b>Rule:</b> {RECOMMENDATION_RULE}
+                  {!recommendedId && " No option currently qualifies — none is marked recommended, and each option below states why it fails."}
+                </span>
+              </p>
+              <p className="mt-2 text-xs text-muted-foreground">
+                Pick the option you want reviewed, then continue to Review &amp; Approve. Readiness is conditional wherever coverage is
+                training/verification-based (never a bare score).
+              </p>
+
               <div className="mt-4 overflow-x-auto">
-                <table className="w-full min-w-[560px] text-left text-xs">
+                <table className="w-full min-w-[720px] text-left text-xs">
                   <thead>
-                    <tr className="border-b border-white/20 text-white/60">
-                      <th className="py-1.5 pr-3 font-bold uppercase">Option</th>
-                      <th className="py-1.5 pr-3 font-bold uppercase">Status</th>
-                      <th className="py-1.5 pr-3 font-bold uppercase">Ready (day)</th>
-                      <th className="py-1.5 pr-3 font-bold uppercase">Cost</th>
-                      <th className="py-1.5 pr-3 font-bold uppercase">Verified</th>
-                      <th className="py-1.5 font-bold uppercase">Conditional</th>
+                    <tr className="border-b-2 border-border text-muted-foreground">
+                      <th className="py-2 pr-3 font-bold uppercase" aria-label="Select">
+                        <span className="sr-only">Select</span>
+                      </th>
+                      <th className="py-2 pr-3 font-bold uppercase">Option</th>
+                      <th className="py-2 pr-3 font-bold uppercase">Status</th>
+                      <th className="py-2 pr-3 font-bold uppercase">Ready</th>
+                      <th className="py-2 pr-3 font-bold uppercase">Cost</th>
+                      <th className="py-2 pr-3 font-bold uppercase">Verified</th>
+                      <th className="py-2 font-bold uppercase">Conditional</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {plan.decision_table.map((d) => {
-                      const meta = STATUS_META[d.status] ?? STATUS_META.insufficient_data;
+                    {plan.options.map((o) => {
+                      const meta = statusOf(o);
+                      const isRecommended = o.id === recommendedId;
+                      const isSelected = o.id === selectedOption;
                       return (
-                        <tr key={d.option_id} className="border-b border-white/10">
-                          <td className="py-2 pr-3 font-bold capitalize">{d.option_id}</td>
-                          <td className="py-2 pr-3"><span className={`rounded px-1.5 py-0.5 font-bold uppercase tracking-wider ${meta.cls}`}>{meta.label}</span></td>
-                          <td className="py-2 pr-3">{d.ready_at_days}d</td>
-                          <td className="py-2 pr-3">${d.cost_usd.toLocaleString()}</td>
-                          <td className="py-2 pr-3">{d.verified_coverage_pct}%</td>
-                          <td className="py-2">{d.conditional_coverage_pct}%</td>
+                        <tr
+                          key={o.id}
+                          onClick={() => setSelectedOption(o.id)}
+                          className={`cursor-pointer border-b border-border/60 transition-colors ${isRecommended ? "bg-secondary/10" : isSelected ? "bg-primary/10" : "hover:bg-muted/60"}`}
+                        >
+                          <td className="py-3 pl-2 pr-3">
+                            <input
+                              type="radio"
+                              name="staffing-option"
+                              checked={isSelected}
+                              onChange={() => setSelectedOption(o.id)}
+                              aria-label={`Select ${o.label}`}
+                              className="accent-[hsl(var(--primary))]"
+                            />
+                          </td>
+                          <td className="py-3 pr-3">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-extrabold capitalize text-foreground">{o.label}</span>
+                              {isRecommended && (
+                                <span className="rounded bg-secondary px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-white">Best</span>
+                              )}
+                            </div>
+                            <p className="mt-0.5 max-w-[260px] truncate text-[11px] text-muted-foreground" title={o.status_reason}>
+                              {summaryOf(o)}
+                            </p>
+                          </td>
+                          <td className="py-3 pr-3"><span className={`rounded px-1.5 py-0.5 font-bold uppercase tracking-wider ${meta.cls}`}>{meta.label}</span></td>
+                          <td className="py-3 pr-3">
+                            <span className={o.meets_deadline ? "font-bold text-foreground" : "font-bold text-destructive"}>{o.ready_at_days}d</span>
+                            <span className="text-[10px] text-muted-foreground"> / {plan.scenario.deadline_days}d</span>
+                          </td>
+                          <td className="py-3 pr-3">
+                            <span className={o.budget_satisfied ? "font-semibold text-foreground" : "font-semibold text-destructive"}>${o.cost_usd.toLocaleString()}</span>
+                          </td>
+                          <td className="py-3 pr-3 font-bold text-foreground">{o.verified_coverage_pct}%</td>
+                          <td className="py-3 font-bold text-muted-foreground">{o.conditional_coverage_pct}%</td>
                         </tr>
                       );
                     })}
                   </tbody>
                 </table>
               </div>
-              <p className="mt-3 flex items-start gap-1.5 text-[11px] text-white/70">
-                <Info className="mt-0.5 h-3 w-3 shrink-0" /> {plan.note}
+              <p className="mt-2 text-[11px] text-muted-foreground">
+                Recommended = {RECOMMENDATION_RULE_SHORT}. Infeasible and insufficient-data options are never recommended.
               </p>
             </div>
 
-            {/* Options */}
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-              {plan.options.map((o) => (
-                <div key={o.id} className="flex flex-col gap-3 rounded-lg bg-white p-5">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <h3 className="flex items-center gap-2 text-lg font-extrabold text-foreground">
-                      {o.id === "hire" ? <Users className="h-5 w-5 text-primary" /> : o.id === "move" ? <TrendingUp className="h-5 w-5 text-secondary" /> : o.id === "upskill" ? <CheckCircle2 className="h-5 w-5 text-accent" /> : <Scale className="h-5 w-5 text-foreground" />}
-                      {o.label}
-                    </h3>
-                    <span className={`rounded-md px-2.5 py-1 text-xs font-bold uppercase tracking-wider ${statusOf(o).cls}`}>{statusOf(o).label}</span>
-                  </div>
-                  {o.subject && <p className="text-xs font-semibold text-muted-foreground">Subject: {o.subject}</p>}
+            {/* Detailed option cards */}
+            <div>
+              <h2 className="flex items-center gap-2 text-lg font-extrabold tracking-tight text-foreground">
+                <SearchCheck className="h-5 w-5 text-secondary" strokeWidth={2.5} /> Option detail — review the evidence
+              </h2>
+              <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+                {plan.options.map((o) => (
+                  <div key={o.id} className={`flex flex-col gap-3 rounded-lg bg-white p-5 ${o.id === recommendedId ? "ring-2 ring-secondary/50" : ""}`}>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <h3 className="flex items-center gap-2 text-lg font-extrabold text-foreground">
+                        {o.id === "hire" ? <Users className="h-5 w-5 text-primary" /> : o.id === "move" ? <TrendingUp className="h-5 w-5 text-secondary" /> : o.id === "upskill" ? <CheckCircle2 className="h-5 w-5 text-accent" /> : <Scale className="h-5 w-5 text-foreground" />}
+                        {o.label}
+                      </h3>
+                      <span className={`rounded-md px-2.5 py-1 text-xs font-bold uppercase tracking-wider ${statusOf(o).cls}`}>{statusOf(o).label}</span>
+                    </div>
+                    {o.subject && <p className="text-xs font-semibold text-muted-foreground">Subject: {o.subject}</p>}
 
-                  <div className="grid grid-cols-3 gap-2">
-                    <div className="rounded-md bg-muted p-3">
-                      <p className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground"><Clock className="h-3 w-3" /> Ready</p>
-                      <p className={`mt-1 text-2xl font-extrabold ${o.meets_deadline ? "text-foreground" : "text-destructive"}`}>{o.ready_at_days}d</p>
-                      <p className="text-[10px] text-muted-foreground">deadline {plan.scenario.deadline_days}d</p>
+                    <div className="grid grid-cols-3 gap-2">
+                      <div className="rounded-md bg-muted p-3">
+                        <p className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground"><Clock className="h-3 w-3" /> Ready</p>
+                        <p className={`mt-1 text-2xl font-extrabold ${o.meets_deadline ? "text-foreground" : "text-destructive"}`}>{o.ready_at_days}d</p>
+                        <p className="text-[10px] text-muted-foreground">deadline {plan.scenario.deadline_days}d</p>
+                      </div>
+                      <div className="rounded-md bg-muted p-3">
+                        <p className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground"><Wallet className="h-3 w-3" /> Cost</p>
+                        <p className="mt-1 text-2xl font-extrabold text-foreground">${o.cost_usd.toLocaleString()}</p>
+                        <p className="text-[10px] text-muted-foreground">budget ${plan.scenario.budget_usd.toLocaleString()}</p>
+                      </div>
+                      <div className="rounded-md bg-muted p-3">
+                        <p className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground"><Users className="h-3 w-3" /> Coverage</p>
+                        <p className="mt-1 text-2xl font-extrabold text-foreground">{o.verified_coverage_pct}%</p>
+                        <p className="text-[10px] text-muted-foreground">conditional {o.conditional_coverage_pct}%</p>
+                      </div>
                     </div>
-                    <div className="rounded-md bg-muted p-3">
-                      <p className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground"><Wallet className="h-3 w-3" /> Cost</p>
-                      <p className="mt-1 text-2xl font-extrabold text-foreground">${o.cost_usd.toLocaleString()}</p>
-                      <p className="text-[10px] text-muted-foreground">budget ${plan.scenario.budget_usd.toLocaleString()}</p>
-                    </div>
-                    <div className="rounded-md bg-muted p-3">
-                      <p className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground"><Users className="h-3 w-3" /> Coverage</p>
-                      <p className="mt-1 text-2xl font-extrabold text-foreground">{o.verified_coverage_pct}%</p>
-                      <p className="text-[10px] text-muted-foreground">conditional {o.conditional_coverage_pct}%</p>
-                    </div>
-                  </div>
 
-                  {/* Skill-by-skill coverage */}
-                  <div className="overflow-x-auto">
-                    <table className="w-full min-w-[360px] text-left text-xs">
-                      <thead>
-                        <tr className="border-b border-border text-muted-foreground">
-                          <th className="py-1 pr-2 font-bold uppercase">Skill</th>
-                          <th className="py-1 pr-2 font-bold uppercase">Bar</th>
-                          <th className="py-1 pr-2 font-bold uppercase">Coverage</th>
-                          <th className="py-1 pr-2 font-bold uppercase">Now → Projected</th>
-                          <th className="py-1 font-bold uppercase">Mandatory</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {o.skill_coverage.map((r) => (
-                          <tr key={r.skill} className="border-b border-border/50">
-                            <td className="py-1.5 pr-2 font-semibold text-foreground">{r.skill}</td>
-                            <td className="py-1.5 pr-2">{r.min_proficiency}/5</td>
-                            <td className="py-1.5 pr-2">
-                              <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${COVERAGE_META[r.coverage]?.cls}`}>{COVERAGE_META[r.coverage]?.label ?? r.coverage}</span>
-                            </td>
-                            <td className="py-1.5 pr-2 text-muted-foreground">{r.current_proficiency ?? "—"} → {r.projected_proficiency ?? "—"}</td>
-                            <td className="py-1.5">{r.mandatory ? (r.mandatory_satisfied ? <CheckCircle2 className="h-3.5 w-3.5 text-secondary" /> : <AlertTriangle className="h-3.5 w-3.5 text-destructive" />) : "no"}</td>
+                    {/* Skill-by-skill coverage */}
+                    <div className="overflow-x-auto">
+                      <table className="w-full min-w-[360px] text-left text-xs">
+                        <thead>
+                          <tr className="border-b border-border text-muted-foreground">
+                            <th className="py-1 pr-2 font-bold uppercase">Skill</th>
+                            <th className="py-1 pr-2 font-bold uppercase">Bar</th>
+                            <th className="py-1 pr-2 font-bold uppercase">Coverage</th>
+                            <th className="py-1 pr-2 font-bold uppercase">Now → Projected</th>
+                            <th className="py-1 font-bold uppercase">Mandatory</th>
                           </tr>
+                        </thead>
+                        <tbody>
+                          {o.skill_coverage.map((r) => (
+                            <tr key={r.skill} className="border-b border-border/50">
+                              <td className="py-1.5 pr-2 font-semibold text-foreground">{r.skill}</td>
+                              <td className="py-1.5 pr-2">{r.min_proficiency}/5</td>
+                              <td className="py-1.5 pr-2">
+                                <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${COVERAGE_META[r.coverage]?.cls}`}>{COVERAGE_META[r.coverage]?.label ?? r.coverage}</span>
+                              </td>
+                              <td className="py-1.5 pr-2 text-muted-foreground">{r.current_proficiency ?? "—"} → {r.projected_proficiency ?? "—"}</td>
+                              <td className="py-1.5">{r.mandatory ? (r.mandatory_satisfied ? <CheckCircle2 className="h-3.5 w-3.5 text-secondary" /> : <AlertTriangle className="h-3.5 w-3.5 text-destructive" />) : "no"}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Timeline */}
+                    <div className="flex flex-wrap gap-1.5">
+                      {o.timeline.map((s) => (
+                        <span key={s.name} className={`rounded bg-muted px-2 py-1 text-[11px] font-semibold text-foreground ${s.parallel ? "ring-1 ring-inset ring-primary/40" : ""}`}>
+                          {s.name} · {s.duration_days}d{s.parallel ? " (parallel)" : ""}
+                        </span>
+                      ))}
+                    </div>
+
+                    <p className="rounded-md bg-muted p-3 text-xs leading-relaxed text-foreground">{o.status_reason}</p>
+
+                    {(o.constraints_violated.length > 0 || o.constraints_satisfied.length > 0) && (
+                      <ul className="flex flex-col gap-1 text-[11px]">
+                        {o.constraints_satisfied.map((c) => (
+                          <li key={c} className="flex items-start gap-1.5 text-secondary"><CheckCircle2 className="mt-0.5 h-3 w-3 shrink-0" /> {c}</li>
                         ))}
-                      </tbody>
-                    </table>
+                        {o.constraints_violated.map((c) => (
+                          <li key={c} className="flex items-start gap-1.5 text-destructive"><AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" /> {c}</li>
+                        ))}
+                      </ul>
+                    )}
+
+                    <p className="text-xs italic leading-relaxed text-muted-foreground">{o.rationale}</p>
                   </div>
-
-                  {/* Timeline */}
-                  <div className="flex flex-wrap gap-1.5">
-                    {o.timeline.map((s) => (
-                      <span key={s.name} className={`rounded bg-muted px-2 py-1 text-[11px] font-semibold text-foreground ${s.parallel ? "ring-1 ring-inset ring-primary/40" : ""}`}>
-                        {s.name} · {s.duration_days}d{s.parallel ? " (parallel)" : ""}
-                      </span>
-                    ))}
-                  </div>
-
-                  <p className="rounded-md bg-muted p-3 text-xs leading-relaxed text-foreground">{o.status_reason}</p>
-
-                  {(o.constraints_violated.length > 0 || o.constraints_satisfied.length > 0) && (
-                    <ul className="flex flex-col gap-1 text-[11px]">
-                      {o.constraints_satisfied.map((c) => (
-                        <li key={c} className="flex items-start gap-1.5 text-secondary"><CheckCircle2 className="mt-0.5 h-3 w-3 shrink-0" /> {c}</li>
-                      ))}
-                      {o.constraints_violated.map((c) => (
-                        <li key={c} className="flex items-start gap-1.5 text-destructive"><AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" /> {c}</li>
-                      ))}
-                    </ul>
-                  )}
-
-                  <p className="text-xs italic leading-relaxed text-muted-foreground">{o.rationale}</p>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
 
-            {/* Actions: explain + propose */}
+            {/* Batch F (F2): Review & Approve — the selected option binds the
+                proposal. Explain stays available; "Send to human review" is
+                disabled until an option is selected (and re-enabled only via a
+                fresh, non-outdated plan). */}
             {outdated && (
               <div role="alert" className="flex flex-wrap items-center gap-3 rounded-lg bg-amber-100 p-4 text-amber-900">
                 <AlertTriangle className="h-5 w-5 shrink-0" />
@@ -396,11 +520,46 @@ export default function StaffingPlanner() {
                 {explaining ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
                 Explain scenario
               </Button>
-              <Button onClick={() => void doPropose()} disabled={proposing || outdated || proposalId !== null}>
-                {proposing ? <Loader2 className="h-4 w-4 animate-spin" /> : proposalId ? <CheckCircle2 className="h-4 w-4" /> : <Send className="h-4 w-4" />}
-                {proposalId ? `Proposal submitted (${proposalId.slice(0, 8)})` : "Send to human review"}
+              <Button onClick={() => void doPropose()} disabled={proposing || outdated || !selectedOption || proposal !== null}>
+                {proposing ? <Loader2 className="h-4 w-4 animate-spin" /> : proposal ? <CheckCircle2 className="h-4 w-4" /> : <Send className="h-4 w-4" />}
+                {proposal ? "Proposal submitted" : "Send selected option to human review"}
               </Button>
+              {!selectedOption && !proposal && (
+                <span className="text-xs font-semibold text-muted-foreground">
+                  Select an option in the comparison table above to review it for submission.
+                </span>
+              )}
             </div>
+
+            {/* Selected option binding summary / submitted proposal */}
+            {proposal ? (
+              <div className="rounded-lg border-2 border-secondary/40 bg-secondary/10 p-5">
+                <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-secondary">
+                  <BadgeCheck className="h-4 w-4" /> Proposal submitted — bound to the exact option and scenario version
+                </p>
+                <p className="mt-2 text-sm font-bold text-foreground">
+                  Option: <span className="capitalize">{proposal.option_label}</span>
+                  {selectedOptionRow?.subject ? ` · ${selectedOptionRow.subject}` : ""}
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Scenario version: <code className="rounded bg-muted px-1.5 py-0.5">{proposal.scenario_version}</code> · Proposal {proposal.id.slice(0, 8)} — the human reviewer sees exactly these numbers, not a re-computation.
+                </p>
+              </div>
+            ) : selectedOptionRow && selectedOption ? (
+              <div className="rounded-lg bg-white p-5">
+                <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                  <SearchCheck className="h-4 w-4" /> Review selection
+                </p>
+                <p className="mt-2 text-sm font-semibold text-foreground">
+                  You selected <b className="capitalize">{selectedOptionRow.label}</b>
+                  {selectedOptionRow.subject ? ` (subject: ${selectedOptionRow.subject})` : ""} — ready day {selectedOptionRow.ready_at_days}, $
+                  {selectedOptionRow.cost_usd.toLocaleString()}, {selectedOptionRow.verified_coverage_pct}% verified coverage.
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Submitting binds this option and the current scenario version (assumptions {plan.assumptions.version}). Recalculate after changing inputs so the proposal always matches what was reviewed.
+                </p>
+              </div>
+            ) : null}
 
             {explanation && (
               <div className="rounded-lg bg-white p-5">
@@ -412,7 +571,7 @@ export default function StaffingPlanner() {
             )}
 
             <p className="text-xs text-muted-foreground">
-              Scenario "{plan.scenario.name}" is saved with its input snapshot and assumptions (assumptions v{plan.assumptions.version}). Changing any input above and pressing Recalculate recomputes and exposes the trade-offs.
+              Scenario "{plan.scenario.name}" is saved with its input snapshot and assumptions (assumptions v{plan.assumptions.version}). Changing any input above and pressing Recalculate recomputes and exposes the trade-offs; a proposal always carries the option and version it was computed at.
             </p>
           </div>
         )}

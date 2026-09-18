@@ -8,6 +8,12 @@ import {
   meResultSchema,
   myWorkSchema,
   onboardingQueueSchema,
+  overviewSearchResultSchema,
+  policyConversationLinkSchema,
+  policyConversationListSchema,
+  policyConversationMessagesSchema,
+  policyConversationSaveSchema,
+  securityAuditResultSchema,
   recommendationCommentListSchema,
   recommendationCommentResultSchema,
   type CandidateCompare,
@@ -447,6 +453,93 @@ export const listEscalations = () => invoke<{ ok: true; escalations: PolicyEscal
 export const respondEscalation = (escalation_id: string, status: string, response_text: string) =>
   invoke<{ ok: true; escalation: PolicyEscalationRow }>("escalate", { action: "respond", escalation_id, status, response_text });
 
+// ---- Batch G: persistent, private policy conversations ----------------------
+// Each conversation belongs to one twin (owner-only RLS + server-side
+// ownership checks). Saves are idempotent on (conversation_id, request_id).
+export interface PolicyConversationRow {
+  id: string;
+  org_id: string;
+  owner_twin_id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+  last_message: {
+    role: string;
+    question: string | null;
+    answer: unknown;
+    escalation_id: string | null;
+    created_at: string;
+  } | null;
+}
+
+export interface PolicyMessageRow {
+  id: string;
+  conversation_id: string;
+  role: "user" | "assistant";
+  question: string | null;
+  answer: unknown;
+  escalation_id: string | null;
+  created_at: string;
+}
+
+export const policyConversationList = () =>
+  invoke<{ ok: true; conversations: PolicyConversationRow[] }>("policy-conversation", { action: "list" }, policyConversationListSchema, "policy-conversation.list");
+
+export const policyConversationMessages = (conversation_id: string) =>
+  invoke<{ ok: true; conversation: { id: string; title: string }; messages: PolicyMessageRow[] }>(
+    "policy-conversation",
+    { action: "messages", conversation_id },
+    policyConversationMessagesSchema,
+    "policy-conversation.messages"
+  );
+
+export const policyConversationSave = (payload: { conversation_id?: string; question: string; answer: PolicyAnswer; request_id: string }) =>
+  invoke<{ ok: true; conversation_id: string; message_id: string; created: boolean }>(
+    "policy-conversation",
+    { action: "save", ...payload },
+    policyConversationSaveSchema,
+    "policy-conversation.save"
+  );
+
+export const policyConversationLinkEscalation = (conversation_id: string, request_id: string, escalation_id: string) =>
+  invoke<{ ok: true; message_id: string; escalation_id: string }>(
+    "policy-conversation",
+    { action: "link-escalation", conversation_id, request_id, escalation_id },
+    policyConversationLinkSchema,
+    "policy-conversation.link-escalation"
+  );
+
+// ---- Batch H (H1): honest security audit feed (admin only) ------------------
+export type SecurityAuditKind = "access" | "recruitment" | "recommendations" | "onboarding";
+
+export interface SecurityAuditItem {
+  key: string;
+  kind: SecurityAuditKind;
+  label: string;
+  detail: string;
+  actor: string | null;
+  reason: string | null;
+  at: string;
+  href: string | null;
+}
+
+export interface SecurityAuditResult {
+  ok: true;
+  total: number;
+  page: number;
+  page_size: number;
+  items: SecurityAuditItem[];
+  truncated_sources: string[];
+}
+
+export const fetchSecurityAudit = (page: number, page_size: number, kind?: SecurityAuditKind) =>
+  invoke<SecurityAuditResult>(
+    "security-audit",
+    { page, page_size, kind: kind ?? undefined },
+    securityAuditResultSchema,
+    "security-audit"
+  );
+
 // ---- Recommendation & Action Hub (Phase 11 transactional lifecycle) ----
 
 export type RecommendationStatus =
@@ -749,11 +842,30 @@ export const listStaffingScenarios = () =>
     { action: "list" }
   );
 
-export const proposeStaffingScenario = (scenario_id: string) =>
-  invoke<{ ok: true; proposal_id: string; status: string; message: string }>("staffing-comparison", { action: "propose", scenario_id });
+export const proposeStaffingScenario = (scenario_id: string, option_id: string) =>
+  invoke<{ ok: true; proposal_id: string; status: string; message: string; option_id: string; option_label: string; scenario_version: string }>(
+    "staffing-comparison",
+    { action: "propose", scenario_id, option_id }
+  );
 
 export const explainStaffingScenario = (scenario_id: string) =>
   invoke<{ ok: true; explanation: string | null; digest: unknown; error?: string }>("staffing-comparison", { action: "explain", scenario_id });
+
+// ---- Batch F: authorized overview search (people / candidates / roles) ----
+// Scope (org vs team) and the candidate/requisition groups are decided
+// server-side from the caller's role. Actions/module links are static UI
+// navigation and are assembled client-side from the RBAC-driven nav.
+export interface OverviewSearchResult {
+  ok: true;
+  q: string;
+  scope: "org" | "team";
+  people: { id: string; name: string; job_title: string | null; department: string | null; role: string }[];
+  candidates: { id: string; name: string; department: string | null }[];
+  roles: { id: string; title: string; department: string | null; status: string }[];
+}
+
+export const fetchOverviewSearch = (q: string) =>
+  invoke<OverviewSearchResult>("overview-search", { q }, overviewSearchResultSchema, "overview-search");
 
 // ---- Phase 9: Workforce Review Index + Performance Summaries ----
 

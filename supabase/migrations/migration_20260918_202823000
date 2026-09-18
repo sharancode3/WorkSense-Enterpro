@@ -1,0 +1,6 @@
+-- Batch F (F2): staffing proposals bind the SELECTED option and the scenario version.
+alter table public.staffing_proposals
+  add column option_id text,
+  add column option_label text,
+  add column option_snapshot jsonb,
+  add column scenario_version text;

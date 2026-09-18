@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   AlertTriangle,
+  ArrowRight,
   Ban,
+  ChevronLeft,
+  ChevronRight,
   History,
   Loader2,
   Lock,
@@ -43,7 +46,8 @@ import {
   adminAccessReactivate,
   adminAccessSuspend,
   adminAccessUpdateRole,
-  type AdminActionRow,
+  fetchSecurityAudit,
+  type SecurityAuditKind,
 } from "@/lib/api";
 
 interface MemberRow {
@@ -67,11 +71,11 @@ const ROLE_CHIP: Record<string, string> = {
   candidate: "bg-muted text-foreground",
 };
 
-const ACTION_LABEL: Record<string, string> = {
-  invite: "Invited",
-  update_role: "Role changed",
-  suspend: "Suspended",
-  reactivate: "Reactivated",
+const AUDIT_KIND_CHIP: Record<string, string> = {
+  access: "bg-primary text-white",
+  recruitment: "bg-secondary text-white",
+  recommendations: "bg-accent text-foreground",
+  onboarding: "bg-muted text-foreground",
 };
 
 export default function AdminAccess() {
@@ -117,43 +121,23 @@ export default function AdminAccess() {
     },
   });
 
-  // Merged security audit feed: access-management actions + candidate
-  // conversions + policy waivers, sorted newest first.
+  // Batch H (H1): the security audit feed is served by the security-audit
+  // backend function — canonical sources (access actions, recommendation
+  // workflow events, candidate decisions, onboarding waivers) merged and
+  // deduped server-side, actor/target names resolved, and HONEST pagination
+  // (exact total under the same filters + a bounded page). No client-side
+  // "latest N then truncate" caps remain.
+  const AUDIT_PAGE_SIZE = 20;
+  const [auditPage, setAuditPage] = useState(1);
+  const [auditKind, setAuditKind] = useState<SecurityAuditKind | "">("");
   const audit = useQuery({
-    queryKey: ["admin-audit", twin?.id ?? "anon"],
-    queryFn: async () => {
-      const [adm, conv, wv] = await Promise.all([
-        supabase
-          .from("admin_actions")
-          .select("id, action, actor_twin_id, target_twin_id, target_email, before_data, after_data, reason, created_at")
-          .order("created_at", { ascending: false })
-          .limit(60),
-        supabase
-          .from("application_stage_events")
-          .select("id, new_stage, reason, at")
-          .in("new_stage", ["selected", "rejected"])
-          .order("at", { ascending: false })
-          .limit(30),
-        supabase
-          .from("onboarding_tasks")
-          .select("id, task_code, waiver, updated_at")
-          .not("waiver", "is", null)
-          .order("updated_at", { ascending: false })
-          .limit(30),
-      ]);
-      const events: { id: string; kind: string; label: string; detail: string; reason: string | null; at: string }[] = [];
-      for (const a of (adm.data ?? []) as AdminActionRow[]) {
-        events.push({ id: `adm:${a.id}`, kind: a.action, label: (ACTION_LABEL[a.action] ?? a.action).toUpperCase(), detail: a.target_email ?? "member", reason: a.reason, at: a.created_at });
-      }
-      for (const c of (conv.data ?? []) as { id: string; new_stage: string; reason: string | null; at: string }[]) {
-        events.push({ id: `conv:${c.id}`, kind: "convert", label: c.new_stage === "selected" ? "CANDIDATE_CONVERTED" : "CANDIDATE_DECISION", detail: c.reason ?? "application decision", reason: null, at: c.at });
-      }
-      for (const w of (wv.data ?? []) as { id: string; task_code: string; waiver?: { by_name?: string; reason?: string; policy_basis?: { doc_code?: string } }; updated_at: string }[]) {
-        events.push({ id: `wv:${w.id}`, kind: "waive", label: "POLICY_WAIVED", detail: `${w.task_code} · ${w.waiver?.by_name ?? "manager"}${w.waiver?.policy_basis?.doc_code ? ` · ${w.waiver.policy_basis.doc_code}` : ""}`, reason: w.waiver?.reason ?? null, at: w.updated_at });
-      }
-      return events.sort((a, b) => String(b.at).localeCompare(String(a.at))).slice(0, 100);
-    },
+    queryKey: ["admin-audit", twin?.id ?? "anon", auditPage, auditKind],
+    queryFn: () => fetchSecurityAudit(auditPage, AUDIT_PAGE_SIZE, auditKind || undefined),
   });
+  const auditTotal = audit.data?.total ?? 0;
+  const auditPages = Math.max(1, Math.ceil(auditTotal / AUDIT_PAGE_SIZE));
+  const canPrev = auditPage > 1;
+  const canNext = auditPage < auditPages;
 
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -559,31 +543,95 @@ export default function AdminAccess() {
               <History className="h-5 w-5 text-primary" /> Security audit log
             </DrawerTitle>
           </DrawerHeader>
-          <div className="flex max-h-[65vh] flex-col gap-2 overflow-y-auto px-6 pb-6">
+          <div className="flex max-h-[65vh] flex-col gap-3 overflow-y-auto px-6 pb-6">
             <p className="text-xs text-muted-foreground">
-              Security events across the organization — access management, candidate conversions and policy waivers — newest first.
+              Security events merged from canonical sources — access governance, recommendation workflow, candidate
+              decisions and onboarding waivers — newest first. Names are resolved server-side and each event deep-links
+              to the module that owns it.
             </p>
+
+            {/* Kind filter (server-side: changes the exact total + page) */}
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="text-xs font-semibold text-muted-foreground">Kind</label>
+              <select
+                value={auditKind}
+                onChange={(e) => {
+                  setAuditKind(e.target.value as SecurityAuditKind | "");
+                  setAuditPage(1);
+                }}
+                aria-label="Filter audit by kind"
+                className="h-9 rounded-md border border-border bg-white px-2 text-sm font-medium text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+              >
+                <option value="">All kinds</option>
+                <option value="access">Access governance</option>
+                <option value="recommendations">Recommendations</option>
+                <option value="recruitment">Recruitment</option>
+                <option value="onboarding">Onboarding</option>
+              </select>
+              <span className="ml-auto text-xs text-muted-foreground">{auditTotal} event{auditTotal === 1 ? "" : "s"}</span>
+            </div>
+
             {audit.isLoading && (
               <div className="flex items-center gap-2 rounded-lg bg-muted p-4 text-sm text-muted-foreground">
                 <Loader2 className="h-4 w-4 animate-spin" /> Loading…
               </div>
             )}
-            {audit.data && audit.data.length === 0 && (
-              <p className="rounded-lg bg-muted p-4 text-sm text-muted-foreground">No security events recorded yet.</p>
+            {audit.data && auditTotal === 0 && (
+              <p className="rounded-lg bg-muted p-4 text-sm text-muted-foreground">No security events match this kind yet.</p>
             )}
-            {(audit.data ?? []).map((ev) => (
-              <div key={ev.id} className="rounded-lg bg-muted p-4">
+            {(audit.data?.items ?? []).map((ev) => (
+              <div key={ev.key} className="rounded-lg bg-muted p-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="rounded bg-foreground px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">
-                    {ev.kind}
-                  </span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className={`rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${AUDIT_KIND_CHIP[ev.kind] ?? "bg-muted text-foreground"}`}>
+                      {ev.kind}
+                    </span>
+                    <span className="rounded bg-foreground px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">
+                      {ev.label}
+                    </span>
+                  </div>
                   <span className="text-xs text-muted-foreground">{new Date(ev.at).toLocaleString()}</span>
                 </div>
-                <p className="mt-1.5 text-sm font-bold text-foreground">{ev.label}</p>
-                <p className="text-xs text-muted-foreground">{ev.detail}</p>
-                {ev.reason && <p className="mt-1 text-xs text-foreground">{ev.reason}</p>}
+                <p className="mt-1.5 text-sm font-bold text-foreground">{ev.detail}</p>
+                <p className="text-xs text-muted-foreground">
+                  {ev.actor ? `By ${ev.actor}` : "By system"}
+                  {ev.reason ? ` — ${ev.reason}` : ""}
+                </p>
+                {ev.href && (
+                  <Link
+                    to={ev.href}
+                    className="mt-2 inline-flex items-center gap-1 rounded-md bg-white px-2.5 py-1 text-xs font-bold text-primary transition-colors hover:bg-border"
+                  >
+                    View in module <ArrowRight className="h-3 w-3" />
+                  </Link>
+                )}
               </div>
             ))}
+
+            {/* Honest pagination — page reflects the real filtered total */}
+            {auditTotal > 0 && (
+              <div className="flex items-center justify-between gap-2 border-t border-border pt-3">
+                <button
+                  type="button"
+                  disabled={!canPrev}
+                  onClick={() => setAuditPage((p) => Math.max(1, p - 1))}
+                  className="flex h-9 items-center gap-1 rounded-md bg-white px-3 text-xs font-bold text-foreground transition-colors hover:bg-border disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <ChevronLeft className="h-3.5 w-3.5" /> Prev
+                </button>
+                <span className="text-xs text-muted-foreground">
+                  Page {auditPage} of {auditPages} · {auditTotal} total
+                </span>
+                <button
+                  type="button"
+                  disabled={!canNext}
+                  onClick={() => setAuditPage((p) => Math.min(auditPages, p + 1))}
+                  className="flex h-9 items-center gap-1 rounded-md bg-white px-3 text-xs font-bold text-foreground transition-colors hover:bg-border disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Next <ChevronRight className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            )}
           </div>
         </DrawerContent>
       </Drawer>

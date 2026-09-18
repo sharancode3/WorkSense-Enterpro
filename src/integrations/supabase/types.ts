@@ -4662,6 +4662,46 @@ export type Database = {
           },
         ]
       }
+      policy_conversations: {
+        Row: {
+          created_at: string
+          id: string
+          org_id: string
+          owner_twin_id: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          org_id: string
+          owner_twin_id: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          org_id?: string
+          owner_twin_id?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "policy_conversations_org_id_fkey"
+            columns: ["org_id"]
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "policy_conversations_owner_twin_id_fkey"
+            columns: ["owner_twin_id"]
+            referencedRelation: "digital_twins"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       policy_documents: {
         Row: {
           applicable_locations: Json
@@ -4801,6 +4841,61 @@ export type Database = {
             foreignKeyName: "policy_escalations_responded_by_fkey"
             columns: ["responded_by"]
             referencedRelation: "digital_twins"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      policy_messages: {
+        Row: {
+          answer: Json | null
+          conversation_id: string
+          created_at: string
+          escalation_id: string | null
+          id: string
+          org_id: string
+          question: string | null
+          request_id: string
+          role: string
+        }
+        Insert: {
+          answer?: Json | null
+          conversation_id: string
+          created_at?: string
+          escalation_id?: string | null
+          id?: string
+          org_id: string
+          question?: string | null
+          request_id: string
+          role: string
+        }
+        Update: {
+          answer?: Json | null
+          conversation_id?: string
+          created_at?: string
+          escalation_id?: string | null
+          id?: string
+          org_id?: string
+          question?: string | null
+          request_id?: string
+          role?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "policy_messages_conversation_id_fkey"
+            columns: ["conversation_id"]
+            referencedRelation: "policy_conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "policy_messages_escalation_id_fkey"
+            columns: ["escalation_id"]
+            referencedRelation: "policy_escalations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "policy_messages_org_id_fkey"
+            columns: ["org_id"]
+            referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
         ]
@@ -5321,9 +5416,13 @@ export type Database = {
         Row: {
           created_at: string
           id: string
+          option_id: string | null
+          option_label: string | null
+          option_snapshot: Json | null
           org_id: string
           review_note: string | null
           scenario_id: string | null
+          scenario_version: string | null
           status: string
           submitted_by: string | null
           updated_at: string
@@ -5331,9 +5430,13 @@ export type Database = {
         Insert: {
           created_at?: string
           id?: string
+          option_id?: string | null
+          option_label?: string | null
+          option_snapshot?: Json | null
           org_id: string
           review_note?: string | null
           scenario_id?: string | null
+          scenario_version?: string | null
           status?: string
           submitted_by?: string | null
           updated_at?: string
@@ -5341,9 +5444,13 @@ export type Database = {
         Update: {
           created_at?: string
           id?: string
+          option_id?: string | null
+          option_label?: string | null
+          option_snapshot?: Json | null
           org_id?: string
           review_note?: string | null
           scenario_id?: string | null
+          scenario_version?: string | null
           status?: string
           submitted_by?: string | null
           updated_at?: string
