@@ -924,6 +924,7 @@ async function reseed(supabase, authIds: Record<string, string>) {
   // Phase 12: explicitly fictional, internally consistent demo stories —
   // resume archetypes, duplicate-import and prompt-injection fixtures.
   await seedDemoStories(supabase, DEMO_ORG_ID, fx.clock);
+  await seedDemoResumes(supabase, DEMO_ORG_ID, fx.clock);
 }
 
 // ---------------------------------------------------------------------------
@@ -1204,6 +1205,82 @@ async function seedRecruitmentWorkspace(supabase, orgId: string, clock: string) 
       .from("job_requisitions")
       .update({ rubrics, requisition_criteria: criteria, audit_events: audit })
       .eq("id", req.id);
+  }
+}
+
+
+// Phase 15 (Batch B2): idempotent synthetic resume documents for the guided
+// demo applicants, stored in the private `resumes` bucket via the same path
+// convention resume-import/resume-download use. Labeled synthetic; never grants
+// reviewer-confirmed capability on its own.
+async function seedDemoResumes(supabase, orgId: string, clock: string) {
+  const fnv = (str: string) => {
+    let h = 0x811c9dc5;
+    for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+    return (h >>> 0).toString(16).padStart(8, "0");
+  };
+  await supabase.storage.createBucket("resumes", { public: false }).catch(() => undefined);
+  const RESUMES: { twin_id: string; name: string; code: string; text: string }[] = [
+    { twin_id: "22222222-2222-2222-2222-222222222205", name: "Priya Rana", code: "WS-PRIYA-2026", text: "Priya Rana — Backend Engineer. 4 years building Go services. Skills: Go, REST APIs, PostgreSQL, Docker. Project: payments service (idempotent webhook processing)." },
+    { twin_id: "22222222-2222-2222-2222-222222222240", name: "Ravi Shah", code: "WS-SYN-RAVI-2026", text: "Ravi Shah — Senior Backend Engineer. 7 years, Go microservices, event-driven design, REST APIs at scale, PostgreSQL. Led a payments platform reaching 40M requests/day." },
+    { twin_id: "22222222-2222-2222-2222-222222222241", name: "Juno Park", code: "WS-SYN-JUNO-2026", text: "Juno Park — Backend Engineer. Keywords: Go, Kubernetes, PostgreSQL, Python, REST APIs, AWS. No project dates or verifiable roles described." },
+    { twin_id: "22222222-2222-2222-2222-222222222242", name: "Maya Lindqvist", code: "WS-SYN-MAYA-2026", text: "Maya Lindqvist — Frontend Engineer. TypeScript, React, Node.js. Built design systems and accessible dashboards." },
+    { twin_id: "22222222-2222-2222-2222-222222222243", name: "Theo Brandt", code: "WS-SYN-THEO-2026", text: "Theo Brandt — Junior Developer. Beginner Go, Docker basics. One internship. Applying for a senior role." },
+    { twin_id: "22222222-2222-2222-2222-222222222244", name: "Elena Dubois", code: "WS-SYN-ELENA2-2026", text: "Elena Dubois — Data Engineer. Python, SQL, dbt, data visualization. Moving toward backend engineering." },
+  ];
+  for (const r of RESUMES) {
+    const body = "SYNTHETIC DEMO RESUME — FICTIONAL DATA ONLY.\n\n" + r.text;
+    const file = `demo-${r.code}.txt`;
+    const path = `orgs/${orgId}/twins/${r.twin_id}/${file}`;
+    const bytes = new TextEncoder().encode(body);
+    await supabase.storage.from("resumes").upload(path, bytes, { contentType: "text/plain", upsert: true }).catch(() => undefined);
+    const checksum = fnv(body);
+    const { data: existing } = await supabase.from("resume_documents").select("id").eq("org_id", orgId).eq("twin_id", r.twin_id).eq("checksum", checksum).maybeSingle();
+    let docId = existing?.id ?? null;
+    if (!docId) {
+      const { data: doc, error: docErr } = await supabase
+        .from("resume_documents")
+        .insert({
+          org_id: orgId,
+          twin_id: r.twin_id,
+          storage_path: path,
+          file_name: file,
+          content_type: "text/plain",
+          size_bytes: bytes.length,
+          checksum,
+          status: "low_text",
+          low_text: true,
+          page_count: 1,
+          extracted_text: body,
+          text_pages: [{ page: 1, text: body }],
+          error_code: null,
+          error_message: null,
+        })
+        .select("id")
+        .single();
+      if (docErr || !doc) continue;
+      docId = doc.id;
+    }
+    const { data: maxVer } = await supabase
+      .from("resume_versions")
+      .select("version")
+      .eq("document_id", docId)
+      .order("version", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const { error: verErr } = await supabase.from("resume_versions").upsert(
+      {
+        org_id: orgId,
+        twin_id: r.twin_id,
+        document_id: docId,
+        version: (maxVer?.version ?? 0) + 1,
+        source_hash: checksum,
+        review_state: "draft",
+        reviewed_at: null,
+      },
+      { onConflict: "document_id,version" }
+    );
+    if (verErr) continue;
   }
 }
 
