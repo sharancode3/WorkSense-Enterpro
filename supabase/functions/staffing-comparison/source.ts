@@ -1,6 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
 import { planStaffing, DEFAULT_ASSUMPTIONS, type Candidate, type Person, type ScenarioInput } from "../_shared/staffing-planner.ts";
 import { callQwen, QwenError } from "../_shared/qwen.ts";
+import { isProposalDecision, planProposalDecision, buildFollowUpTaskRow } from "../_shared/staffing-review.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -22,6 +23,21 @@ async function isTeamMember(supabase, rootTwinId: string, checkTwinId: string): 
     for (const c of children.get(cur) ?? []) stack.push(c);
   }
   return seen.has(checkTwinId);
+}
+
+async function teamTwinIds(supabase, rootTwinId: string): Promise<Set<string>> {
+  const { data } = await supabase.from("digital_twins").select("id, manager_id");
+  const children = new Map<string, string[]>();
+  for (const t of data ?? []) if (t.manager_id) children.set(t.manager_id, [...(children.get(t.manager_id) ?? []), t.id]);
+  const seen = new Set<string>();
+  const stack = [rootTwinId];
+  while (stack.length > 0) {
+    const cur = stack.pop()!;
+    if (seen.has(cur)) continue;
+    seen.add(cur);
+    for (const c of children.get(cur) ?? []) stack.push(c);
+  }
+  return seen;
 }
 
 const NL = String.fromCharCode(10);
@@ -80,9 +96,40 @@ Deno.serve(async (req) => {
     if (error) return json({ error: "INTERNAL", message: error.message }, 500);
     const { data: props } = await supabase
       .from("staffing_proposals")
-      .select("id, scenario_id, status, review_note, created_at")
-      .eq("org_id", caller.org_id);
-    return json({ ok: true, scenarios: data ?? [], proposals: props ?? [] });
+      .select("id, scenario_id, status, review_note, option_label, scenario_version, submitted_by, reviewed_by, reviewed_at, created_at")
+      .eq("org_id", caller.org_id)
+      .order("created_at", { ascending: false })
+      .limit(20);
+    // Server-side scope: managers only see proposals they (or their team)
+    // submitted — never the org's full proposal list. HR sees all org proposals.
+    let rows = props ?? [];
+    if (caller.role === "manager") {
+      const teamIds = await teamTwinIds(supabase, caller.id);
+      rows = rows.filter((p) => p.submitted_by !== null && teamIds.has(p.submitted_by));
+    }
+    // Resolve twin ids to names once, so the review UI can show who submitted
+    // and who decided without the frontend guessing.
+    const personIds = [
+      ...new Set(
+        rows
+          .flatMap((p) => [p.submitted_by, p.reviewed_by])
+          .filter((id): id is string => typeof id === "string" && id.length > 0)
+      ),
+    ];
+    const names = new Map<string, string>();
+    if (personIds.length > 0) {
+      const { data: people } = await supabase.from("digital_twins").select("id, name").in("id", personIds);
+      for (const p of people ?? []) names.set(p.id, p.name);
+    }
+    return json({
+      ok: true,
+      scenarios: data ?? [],
+      proposals: rows.map((p) => ({
+        ...p,
+        submitted_by_name: p.submitted_by ? (names.get(p.submitted_by) ?? null) : null,
+        reviewed_by_name: p.reviewed_by ? (names.get(p.reviewed_by) ?? null) : null,
+      })),
+    });
   }
 
   // ---- propose a saved scenario for human review -------------------------------
@@ -131,6 +178,80 @@ Deno.serve(async (req) => {
       option_label: data.option_label,
       scenario_version: data.scenario_version,
     });
+  }
+
+  // ---- review a submitted proposal (human decision loop) ----------------------
+  // Only HR reviewers decide. The decision is a durable record (status,
+  // reviewer, note, timestamp) guarded by the open->decided transition; an
+  // approval dispatches an employee-owned follow-up task when the option
+  // resolves to an existing active employee.
+  if (action === "review_proposal") {
+    if (!["hr_executive", "hr_partner"].includes(caller.role)) {
+      return json({ error: "FORBIDDEN", message: "Only HR reviewers can decide staffing proposals." }, 403);
+    }
+    const proposalId = String(body.proposal_id ?? "").trim();
+    const decision = body.decision;
+    if (!proposalId) return json({ error: "VALIDATION_ERROR", message: "proposal_id is required." }, 400);
+    if (!isProposalDecision(decision)) {
+      return json({ error: "VALIDATION_ERROR", message: "decision must be 'approved' or 'declined'." }, 400);
+    }
+    const reviewNote =
+      typeof body.review_note === "string" && body.review_note.trim() ? body.review_note.trim().slice(0, 500) : null;
+
+    const { data: proposal } = await supabase
+      .from("staffing_proposals")
+      .select("id, status, option_label, option_snapshot, scenario_version")
+      .eq("org_id", caller.org_id)
+      .eq("id", proposalId)
+      .maybeSingle();
+    if (!proposal) return json({ error: "NOT_FOUND", message: "No such proposal in this organization." }, 404);
+
+    const plan = planProposalDecision({
+      proposal: { status: proposal.status, option_label: proposal.option_label, option_snapshot: proposal.option_snapshot },
+      decision,
+      reviewNote,
+      reviewerId: caller.id,
+      now: new Date().toISOString(),
+    });
+
+    // Version guard: only an open proposal can be decided; a second review on
+    // the same proposal is rejected (idempotency, never a silent overwrite).
+    const { data: updated, error } = await supabase
+      .from("staffing_proposals")
+      .update(plan.update)
+      .eq("org_id", caller.org_id)
+      .eq("id", proposalId)
+      .eq("status", "open")
+      .select("id, status, option_label, scenario_version, review_note, submitted_by, reviewed_by, reviewed_at, created_at")
+      .maybeSingle();
+    if (error) return json({ error: "INTERNAL", message: error.message }, 500);
+    if (!updated) return json({ error: "ALREADY_REVIEWED", message: "This proposal has already been reviewed." }, 409);
+
+    // Approved + option names an active employee -> dispatch one owned task
+    // (idempotency key = staffing-proposal:<id>, so no double dispatch).
+    if (plan.subjectName) {
+      const { data: subjectTwin } = await supabase
+        .from("digital_twins")
+        .select("id")
+        .eq("org_id", caller.org_id)
+        .eq("name", plan.subjectName)
+        .eq("status", "active")
+        .maybeSingle();
+      if (subjectTwin) {
+        const { error: taskErr } = await supabase.from("action_tasks").insert(
+          buildFollowUpTaskRow({
+            orgId: caller.org_id,
+            ownerTwinId: subjectTwin.id,
+            optionLabel: updated.option_label ?? proposal.option_label ?? "staffing decision",
+            proposalId,
+            now: plan.update.reviewed_at,
+          })
+        );
+        if (taskErr) return json({ error: "INTERNAL", message: taskErr.message }, 500);
+      }
+    }
+
+    return json({ ok: true, proposal: updated, message: `Proposal ${decision}.` });
   }
 
   // ---- explain a saved scenario (Qwen narrates ONLY the validated numbers) ------

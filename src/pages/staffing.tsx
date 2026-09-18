@@ -1,16 +1,20 @@
 import { useCallback, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/auth-context";
 import { AppShell } from "@/components/app-shell";
 import { can } from "@/lib/rbac";
 import {
   explainStaffingScenario,
+  listStaffingScenarios,
   planStaffing,
   proposeStaffingScenario,
+  reviewStaffingProposal,
   type PlannerOption,
   type StaffingPlanInput,
   type StaffingPlanResult,
 } from "@/lib/api";
+import { Textarea } from "@/components/ui/textarea";
 import { recommendOption, RECOMMENDATION_RULE, RECOMMENDATION_RULE_SHORT } from "@/lib/staffing-recommendation";
 import { isInputFingerprintOutdated, isProposalStale } from "@/lib/staffing-staleness";
 import { Button } from "@/components/ui/button";
@@ -19,12 +23,15 @@ import {
   AlertTriangle,
   BadgeCheck,
   CheckCircle2,
+  ClipboardCheck,
   Clock,
   Edit3,
+  Inbox,
   Info,
   Loader2,
   Lock,
   MessageSquareText,
+  RefreshCw,
   Scale,
   SearchCheck,
   Send,
@@ -33,6 +40,7 @@ import {
   TrendingUp,
   Users,
   Wallet,
+  XCircle,
 } from "lucide-react";
 
 const STATUS_META: Record<string, { label: string; cls: string }> = {
@@ -112,6 +120,39 @@ export default function StaffingPlanner() {
   const recommendedId = plan ? recommendOption(plan.options) : null;
   const selectedOptionRow = plan?.options.find((o) => o.id === selectedOption) ?? null;
 
+  // Page access mirrors the server-side gate; the query below only fires for
+  // authorized visitors (hooks must run unconditionally, before the early
+  // return).
+  const staffingAccess = !!role && (can(role, "view_all_workforce") || can(role, "view_team"));
+
+  // Batch 10: human-review loop — submitted proposals are listed (server-scoped
+  // to the caller's org or team) and HR reviewers can approve/decline them.
+  const canReview = can(role, "review_staffing_proposals");
+  const proposalsQuery = useQuery({
+    queryKey: ["staffing-proposals"],
+    queryFn: listStaffingScenarios,
+    enabled: staffingAccess,
+    staleTime: 30_000,
+  });
+  const [reviewingId, setReviewingId] = useState<string | null>(null);
+  const [reviewNote, setReviewNote] = useState("");
+  const [reviewBusy, setReviewBusy] = useState(false);
+
+  const doReview = async (proposalId: string, decision: "approved" | "declined") => {
+    setReviewBusy(true);
+    try {
+      const res = await reviewStaffingProposal(proposalId, decision, reviewNote.trim());
+      toast.success(res.message);
+      setReviewNote("");
+      setReviewingId(null);
+      void proposalsQuery.refetch();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Review failed — the proposal was not changed.");
+    } finally {
+      setReviewBusy(false);
+    }
+  };
+
   const run = useCallback(async (recalc = false) => {
     const required_skills = skills
       .map((r) => ({ skill: r.skill.trim(), min_proficiency: Number(r.min_proficiency) || 3, mandatory: r.mandatory }))
@@ -170,7 +211,7 @@ export default function StaffingPlanner() {
     }
   };
 
-  if (role && !can(role, "view_all_workforce") && !can(role, "view_team")) {
+  if (!staffingAccess) {
     return (
       <AppShell>
         <div className="mx-auto flex max-w-xl flex-col items-center gap-4 px-4 py-24 text-center">
@@ -587,6 +628,119 @@ export default function StaffingPlanner() {
             </p>
           </div>
         )}
+
+        {/* Batch 10: submitted proposals — the human-review loop. Decisions are
+            durable (status, reviewer, note, timestamp); HR approves/declines. */}
+        <section className="mt-10 flex flex-col gap-4" aria-label="Submitted staffing proposals">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <ClipboardCheck className="h-5 w-5 text-primary" />
+              <h2 className="text-xl font-extrabold tracking-tight text-foreground">Submitted proposals — human review</h2>
+              {canReview && (
+                <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wide text-primary">
+                  Reviewer: HR
+                </span>
+              )}
+            </div>
+            <Button variant="ghost" size="sm" onClick={() => void proposalsQuery.refetch()} disabled={proposalsQuery.isFetching}>
+              {proposalsQuery.isFetching ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+              Refresh
+            </Button>
+          </div>
+
+          {proposalsQuery.isPending ? (
+            <div className="flex items-center gap-2 rounded-lg bg-muted p-6 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin text-primary" /> Loading proposals…
+            </div>
+          ) : proposalsQuery.isError ? (
+            <div role="alert" className="flex items-center gap-2 rounded-lg bg-destructive/10 p-4 text-sm font-semibold text-destructive">
+              <AlertTriangle className="h-4 w-4 shrink-0" />
+              Could not load proposals — {(proposalsQuery.error as Error)?.message ?? "unknown error"}.{" "}
+              <button className="underline" onClick={() => void proposalsQuery.refetch()}>Retry</button>
+            </div>
+          ) : !proposalsQuery.data?.proposals?.length ? (
+            <div className="flex items-center gap-3 rounded-lg bg-white p-6 text-sm text-muted-foreground">
+              <Inbox className="h-5 w-5 shrink-0" />
+              No submitted proposals yet. Run a scenario, select an option above, and send it to human review.
+            </div>
+          ) : (
+            <ul className="flex flex-col gap-3">
+              {proposalsQuery.data.proposals.map((p) => {
+                const open = p.status === "open";
+                const reviewing = reviewingId === p.id;
+                return (
+                  <li key={p.id} className="rounded-lg bg-white p-4 shadow-sm">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="flex min-w-0 flex-col gap-1">
+                        <p className="flex flex-wrap items-center gap-2 text-sm font-bold text-foreground">
+                          <span className="capitalize">{p.option_label ?? "Option"}</span>
+                          <span
+                            className={`rounded px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide ${
+                              open ? "bg-accent text-foreground" : p.status === "approved" ? "bg-secondary text-white" : "bg-destructive/15 text-destructive"
+                            }`}
+                          >
+                            {p.status}
+                          </span>
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          Submitted by <span className="font-semibold text-foreground">{p.submitted_by_name ?? p.submitted_by?.slice(0, 8) ?? "unknown"}</span>
+                          {" · "}
+                          {new Date(p.created_at).toLocaleString()}
+                          {p.scenario_version ? <span className="ml-1 text-muted-foreground">· v{p.scenario_version}</span> : null}
+                        </p>
+                        {p.review_note && (
+                          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                            Review note: <span className="italic">{p.review_note}</span>
+                          </p>
+                        )}
+                        {p.reviewed_by_name && p.reviewed_at && (
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {p.status === "approved" ? (
+                              <CheckCircle2 className="mr-1 inline h-3.5 w-3.5 text-secondary" />
+                            ) : (
+                              <XCircle className="mr-1 inline h-3.5 w-3.5 text-destructive" />
+                            )}
+                            Decided by {p.reviewed_by_name} on {new Date(p.reviewed_at).toLocaleString()}
+                          </p>
+                        )}
+                      </div>
+
+                      {canReview && open && (
+                        <div className="flex flex-col items-end gap-2">
+                          {reviewing ? (
+                            <div className="flex w-full flex-col gap-2 sm:w-80">
+                              <Textarea
+                                value={reviewNote}
+                                onChange={(e) => setReviewNote(e.target.value)}
+                                placeholder="Review note (optional — shown to the submitter)"
+                                rows={3}
+                              />
+                              <div className="flex justify-end gap-2">
+                                <Button size="sm" variant="outline" disabled={reviewBusy} onClick={() => setReviewingId(null)}>
+                                  Cancel
+                                </Button>
+                                <Button size="sm" disabled={reviewBusy} onClick={() => void doReview(p.id, "approved")}>
+                                  {reviewBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />} Approve
+                                </Button>
+                                <Button size="sm" variant="destructive" disabled={reviewBusy} onClick={() => void doReview(p.id, "declined")}>
+                                  <XCircle className="h-4 w-4" /> Decline
+                                </Button>
+                              </div>
+                            </div>
+                          ) : (
+                            <Button size="sm" onClick={() => { setReviewingId(p.id); setReviewNote(""); }}>
+                              <SearchCheck className="h-4 w-4" /> Review
+                            </Button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </section>
       </div>
     </AppShell>
   );

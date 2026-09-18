@@ -94,7 +94,7 @@ of scope today (no demo box is faked to fill it).
 | Calendar/Outlook interview invites | Not supported | Manual scheduling only, labeled |
 | OCR for scanned/low-text resumes | Not supported | Low-text path + paste-text fallback instead |
 | Real-time push notifications | Not supported | Poll/refetch + durable model-job records |
-| Evidence→staffing-proposal staleness cascade | Partial | Scenario-version binding exists; proposal-to-candidate linkage is not yet implemented (Batch 9 test scope) |
+| Evidence→staffing-proposal staleness cascade | Partial | Scenario-version binding + stale-proposal flag exist; proposal-to-candidate linkage is not implemented. Staffing-proposal human-review decision loop IS supported (approve/decline + note + owned follow-up task) — Batch 10 |
 | Payroll / salary handling | Not supported | Out of scope |
 
 ## The one working cross-source journey (demo)
@@ -107,7 +107,7 @@ Demand → candidate/employee evidence → feasible staffing options → human r
 | Demand | Open requisition with weighted criteria | verify-batch-7 |
 | Candidate evidence | Resume docs + assertions; reviewed work sample with verbatim quotes | verify-batch-7 |
 | Feasible staffing options | `staffing-comparison` deterministic planner (feasible/conditional/infeasible + human review) | on-demand in workspace |
-| Human review | `assessment-review` confirm/override before evidence; human `select` at final round | verify-batch-6 |
+| Human review | `assessment-review` confirm/override before evidence; human `select` at final round; staffing proposals decided by HR (`review_proposal` — approve/decline + note, owned follow-up task on approval) | verify-batch-6 + verify-batch-10 |
 | Owned execution | Onboarding plan tasks owned by employee/manager/IT; action tasks | verify-batch-6 |
 | Accepted evidence | `assessment_supported` evidence + canonical `skill_fits` refresh | verify-batch-6 |
 | Updated readiness/outcome | Readiness recompute, IT queue drop, comparison reflects fit | verify-batch-4/6/7 |

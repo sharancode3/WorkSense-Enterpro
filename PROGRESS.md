@@ -616,3 +616,17 @@ The one working cross-source journey (Demand → evidence → explainable compar
 **Browser verification:** not performed (all exercised pages are auth-gated and cannot be screenshotted); code/contract and live-API verification are the evidence above.
 
 **Spec complete:** all 9 batches delivered (1 nav/RBAC, 2 RLS/scope, 3 role landings + IT, 4 IT queue + handoff, 5 assessment discoverability, 6 cross-module handoffs, 7 role-relevant fixtures, 8 coverage matrix, 9 regression + release proof). Remaining items: none implementable — only browser-persona verification remains untested (a tooling limit, not a product gap). Concrete blockers: none.
+
+## 49. Innovation batch 10 — staffing proposal human-review loop
+
+The reviewer spec's 6.6 said "Approval creates supported owned tasks" — but proposals could be submitted and were then never decided anywhere. This batch closes that loop end-to-end.
+
+**Backend.** New `review_proposal` action in `staffing-comparison` (deployed v1): role-gated to HR (hr_executive/hr_partner), org-scoped, version-guarded (`open` → `approved`/`declined`; a second review is `409 ALREADY_REVIEWED`, never a silent overwrite), and persists a durable decision — status + `reviewed_by` + `reviewed_at` + `review_note`. On approval, when the selected option's subject resolves to an active org employee, exactly one employee-owned `action_tasks` row is dispatched (`task_code staffing_transition`, idempotency key `staffing-proposal:<id>`, surfaces in the subject's My work feed); declined approvals dispatch nothing. New additive migration adds `reviewed_by`/`reviewed_at` (existing `open` rows untouched). Also fixed a latent scope bug in `list`: it used the service role and returned **all org proposals to managers** — it is now server-scoped (managers see only their own/team proposals; HR sees all) and resolves submitted/reviewed twin ids to names.
+
+**Engine + tests.** Pure `_shared/staffing-review.ts` (`isProposalDecision`, `planProposalDecision`, `buildFollowUpTaskRow`) + 7 unit tests. Frontend: new `reviewStaffingProposals` RBAC permission for both HR roles; `api.ts` exposes `reviewStaffingProposal` + the enriched list; staffing.tsx gains a "Submitted proposals — human review" section (loading / error-with-retry / honest empty / populated; per-proposal Approve/Decline with an optional note shown to the submitter; status + reviewer + timestamp + note on every card).
+
+**Checks:** lint 0 errors, app tsc + functions tsc green, 45 bundles / 29 shared modules no drift, `pnpm test` **414 tests / 41 files** (+7), `pnpm build` green. Live `verify-batch-10.mjs` **18/18**: plan→propose→approve→durable decision→idempotent re-review 409→404→manager 403→owned task for the subject→decline dispatches nothing→hr_partner reviews→HR list all org (names resolved)→manager list team-scoped→pristine reset. All prior suites re-run green (batch-1..8 = 106 checks). Browser verification not performed (auth-gated). Demo left pristine.
+
+**Honest boundary:** the evidence→proposal *staleness cascade* (proposal-to-candidate linkage) stays deferred in the coverage matrix; this batch adds the decision loop and version-bound follow-up task, not that cascade.
+
+**Remaining:** none implementable. Concrete blockers: none.

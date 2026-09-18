@@ -839,10 +839,41 @@ export const planStaffing = (input: StaffingPlanInput = {}) =>
   invoke<StaffingPlanResult>("staffing-comparison", { action: "plan", ...input });
 
 export const listStaffingScenarios = () =>
-  invoke<{ ok: true; scenarios: { id: string; name: string; input_snapshot: unknown; assumptions: unknown; result: unknown; created_by: string | null; created_at: string }[]; proposals: { id: string; scenario_id: string | null; status: string; review_note: string | null; created_at: string }[] }>(
-    "staffing-comparison",
-    { action: "list" }
-  );
+  invoke<{
+    ok: true;
+    scenarios: { id: string; name: string; input_snapshot: unknown; assumptions: unknown; result: unknown; created_by: string | null; created_at: string }[];
+    proposals: {
+      id: string;
+      scenario_id: string | null;
+      status: string;
+      review_note: string | null;
+      option_label: string | null;
+      scenario_version: string | null;
+      submitted_by: string | null;
+      submitted_by_name: string | null;
+      reviewed_by: string | null;
+      reviewed_by_name: string | null;
+      reviewed_at: string | null;
+      created_at: string;
+    }[];
+  }>("staffing-comparison", { action: "list" });
+
+export const reviewStaffingProposal = (proposal_id: string, decision: "approved" | "declined", review_note?: string) =>
+  invoke<{
+    ok: true;
+    proposal: {
+      id: string;
+      status: string;
+      option_label: string | null;
+      scenario_version: string | null;
+      review_note: string | null;
+      submitted_by: string | null;
+      reviewed_by: string | null;
+      reviewed_at: string | null;
+      created_at: string;
+    };
+    message: string;
+  }>("staffing-comparison", { action: "review_proposal", proposal_id, decision, review_note: review_note ?? "" });
 
 export const proposeStaffingScenario = (scenario_id: string, option_id: string) =>
   invoke<{ ok: true; proposal_id: string; status: string; message: string; option_id: string; option_label: string; scenario_version: string }>(

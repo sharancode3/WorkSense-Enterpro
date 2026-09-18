@@ -1,0 +1,6 @@
+alter table public.staffing_proposals
+  add column if not exists reviewed_by uuid references public.digital_twins(id),
+  add column if not exists reviewed_at timestamptz;
+
+create index if not exists staffing_proposals_review_idx
+  on public.staffing_proposals (org_id, status, reviewed_at desc);

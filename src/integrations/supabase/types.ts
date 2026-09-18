@@ -5421,6 +5421,8 @@ export type Database = {
           option_snapshot: Json | null
           org_id: string
           review_note: string | null
+          reviewed_at: string | null
+          reviewed_by: string | null
           scenario_id: string | null
           scenario_version: string | null
           status: string
@@ -5435,6 +5437,8 @@ export type Database = {
           option_snapshot?: Json | null
           org_id: string
           review_note?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
           scenario_id?: string | null
           scenario_version?: string | null
           status?: string
@@ -5449,6 +5453,8 @@ export type Database = {
           option_snapshot?: Json | null
           org_id?: string
           review_note?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
           scenario_id?: string | null
           scenario_version?: string | null
           status?: string
@@ -5460,6 +5466,12 @@ export type Database = {
             foreignKeyName: "staffing_proposals_org_id_fkey"
             columns: ["org_id"]
             referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "staffing_proposals_reviewed_by_fkey"
+            columns: ["reviewed_by"]
+            referencedRelation: "digital_twins"
             referencedColumns: ["id"]
           },
           {
