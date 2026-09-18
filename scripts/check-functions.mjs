@@ -22,6 +22,7 @@ const stripSharedImports = (src) =>
 
 const SHARED_SOURCES = [
   "skill-graph-engine.ts",
+  "staffing-planner.ts",
   "onboarding-engine.ts",
   "onboarding-v2.ts",
   "qwen.ts",
@@ -73,7 +74,7 @@ const FNS = {
   "action-task-update": ["workflow-engine"],
   "recommendation-scan": ["skill-graph-engine", "recommendation-engine", "workforce-review-index", "workflow-engine", "qwen", "validate"],
   dashboard: ["skill-graph-engine", "workforce-review-index"],
-  "staffing-comparison": ["skill-graph-engine"],
+  "staffing-comparison": ["staffing-planner", "qwen"],
   "admin-access": [],
   "model-job": ["jobs"],
   health: ["qwen"],

@@ -8,7 +8,6 @@ import {
   meResultSchema,
   myWorkSchema,
   onboardingQueueSchema,
-  staffingComparisonSchema,
   type CandidateCompare,
   type OnboardingQueue,
 } from "./contracts";
@@ -647,38 +646,83 @@ export const adminAccessSuspend = (targetTwinId: string, reason: string) =>
 export const adminAccessReactivate = (targetTwinId: string, reason: string) =>
   invoke<{ ok: true; twin_id: string; status: "active" }>("admin-access", { action: "reactivate", target_twin_id: targetTwinId, reason });
 
-// ---- Phase 14: Staffing planner (Hire / Move / Upskill / Hybrid) ----
+// ---- Phase 10: constrained staffing planner ----
 
-export interface StaffingOption {
+export type PlannerStatus = "feasible" | "conditional" | "infeasible" | "insufficient_data";
+
+export interface PlannerSkillRow {
+  skill: string;
+  min_proficiency: number;
+  mandatory: boolean;
+  coverage: "verified" | "conditional" | "gap" | "absent";
+  current_proficiency: number | null;
+  projected_proficiency: number | null;
+  source: string;
+  mandatory_satisfied: boolean;
+}
+
+export interface PlannerOption {
   id: "hire" | "move" | "upskill" | "hybrid";
   label: string;
-  coverage_pct: number;
-  time_to_ready_days: number;
+  status: PlannerStatus;
+  status_reason: string;
+  skill_coverage: PlannerSkillRow[];
+  verified_coverage_pct: number;
+  conditional_coverage_pct: number;
+  mandatory_satisfied: boolean;
+  mandatory_missing: string[];
+  timeline: { name: string; kind: string; duration_days: number; parallel: boolean }[];
+  ready_at_days: number;
+  meets_deadline: boolean;
   cost_usd: number;
-  source: string;
-  constraints: string[];
+  budget_satisfied: boolean;
+  dependency_risk: "low" | "medium" | "high";
+  constraints_satisfied: string[];
+  constraints_violated: string[];
+  rationale: string;
+  subject?: string;
+}
+
+export interface StaffingPlanInput {
+  name?: string;
+  demand_title?: string;
+  department?: string;
+  required_skills?: { skill: string; min_proficiency: number; mandatory?: boolean }[];
+  capacity_people?: number;
+  deadline_days?: number;
+  budget_usd?: number;
+  geography?: string;
+  horizon_months?: number;
+  assumptions_version?: string;
+}
+
+export interface StaffingPlanResult {
+  ok: true;
+  scenario_id: string;
+  scope: "team" | "org";
+  population_size: number;
+  candidate_pipeline_size: number | null;
+  scenario: StaffingPlanInput & { name: string; demand_title: string; deadline_days: number; budget_usd: number };
+  assumptions: { version: string; hire_lead_days: number; hire_cost_usd: number; move_transition_days: number; move_cost_usd: number; manager_approval_days: number; training_days_per_skill: number; training_cost_usd_per_skill: number; verification_days: number; candidate_stale_days: number };
+  options: PlannerOption[];
+  decision_table: { option_id: string; cost_usd: number; ready_at_days: number; verified_coverage_pct: number; conditional_coverage_pct: number; status: PlannerStatus }[];
   note: string;
 }
 
-export interface StaffingComparison {
-  ok: true;
-  computed_at: string;
-  scenario: {
-    req_id: string;
-    req_title: string;
-    department: string;
-    deadline_days: number;
-    target_date_note: string;
-    demand: { skill: string; target_proficiency: number }[];
-    future_skills: { skill: string; target_proficiency: number }[];
-    allocation_note: string;
-  };
-  options: StaffingOption[];
-  planning_note: string;
-}
+export const planStaffing = (input: StaffingPlanInput = {}) =>
+  invoke<StaffingPlanResult>("staffing-comparison", { action: "plan", ...input });
 
-export const fetchStaffingComparison = (requisitionTitle?: string) =>
-  invoke<StaffingComparison>("staffing-comparison", { requisition_title: requisitionTitle }, staffingComparisonSchema, "staffing-comparison");
+export const listStaffingScenarios = () =>
+  invoke<{ ok: true; scenarios: { id: string; name: string; input_snapshot: unknown; assumptions: unknown; result: unknown; created_by: string | null; created_at: string }[]; proposals: { id: string; scenario_id: string | null; status: string; review_note: string | null; created_at: string }[] }>(
+    "staffing-comparison",
+    { action: "list" }
+  );
+
+export const proposeStaffingScenario = (scenario_id: string) =>
+  invoke<{ ok: true; proposal_id: string; status: string; message: string }>("staffing-comparison", { action: "propose", scenario_id });
+
+export const explainStaffingScenario = (scenario_id: string) =>
+  invoke<{ ok: true; explanation: string | null; digest: unknown; error?: string }>("staffing-comparison", { action: "explain", scenario_id });
 
 // ---- Phase 9: Workforce Review Index + Performance Summaries ----
 

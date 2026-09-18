@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
-import { computeFit, type GraphSkill } from "../_shared/skill-graph-engine.ts";
+import { planStaffing, DEFAULT_ASSUMPTIONS, type Candidate, type Person, type ScenarioInput } from "../_shared/staffing-planner.ts";
+import { callQwen, QwenError } from "../_shared/qwen.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -8,51 +9,34 @@ const corsHeaders = {
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
-// ---------------------------------------------------------------------------
-// Phase 14 — Staffing planner (Hire / Move / Upskill / Hybrid).
-// Deterministic planning estimates built from live records (requisition skills,
-// applicant match scores, employee verified skills via the skill engine) plus
-// EXPLICITLY LABELED demo assumptions for cost/time. These are planning
-// estimates — never guarantees of hiring quality, cost, or readiness.
-// ---------------------------------------------------------------------------
+async function isTeamMember(supabase, rootTwinId: string, checkTwinId: string): Promise<boolean> {
+  const { data } = await supabase.from("digital_twins").select("id, manager_id");
+  const children = new Map<string, string[]>();
+  for (const t of data ?? []) if (t.manager_id) children.set(t.manager_id, [...(children.get(t.manager_id) ?? []), t.id]);
+  const seen = new Set<string>();
+  const stack = [rootTwinId];
+  while (stack.length > 0) {
+    const cur = stack.pop()!;
+    if (seen.has(cur)) continue;
+    seen.add(cur);
+    for (const c of children.get(cur) ?? []) stack.push(c);
+  }
+  return seen.has(checkTwinId);
+}
 
-// Demo scenario: "a backend project needs a ready team in six weeks."
-const DEADLINE_DAYS = 42;
+const NL = String.fromCharCode(10);
 
-// Planning assumptions — visible in the payload and the UI. Demo-only numbers.
-const ASSUMPTIONS = {
-  deadline_days: DEADLINE_DAYS,
-  hire: {
-    time_to_ready_days: 56, // search + notice + onboarding
-    cost_usd: 45000, // fee + onboarding; demo assumption
-    note: "External search, notice period and onboarding take longer than the 42-day window — flagged as a constraint.",
-  },
-  move: {
-    time_to_ready_days: 21,
-    cost_usd: 6000,
-    note: "Internal move: manager approval, handover and focused retraining. Requires a backfill decision.",
-  },
-  upskill: {
-    time_to_ready_days: 42,
-    cost_usd: 2400,
-    note: "Focused training plus evidence verification. Trained skills are claims until verified — the planner says so, not the trainer.",
-  },
-};
-
-const DEFAULT_REQ_TITLE = "Senior Backend Engineer";
+const EXPLAIN_SYSTEM = `You are the WorkSense staffing-planning narrator. You are given ONLY the validated numbers produced by the deterministic planner (options with status, cost, ready-day, verified/conditional coverage, mandatory gaps, deadline and budget).
+Your job is to explain those numbers clearly. HARD RULES:
+1. NEVER invent, recalculate, or change any number — restate exactly what the planner produced.
+2. Do not claim an option is role-ready unless the planner says its status is feasible/conditional AND mandatory gaps are empty.
+3. Never claim the 56-day hire track is ready at a 42-day deadline; restate the planner's ready-day and deadline as given.
+4. Compare options on cost, time, verified coverage and risk using ONLY the provided values.
+Respond with JSON only: {"explanation":"string"}`;
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
-  try {
-    return await handle(req);
-  } catch (err) {
-    console.error("[staffing-comparison]", err instanceof Error ? err.stack ?? err.message : String(err));
-    return json({ error: "INTERNAL", message: err instanceof Error ? err.message : "unknown" }, 500);
-  }
-});
-
-async function handle(req: Request): Promise<Response> {
   const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
   const authHeader = req.headers.get("Authorization") ?? "";
   const { data: userData } = await supabase.auth.getUser(authHeader.replace("Bearer ", ""));
@@ -61,7 +45,7 @@ async function handle(req: Request): Promise<Response> {
 
   const { data: caller } = await supabase
     .from("digital_twins")
-    .select("id, role, org_id")
+    .select("id, role, email, org_id, name")
     .eq("auth_user_id", uid)
     .maybeSingle();
   if (!caller) return json({ error: "UNAUTHENTICATED" }, 401);
@@ -71,150 +55,215 @@ async function handle(req: Request): Promise<Response> {
 
   let body: Record<string, unknown> = {};
   try { body = await req.json(); } catch { /* empty */ }
-  const reqTitle = typeof body.requisition_title === "string" && body.requisition_title.trim()
-    ? body.requisition_title.trim() : DEFAULT_REQ_TITLE;
+  const action = String(body.action ?? "plan");
 
-  const [reqRes, twinsRes, graphRes] = await Promise.all([
-    supabase.from("job_requisitions")
-      .select("id, title, department, seniority_level, required_skills, future_skills, applicants, status")
+  // ---- list saved scenarios ---------------------------------------------------
+  if (action === "list") {
+    const { data, error } = await supabase
+      .from("staffing_scenarios")
+      .select("id, name, input_snapshot, assumptions, result, created_by, created_at")
       .eq("org_id", caller.org_id)
-      .eq("status", "open"),
-    supabase.from("digital_twins")
-      .select("id, name, role, status, department, seniority_level, verified_skills")
-      .eq("org_id", caller.org_id),
-    supabase.from("skill_graph").select("skill, category, outgoing_edges").eq("org_id", caller.org_id),
-  ]);
-
-  const reqs = (reqRes.data ?? []) as {
-    id: string; title: string; department: string; seniority_level: number;
-    required_skills: { skill: string; target_proficiency: number }[];
-    future_skills: { skill: string; target_proficiency: number }[];
-    applicants: { twin_id: string; stage: string; match_score: number | null }[];
-    status: string;
-  }[];
-  const requisition = reqs.find((r) => r.title.toLowerCase() === reqTitle.toLowerCase()) ?? reqs[0];
-  if (!requisition) return json({ ok: false, error: "NO_REQUISITION", message: "No open requisition found for the staffing scenario." }, 404);
-
-  const graph = ((graphRes as { data?: unknown[] } | null)?.data ?? []) as GraphSkill[];
-  const workers = (twinsRes.data ?? []).filter((t) => t.status === "active" && ["employee", "manager"].includes(t.role));
-
-  const fitFor = (twin: { id: string; seniority_level?: number | null; verified_skills?: unknown[] }) =>
-    computeFit({
-      candidateSkills: (twin.verified_skills ?? []) as { name: string; proficiency: number; evidence_source: string; verification_rigor: "low" | "medium" | "high" }[],
-      candidateLevel: twin.seniority_level ?? 3,
-      requiredSkills: requisition.required_skills,
-      roleLevel: requisition.seniority_level,
-      skillGraph: graph,
-      target: { type: "requisition", id: requisition.id, title: requisition.title },
-      scenario: "current",
-    });
-
-  // Rank every worker by current fit; used by move/upskill/hybrid.
-  const ranked = workers
-    .map((w) => ({ twin: w, fit: fitFor(w) }))
-    .sort((a, b) => b.fit.score - a.fit.score);
-
-  const pct = (n: number) => Math.round(n * 100);
-
-  // --- HIRE: best applicant in the existing pipeline -------------------------
-  const applicants = (requisition.applicants ?? []).filter((a) => typeof a.match_score === "number");
-  const bestApplicant = applicants.sort((a, b) => (b.match_score ?? 0) - (a.match_score ?? 0))[0];
-  const hireCoverage = bestApplicant ? pct(bestApplicant.match_score ?? 0) : 0;
-
-  // --- MOVE: best-fit current employee (mobility) ----------------------------
-  const moveCandidate = ranked[0];
-  const moveCoverage = moveCandidate ? pct(moveCandidate.fit.score) : 0;
-
-  // --- UPSKILL: employee with partial coverage + biggest verifiable gain -----
-  // Deterministic projection: train their top missing required skills to target
-  // and recompute the direct-coverage component (evidence stays claims).
-  const upskillPool = ranked.filter((r) => r.fit.score >= 0.15 && r.fit.score < 0.7);
-  let upskill = upskillPool[0];
-  if (upskill) {
-    const skills = (upskill.twin.verified_skills ?? []) as { name: string; proficiency: number; evidence_source: string; verification_rigor: "low" | "medium" | "high" }[];
-    const have = new Set(skills.map((s) => s.name.toLowerCase()));
-    const toTrain = requisition.required_skills.filter((r) => !have.has(r.skill.toLowerCase())).slice(0, 2);
-    const projected = fitFor({
-      id: upskill.twin.id,
-      seniority_level: upskill.twin.seniority_level,
-      verified_skills: [...skills, ...toTrain.map((t) => ({ name: t.skill, proficiency: t.target_proficiency, evidence_source: "training_projection", verification_rigor: "low" as const }))],
-    });
-    upskill = { twin: upskill.twin, fit: upskill.fit, projected, toTrain };
+      .order("created_at", { ascending: false })
+      .limit(10);
+    if (error) return json({ error: "INTERNAL", message: error.message }, 500);
+    const { data: props } = await supabase
+      .from("staffing_proposals")
+      .select("id, scenario_id, status, review_note, created_at")
+      .eq("org_id", caller.org_id);
+    return json({ ok: true, scenarios: data ?? [], proposals: props ?? [] });
   }
 
-  const hireOption = {
-    id: "hire",
-    label: "Hire externally",
-    coverage_pct: hireCoverage,
-    time_to_ready_days: ASSUMPTIONS.hire.time_to_ready_days,
-    cost_usd: ASSUMPTIONS.hire.cost_usd,
-    source: bestApplicant ? `Best applicant match in the current pipeline (${pct(bestApplicant.match_score ?? 0)}% engine score)` : "No scored applicants in the pipeline",
-    constraints: [
-      `${ASSUMPTIONS.hire.time_to_ready_days} days to ready — exceeds the ${DEADLINE_DAYS}-day window`,
-      "Resume skills are claims until verified — a work sample and references are the evidence path",
-      "Cost/time are demo assumptions, not a quote",
-    ],
-    note: ASSUMPTIONS.hire.note,
+  // ---- propose a saved scenario for human review -------------------------------
+  if (action === "propose") {
+    const scenarioId = String(body.scenario_id ?? "").trim();
+    if (!scenarioId) return json({ error: "VALIDATION_ERROR", message: "scenario_id is required." }, 400);
+    const { data: scenario } = await supabase
+      .from("staffing_scenarios")
+      .select("id")
+      .eq("org_id", caller.org_id)
+      .eq("id", scenarioId)
+      .maybeSingle();
+    if (!scenario) return json({ error: "NOT_FOUND" }, 404);
+    const { data, error } = await supabase
+      .from("staffing_proposals")
+      .insert({
+        org_id: caller.org_id,
+        scenario_id: scenarioId,
+        status: "open",
+        submitted_by: caller.id,
+        review_note: "Submitted for human review from the staffing planner.",
+      })
+      .select("id, status, created_at")
+      .single();
+    if (error) return json({ error: "INTERNAL", message: error.message }, 500);
+    return json({ ok: true, proposal_id: data.id, status: data.status, message: "Proposal submitted for human review." });
+  }
+
+  // ---- explain a saved scenario (Qwen narrates ONLY the validated numbers) ------
+  if (action === "explain") {
+    const scenarioId = String(body.scenario_id ?? "").trim();
+    if (!scenarioId) return json({ error: "VALIDATION_ERROR", message: "scenario_id is required." }, 400);
+    const { data: scenario } = await supabase
+      .from("staffing_scenarios")
+      .select("name, result")
+      .eq("org_id", caller.org_id)
+      .eq("id", scenarioId)
+      .maybeSingle();
+    if (!scenario) return json({ error: "NOT_FOUND" }, 404);
+    const result = (scenario.result ?? {}) as {
+      options?: unknown[]; decision_table?: unknown[]; scenario?: { deadline_days?: number; budget_usd?: number };
+    };
+    const digest = {
+      deadline_days: result.scenario?.deadline_days,
+      budget_usd: result.scenario?.budget_usd,
+      options: (result.options ?? []).map((o) => ({
+        id: (o as { id?: string })?.id,
+        status: (o as { status?: string })?.status,
+        ready_at_days: (o as { ready_at_days?: number })?.ready_at_days,
+        cost_usd: (o as { cost_usd?: number })?.cost_usd,
+        verified_coverage_pct: (o as { verified_coverage_pct?: number })?.verified_coverage_pct,
+        conditional_coverage_pct: (o as { conditional_coverage_pct?: number })?.conditional_coverage_pct,
+        mandatory_missing: (o as { mandatory_missing?: string[] })?.mandatory_missing ?? [],
+        meets_deadline: (o as { meets_deadline?: boolean })?.meets_deadline,
+      })),
+      decision_table: result.decision_table ?? [],
+    };
+    try {
+      const parsed = (await callQwen({
+        json: true,
+        temperature: 0.2,
+        maxTokens: 800,
+        task: "staffing_explanation",
+        system: EXPLAIN_SYSTEM,
+        user: `Scenario "${scenario.name}".${NL}${NL}PLANNER OUTPUT (validated — restate exactly):${NL}${JSON.stringify(digest)}`,
+      })) as { explanation?: string };
+      return json({ ok: true, explanation: String(parsed.explanation ?? "") || "No explanation produced.", digest });
+    } catch (err) {
+      return json({ ok: true, explanation: null, digest, error: err instanceof QwenError ? err.code : "MODEL_UNAVAILABLE" });
+    }
+  }
+
+  // ---- plan (default) ----------------------------------------------------------
+  const scenarioInput: ScenarioInput = {
+    name: String(body.name ?? `Scenario ${new Date().toLocaleDateString()}`).slice(0, 80),
+    demand_title: String(body.demand_title ?? "Backend Engineer").slice(0, 120),
+    department: body.department ? String(body.department).slice(0, 80) : undefined,
+    required_skills: Array.isArray(body.required_skills) && body.required_skills.length > 0
+      ? (body.required_skills as { skill: string; min_proficiency: number; mandatory?: boolean }[]).map((r) => ({
+          skill: String(r.skill),
+          min_proficiency: Math.max(1, Math.min(5, Number(r.min_proficiency) || 3)),
+          mandatory: r.mandatory !== false,
+        }))
+      : [{ skill: "Go", min_proficiency: 3, mandatory: true }, { skill: "REST APIs", min_proficiency: 3, mandatory: true }],
+    capacity_people: Math.max(1, Number(body.capacity_people) || 1),
+    deadline_days: Math.max(1, Number(body.deadline_days) || 42),
+    budget_usd: Math.max(0, Number(body.budget_usd) || 60000),
+    geography: body.geography ? String(body.geography) : undefined,
+    horizon_months: Math.max(1, Number(body.horizon_months) || 12),
+    assumptions_version: String(body.assumptions_version ?? DEFAULT_ASSUMPTIONS.version),
   };
-  const moveOption = {
-    id: "move",
-    label: "Move internally",
-    coverage_pct: moveCoverage,
-    time_to_ready_days: ASSUMPTIONS.move.time_to_ready_days,
-    cost_usd: ASSUMPTIONS.move.cost_usd,
-    source: moveCandidate ? `${moveCandidate.twin.name} (${moveCandidate.twin.department}) — ${pct(moveCandidate.fit.score)}% engine fit today` : "No qualifying employee",
-    constraints: [
-      "Requires internal-mobility policy approval and the current manager's sign-off",
-      "The vacated role needs a backfill decision",
-      "Coverage is today's verified skills — any gap needs training",
-    ],
-    note: ASSUMPTIONS.move.note,
-  };
-  const upskillOption = {
-    id: "upskill",
-    label: "Upskill internally",
-    coverage_pct: upskill ? pct(upskill.projected?.score ?? upskill.fit.score) : 0,
-    time_to_ready_days: ASSUMPTIONS.upskill.time_to_ready_days,
-    cost_usd: ASSUMPTIONS.upskill.cost_usd,
-    source: upskill
-      ? `${upskill.twin.name} (${upskill.twin.department}) — ${pct(upskill.fit.score)}% today → ${pct(upskill.projected?.score ?? upskill.fit.score)}% after training ${(upskill.toTrain ?? []).map((t) => t.skill).join(" + ") || "—"}`
-      : "No partial-coverage employee found",
-    constraints: [
-      "Trained skills are claims (verification_rigor: low) until a work sample or review confirms them",
-      `${DEADLINE_DAYS}-day window fits one focused training track, not a senior ramp`,
-      "Cost/time are demo assumptions",
-    ],
-    note: ASSUMPTIONS.upskill.note,
-  };
-  const combinedCoverage = Math.min(100, hireCoverage + Math.round((1 - hireCoverage / 100) * (upskillOption.coverage_pct) / 100 * 100));
-  const hybridOption = {
-    id: "hybrid",
-    label: "Hybrid (hire + upskill)",
-    coverage_pct: combinedCoverage,
-    time_to_ready_days: Math.max(ASSUMPTIONS.move.time_to_ready_days, Math.min(hireOption.time_to_ready_days, DEADLINE_DAYS)),
-    cost_usd: ASSUMPTIONS.hire.cost_usd + ASSUMPTIONS.upskill.cost_usd,
-    source: `${hireOption.source} · ${upskillOption.source}`,
-    constraints: [
-      "Depends on both tracks executing — hiring AND the training track",
-      "External lead time still risks the window; internal track derisks it",
-    ],
-    note: "Combined coverage assumes both tracks succeed. Planning estimate under demo assumptions.",
-  };
+
+  // Authorized internal population: HR sees the org; managers see their team
+  // (item 29 — a manager can never pull the wider org or candidate pipeline).
+  const { data: twins } = await supabase
+    .from("digital_twins")
+    .select("id, name, role, department, manager_id, verified_skills, signals")
+    .eq("org_id", caller.org_id)
+    .eq("status", "active");
+  const all = (twins ?? []) as {
+    id: string; name: string; role: string; department: string | null; manager_id: string | null;
+    verified_skills: { name: string; proficiency: number; verification_rigor?: string }[];
+    signals?: { type?: string; value?: unknown }[];
+  }[];
+  let scopedPeople = all.filter((t) => ["employee", "manager"].includes(t.role));
+  if (caller.role === "manager") {
+    // Manager scope: the caller's reporting subtree only (item 29).
+    const { data: allTwins2 } = await supabase.from("digital_twins").select("id, manager_id");
+    const children = new Map<string, string[]>();
+    for (const t of allTwins2 ?? []) if (t.manager_id) children.set(t.manager_id, [...(children.get(t.manager_id) ?? []), t.id]);
+    const seen = new Set<string>();
+    const stack = [caller.id];
+    while (stack.length > 0) {
+      const cur = stack.pop()!;
+      if (seen.has(cur)) continue;
+      seen.add(cur);
+      for (const c of children.get(cur) ?? []) stack.push(c);
+    }
+    scopedPeople = scopedPeople.filter((p) => seen.has(p.id));
+  }
+  const population: Person[] = scopedPeople.map((t) => {
+    const critical = (t.signals ?? []).find((s) => s.type === "critical_assignment");
+    return {
+      id: t.id,
+      name: t.name,
+      department: t.department,
+      manager_id: t.manager_id,
+      current_assignment: critical ? String(critical.value ?? "") : null,
+      skills: (t.verified_skills ?? []).map((s) => ({
+        name: s.name,
+        proficiency: s.proficiency,
+        verification_rigor: (s.verification_rigor ?? "low") as Person["skills"][number]["verification_rigor"],
+      })),
+    };
+  });
+
+  // Candidate pipeline: only visible to HR roles (managers stay scoped out).
+  let candidates: Candidate[] = [];
+  if (["hr_executive", "hr_partner"].includes(caller.role)) {
+    const { data: reqs } = await supabase
+      .from("job_requisitions")
+      .select("id, title, applicants")
+      .eq("org_id", caller.org_id)
+      .eq("status", "open");
+    const req = (reqs ?? []).find((r) => r.title.toLowerCase() === scenarioInput.demand_title.toLowerCase()) ?? (reqs ?? [])[0];
+    const applicants = (req?.applicants ?? []) as { twin_id: string; stage: string; applied_at?: string; match_score?: number | null }[];
+    const { data: candTwins } = applicants.length > 0
+      ? await supabase.from("digital_twins").select("id, name, verified_skills").in("id", applicants.map((a) => a.twin_id))
+      : { data: [] as never[] };
+    const byId = new Map((candTwins ?? []).map((c) => [c.id, c]));
+    candidates = applicants.map((a) => {
+      const t = byId.get(a.twin_id) as { id: string; name: string; verified_skills: { name: string; proficiency: number; verification_rigor?: string }[] } | undefined;
+      const stageStatus = a.stage === "rejected" ? "rejected" : a.stage === "selected" ? "expired" : a.stage === "final_round" || a.stage === "technical_interview" || a.stage === "screening" ? "active" : "invited";
+      return {
+        id: a.twin_id,
+        name: t?.name ?? `Candidate ${a.twin_id.slice(0, 6)}`,
+        status: stageStatus,
+        applied_at: a.applied_at ?? undefined,
+        match_score: a.match_score ?? null,
+        skills: (t?.verified_skills ?? []).map((s) => ({
+          name: s.name,
+          proficiency: s.proficiency,
+          verification_rigor: (s.verification_rigor ?? "low") as Person["skills"][number]["verification_rigor"],
+        })),
+      };
+    });
+  }
+
+  const plan = planStaffing(scenarioInput, population, candidates);
+
+  const { data: saved, error: saveErr } = await supabase
+    .from("staffing_scenarios")
+    .upsert(
+      {
+        org_id: caller.org_id,
+        name: plan.scenario.name,
+        input_snapshot: { ...plan.scenario, geography: plan.scenario.geography ?? null },
+        assumptions: plan.assumptions,
+        result: plan,
+        created_by: caller.id,
+      },
+      { onConflict: "org_id,name" }
+    )
+    .select("id")
+    .single();
+  if (saveErr) return json({ error: "INTERNAL", message: saveErr.message }, 500);
 
   return json({
     ok: true,
-    computed_at: new Date().toISOString(),
-    scenario: {
-      req_id: requisition.id,
-      req_title: requisition.title,
-      department: requisition.department,
-      deadline_days: DEADLINE_DAYS,
-      target_date_note: `Target: a ready team in ${DEADLINE_DAYS} days (six weeks).`,
-      demand: requisition.required_skills.map((s) => ({ skill: s.skill, target_proficiency: s.target_proficiency })),
-      future_skills: (requisition.future_skills ?? []).map((s) => ({ skill: s.skill, target_proficiency: s.target_proficiency })),
-      allocation_note: `Open requisition "${requisition.title}" (${requisition.department}) with ${applicants.length} scored applicant(s) in the pipeline.`,
-    },
-    options: [hireOption, moveOption, upskillOption, hybridOption],
-    planning_note: "Coverage is computed deterministically from verified skills via the Skill Intelligence Graph. Cost/time are EXPLICIT demo assumptions — planning estimates, not guarantees, quotes, or promises of hiring quality.",
+    scenario_id: saved.id,
+    scope: caller.role === "manager" ? "team" : "org",
+    population_size: population.length,
+    candidate_pipeline_size: caller.role === "manager" ? null : candidates.length,
+    ...plan,
   });
-}
+});

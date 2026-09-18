@@ -5265,6 +5265,104 @@ export type Database = {
           },
         ]
       }
+      staffing_proposals: {
+        Row: {
+          created_at: string
+          id: string
+          org_id: string
+          review_note: string | null
+          scenario_id: string | null
+          status: string
+          submitted_by: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          org_id: string
+          review_note?: string | null
+          scenario_id?: string | null
+          status?: string
+          submitted_by?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          org_id?: string
+          review_note?: string | null
+          scenario_id?: string | null
+          status?: string
+          submitted_by?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "staffing_proposals_org_id_fkey"
+            columns: ["org_id"]
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "staffing_proposals_scenario_id_fkey"
+            columns: ["scenario_id"]
+            referencedRelation: "staffing_scenarios"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "staffing_proposals_submitted_by_fkey"
+            columns: ["submitted_by"]
+            referencedRelation: "digital_twins"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      staffing_scenarios: {
+        Row: {
+          assumptions: Json
+          created_at: string
+          created_by: string | null
+          id: string
+          input_snapshot: Json
+          name: string
+          org_id: string
+          result: Json
+        }
+        Insert: {
+          assumptions?: Json
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          input_snapshot?: Json
+          name: string
+          org_id: string
+          result?: Json
+        }
+        Update: {
+          assumptions?: Json
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          input_snapshot?: Json
+          name?: string
+          org_id?: string
+          result?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "staffing_scenarios_created_by_fkey"
+            columns: ["created_by"]
+            referencedRelation: "digital_twins"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "staffing_scenarios_org_id_fkey"
+            columns: ["org_id"]
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       workflow_events: {
         Row: {
           actor_role: string | null

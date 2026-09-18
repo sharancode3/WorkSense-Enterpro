@@ -11,7 +11,7 @@ import {
   meResultSchema,
   interviewKitSchema,
   healthViewSchema,
-  staffingComparisonSchema,
+  staffingPlannerResultSchema,
 } from "../contracts";
 
 describe("decode (unknown -> validated schema -> typed contract)", () => {
@@ -177,40 +177,24 @@ describe("decode (unknown -> validated schema -> typed contract)", () => {
     expect(() => decode(healthViewSchema, lying, "health")).toThrow(/contract check failed/);
   });
 
-  it("validates interview kit and staffing contracts", () => {
-    const kit = {
-      type: "interview_kit",
-      req_id: "r1",
-      req_title: "Backend",
-      candidate_name: "Priya",
-      score: 0.8,
-      focus_items: ["Go"],
-      biased_probe: null,
-      competencies: [],
-      created_at: "2026-09-15T09:00:00Z",
-    };
-    expect(decode(interviewKitSchema, kit, "kit").score).toBe(0.8);
-
+  it("validates the constrained staffing planner result contract", () => {
     const staffing = {
       ok: true,
-      computed_at: "2026-09-15T09:00:00Z",
-      scenario: {
-        req_id: "r1",
-        req_title: "Backend",
-        department: "Platform",
-        deadline_days: 42,
-        target_date_note: "",
-        demand: [{ skill: "Go", target_proficiency: 4 }],
-        future_skills: [],
-        allocation_note: "",
-      },
+      scenario_id: "s1",
+      scope: "org",
       options: [
-        { id: "hire", label: "Hire", coverage_pct: 66, time_to_ready_days: 56, cost_usd: 10, source: "x", constraints: [], note: "" },
+        { id: "hire", label: "Hire externally", status: "infeasible", ready_at_days: 56, cost_usd: 45000, verified_coverage_pct: 100, mandatory_satisfied: true },
+        { id: "upskill", label: "Upskill internally", status: "conditional", ready_at_days: 28, cost_usd: 1200, verified_coverage_pct: 50, mandatory_satisfied: true },
       ],
-      planning_note: "",
+      decision_table: [
+        { option_id: "hire", status: "infeasible" },
+        { option_id: "upskill", status: "conditional" },
+      ],
+      note: "deterministic",
     };
-    const parsed = decode(staffingComparisonSchema, staffing, "staffing");
+    const parsed = decode(staffingPlannerResultSchema, staffing, "staffing");
     expect(parsed.options[0].id).toBe("hire");
+    expect(parsed.options[0].status).toBe("infeasible");
   });
 
   it("validates the me contract used at app bootstrap", () => {

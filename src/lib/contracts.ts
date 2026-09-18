@@ -15,7 +15,7 @@ import type {
   PlanTaskView,
   PlanView,
   RecommendationRow,
-  StaffingComparison,
+  StaffingPlanResult,
 } from "./api";
 
 /**
@@ -431,33 +431,6 @@ export const healthViewSchema = z.object({
   gateway_authenticated: z.boolean(),
   model: z.string()}) as z.ZodType<HealthView>;
 
-const staffingOptionSchema = z.object({
-  id: z.enum(["hire", "move", "upskill", "hybrid"]),
-  label: z.string(),
-  coverage_pct: z.number(),
-  time_to_ready_days: z.number(),
-  cost_usd: z.number(),
-  source: z.string(),
-  constraints: z.array(z.string()),
-  note: z.string(),
-});
-
-export const staffingComparisonSchema = z.object({
-  ok: z.literal(true),
-  computed_at: z.string(),
-  scenario: z.object({
-    req_id: z.string(),
-    req_title: z.string(),
-    department: z.string(),
-    deadline_days: z.number(),
-    target_date_note: z.string(),
-    demand: z.array(z.object({ skill: z.string(), target_proficiency: z.number() })),
-    future_skills: z.array(z.object({ skill: z.string(), target_proficiency: z.number() })),
-    allocation_note: z.string(),
-  }),
-  options: z.array(staffingOptionSchema),
-  planning_note: z.string()}) as z.ZodType<StaffingComparison>;
-
 // ---------------------------------------------------------------------------
 // Unified "My work" feed contract (Phase 3).
 // ---------------------------------------------------------------------------
@@ -498,3 +471,23 @@ export const myWorkSchema = z.object({
   items: z.array(workItemSchema),
   generated_at: z.string(),
 }) as z.ZodType<MyWorkResult>;
+
+// Phase 10: constrained staffing planner result contract (validated shape).
+export const staffingPlannerResultSchema = z.object({
+  ok: z.literal(true),
+  scenario_id: z.string(),
+  scope: z.enum(["team", "org"]),
+  options: z.array(
+    z.object({
+      id: z.enum(["hire", "move", "upskill", "hybrid"]),
+      label: z.string(),
+      status: z.enum(["feasible", "conditional", "infeasible", "insufficient_data"]),
+      ready_at_days: z.number(),
+      cost_usd: z.number(),
+      verified_coverage_pct: z.number(),
+      mandatory_satisfied: z.boolean(),
+    })
+  ),
+  decision_table: z.array(z.object({ option_id: z.string(), status: z.enum(["feasible", "conditional", "infeasible", "insufficient_data"]) })),
+  note: z.string(),
+}) as unknown as z.ZodType<StaffingPlanResult>;
