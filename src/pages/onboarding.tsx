@@ -40,6 +40,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { can, ROLE_LABEL } from "@/lib/rbac";
+import { filterItProvisioning, type ItQueueFilter } from "@/lib/it-provisioning";
 import {
   onboardingPlanApprove,
   onboardingPlanBuild,
@@ -743,15 +744,55 @@ function ProvisioningQueue({
   people: Map<string, { start_date: string | null; manager_name: string | null }>;
   onOpen: (twinId: string, code: string) => void;
 }) {
+  const [filter, setFilter] = useState<ItQueueFilter>("all");
+  const [search, setSearch] = useState("");
+  const now = useMemo(() => new Date().toISOString(), []);
+  const visible = useMemo(() => filterItProvisioning(items, names, filter, search, now), [items, names, filter, search, now]);
+  const FILTERS: { key: ItQueueFilter; label: string }[] = [
+    { key: "all", label: "All" },
+    { key: "ready", label: "Ready" },
+    { key: "blocked", label: "Blocked" },
+    { key: "overdue", label: "Overdue" },
+    { key: "done", label: "Completed" },
+  ];
   return (
     <div className="rounded-lg bg-white p-5">
       <div className="flex items-center gap-2">
         <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Provisioning & access queue</p>
         <span className="rounded-md bg-foreground px-2 py-0.5 text-[10px] font-bold text-white">{items.length}</span>
       </div>
-      {items.length === 0 && <p className="mt-2 text-sm text-muted-foreground">No provisioning or access tasks are waiting right now.</p>}
+      {/* Batch 4 (4.1): operational filters — Ready / Blocked / Overdue /
+          Completed — plus employee & task-title search. */}
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filter provisioning queue">
+          {FILTERS.map((f) => (
+            <button
+              key={f.key}
+              type="button"
+              onClick={() => setFilter(f.key)}
+              className={`rounded-md px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider transition-colors ${
+                filter === f.key ? "bg-foreground text-white" : "bg-muted text-muted-foreground hover:bg-border"
+              }`}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search employee or task…"
+          aria-label="Search provisioning queue by employee or task"
+          className="h-9 w-full min-w-0 flex-1 rounded-md border border-border bg-white px-3 text-sm font-medium text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30 sm:w-56"
+        />
+      </div>
+      {visible.length === 0 && (
+        <p className="mt-3 text-sm text-muted-foreground">
+          {items.length === 0 ? "No provisioning or access tasks are waiting right now." : "No tasks match this filter."}
+        </p>
+      )}
       <div className="mt-2 flex flex-col gap-2">
-        {items.map((t) => {
+        {visible.map((t) => {
           const person = people.get(t.twin_id);
           return (
             <button
@@ -772,8 +813,8 @@ function ProvisioningQueue({
                   {` · due ${fmt(t.due_date)}`}
                 </p>
               </div>
-              <span className={`shrink-0 rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${(TASK_STATE_META[t.state as PlanTaskView["state"]] ?? TASK_STATE_META.pending).cls}`}>
-                {TASK_STATE_META[t.state as PlanTaskView["state"]]?.label ?? t.state}
+              <span className={`shrink-0 rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${(TASK_STATE_META[t.state as keyof typeof TASK_STATE_META] ?? TASK_STATE_META.pending).cls}`}>
+                {TASK_STATE_META[t.state as keyof typeof TASK_STATE_META]?.label ?? t.state}
               </span>
               <Button size="sm" variant="outline" className="h-7">
                 Open task <ArrowUpRight className="h-3.5 w-3.5" />

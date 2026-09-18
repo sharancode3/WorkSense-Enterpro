@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { deriveItQueueCounts, upcomingStarts } from "@/lib/it-provisioning";
+import { deriveItQueueCounts, filterItProvisioning, upcomingStarts } from "@/lib/it-provisioning";
 
 const now = "2026-09-18T09:00:00Z";
 
@@ -54,5 +54,42 @@ describe("upcomingStarts", () => {
     const starts = upcomingStarts(people, now, 14);
     expect(starts.map((s) => s.twin_id)).toEqual(["a", "b"]);
     expect(starts[0].manager_name).toBe("Jordan");
+  });
+});
+
+describe("filterItProvisioning (Batch 4.1)", () => {
+  const names = new Map([
+    ["t1", "Alex Chen"],
+    ["t2", "Priya Shah"],
+  ]);
+  const items = [
+    ref({ task_code: "it_provisioning", twin_id: "t1", state: "ready", due_date: "2026-09-10T09:00:00Z", title: "IT & Laptop Provisioning" }),
+    ref({ task_code: "access_sso", twin_id: "t2", state: "blocked", title: "System Access & SSO Enrollment" }),
+    ref({ task_code: "it_provisioning", twin_id: "t2", state: "done", title: "IT & Laptop Provisioning" }),
+    ref({ task_code: "badge", twin_id: "t1", state: "in_progress", due_date: "2026-09-25T09:00:00Z", title: "Security Badge" }),
+  ];
+
+  it("filters by state", () => {
+    expect(filterItProvisioning(items, names, "ready", "", now).map((t) => t.task_code)).toEqual(["it_provisioning"]);
+    expect(filterItProvisioning(items, names, "blocked", "", now).map((t) => t.task_code)).toEqual(["access_sso"]);
+    expect(filterItProvisioning(items, names, "done", "", now).map((t) => t.task_code)).toEqual(["it_provisioning"]);
+  });
+
+  it("flags actionable tasks past due as overdue", () => {
+    const overdue = filterItProvisioning(items, names, "overdue", "", now);
+    expect(overdue.map((t) => t.task_code)).toEqual(["it_provisioning"]); // ready + past due
+    const later = filterItProvisioning(items, names, "overdue", "", "2026-09-05T09:00:00Z");
+    expect(later).toEqual([]);
+  });
+
+  it("searches by employee name or task title", () => {
+    expect(filterItProvisioning(items, names, "all", "alex", now).map((t) => t.task_code)).toEqual(["it_provisioning", "badge"]);
+    expect(filterItProvisioning(items, names, "all", "sso", now).map((t) => t.task_code)).toEqual(["access_sso"]);
+    expect(filterItProvisioning(items, names, "all", "nobody", now)).toEqual([]);
+  });
+
+  it("combines filter and search", () => {
+    expect(filterItProvisioning(items, names, "blocked", "priya", now).map((t) => t.task_code)).toEqual(["access_sso"]);
+    expect(filterItProvisioning(items, names, "blocked", "alex", now)).toEqual([]);
   });
 });

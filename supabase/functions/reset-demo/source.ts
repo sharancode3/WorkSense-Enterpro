@@ -444,7 +444,9 @@ async function seedJourneyPlans(supabase, orgId: string, clock: string) {
     status: "pending_approval",
     done: [],
   });
-  // Progressing normally — Diego Mensah (Product Designer).
+  // Progressing normally — Diego Mensah (Product Designer). Batch 4 (4.5):
+  // "Access ready" starter — laptop + training + payroll done, so access_sso
+  // derives to READY (deps satisfied, no blocker) and IT can action it now.
   await seedJourneyPlan(supabase, orgId, clock, {
     twinId: DIEGO_TWIN_ID,
     requisitionId: PRODUCT_DESIGNER_REQ_ID,
@@ -452,7 +454,7 @@ async function seedJourneyPlans(supabase, orgId: string, clock: string) {
     appliedAt: "2026-08-20T09:00:00Z",
     startDate: "2026-09-02T09:00:00Z",
     status: "approved",
-    done: ["it_provisioning", "security_training", "payroll", "access_sso"],
+    done: ["it_provisioning", "security_training", "payroll"],
     approvals: {
       manager: { by: "design.lead.worksense@example.com", by_twin_id: DIEGO_MANAGER_TWIN_ID },
       hr: { by: "dana@worksense.demo", by_twin_id: DANA_TWIN_ID },

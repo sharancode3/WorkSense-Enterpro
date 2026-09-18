@@ -55,3 +55,36 @@ export function upcomingStarts(people: { twin_id: string; name: string; start_da
     .sort((a, b) => a.start_date.localeCompare(b.start_date))
     .map((p) => ({ twin_id: p.twin_id, name: p.name, start_date: p.start_date, manager_name: p.manager_name }));
 }
+
+export type ItQueueFilter = "all" | "ready" | "blocked" | "overdue" | "done";
+
+const IT_ACTIONABLE = new Set(["ready", "in_progress", "pending"]);
+
+/**
+ * Batch 4 (4.1): filter the provisioning queue by operational state and by
+ * employee-name / task-title search. Pure and shared by the onboarding-center
+ * queue and the IT home workspace.
+ */
+export function filterItProvisioning(
+  items: QueueTaskRef[],
+  names: Map<string, string>,
+  filter: ItQueueFilter,
+  search: string,
+  now: string
+): QueueTaskRef[] {
+  const q = search.trim().toLowerCase();
+  return items.filter((t) => {
+    if (filter === "ready" && t.state !== "ready") return false;
+    if (filter === "blocked" && t.state !== "blocked") return false;
+    if (filter === "done" && t.state !== "done") return false;
+    if (filter === "overdue") {
+      if (!IT_ACTIONABLE.has(t.state) || !t.due_date) return false;
+      if (new Date(t.due_date).getTime() >= new Date(now).getTime()) return false;
+    }
+    if (q) {
+      const name = (names.get(t.twin_id) ?? "").toLowerCase();
+      if (!name.includes(q) && !t.title.toLowerCase().includes(q)) return false;
+    }
+    return true;
+  });
+}

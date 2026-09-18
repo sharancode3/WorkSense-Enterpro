@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
@@ -31,7 +31,7 @@ import { can, ROLE_LABEL, type Role } from "@/lib/rbac";
 import { actionTaskUpdate, fetchMyWork, onboardingQueue, type ActionTaskRow, type Twin } from "@/lib/api";
 import { decode, planTaskViewSchema, planViewSchema, requisitionRowSchema, type OnboardingQueue, type RequisitionRow } from "@/lib/contracts";
 import { nextActionTask, derivePlanCounts, TASK_STATE_META } from "@/lib/onboarding-progress";
-import { deriveItQueueCounts, upcomingStarts } from "@/lib/it-provisioning";
+import { deriveItQueueCounts, filterItProvisioning, upcomingStarts, type ItQueueFilter } from "@/lib/it-provisioning";
 
 // My Action Tasks: tasks assigned to me from dispatched recommendations
 // (Phase 11). Owners act on their own tasks with evidence + rationale.
@@ -405,6 +405,16 @@ function ItProvisioningPanel({ queue }: { queue: OnboardingQueue | null }) {
   const counts = deriveItQueueCounts(items, now);
   const starts = upcomingStarts(queue?.people ?? [], now);
   const names = new Map((queue?.people ?? []).map((p) => [p.twin_id, p.name]));
+  const [filter, setFilter] = useState<ItQueueFilter>("all");
+  const [search, setSearch] = useState("");
+  const visible = useMemo(() => filterItProvisioning(items, names, filter, search, now), [items, names, filter, search, now]);
+  const FILTERS: { key: ItQueueFilter; label: string }[] = [
+    { key: "all", label: "All" },
+    { key: "ready", label: "Ready" },
+    { key: "blocked", label: "Blocked" },
+    { key: "overdue", label: "Overdue" },
+    { key: "done", label: "Completed" },
+  ];
 
   return (
     <section aria-label="IT provisioning workspace" className="mt-10">
@@ -454,13 +464,38 @@ function ItProvisioningPanel({ queue }: { queue: OnboardingQueue | null }) {
           <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Provisioning & access tasks</p>
           <span className="rounded-md bg-foreground px-2 py-0.5 text-[10px] font-bold text-white">{items.length}</span>
         </div>
-        {items.length === 0 ? (
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filter provisioning tasks">
+            {FILTERS.map((f) => (
+              <button
+                key={f.key}
+                type="button"
+                onClick={() => setFilter(f.key)}
+                className={`rounded-md px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider transition-colors ${
+                  filter === f.key ? "bg-foreground text-white" : "bg-muted text-muted-foreground hover:bg-border"
+                }`}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search employee or task…"
+            aria-label="Search provisioning tasks by employee or task"
+            className="h-9 w-full min-w-0 flex-1 rounded-md border border-border bg-white px-3 text-sm font-medium text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30 sm:w-56"
+          />
+        </div>
+        {visible.length === 0 ? (
           <p className="mt-3 text-sm text-muted-foreground">
-            No provisioning or access tasks are waiting right now. New-hire work appears here once their plan is approved.
+            {items.length === 0
+              ? "No provisioning or access tasks are waiting right now. New-hire work appears here once their plan is approved."
+              : "No tasks match this filter."}
           </p>
         ) : (
           <ul className="mt-3 flex flex-col divide-y divide-border">
-            {items.map((t) => {
+            {visible.map((t) => {
               const chip = TASK_STATE_META[t.state as keyof typeof TASK_STATE_META] ?? TASK_STATE_META.pending;
               return (
                 <li key={`${t.twin_id}-${t.task_code}`} className="flex flex-wrap items-center justify-between gap-2 py-2.5">
