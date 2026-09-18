@@ -465,6 +465,22 @@ export default function Onboarding() {
     },
   });
 
+  const plan = useQuery({
+    queryKey: ["plan", user?.id ?? "anon", selected],
+    enabled: !!selected && canView,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("onboarding_plans")
+        .select("*")
+        .eq("twin_id", selected)
+        .eq("org_id", twin?.org_id)
+        .order("version", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      return (data ?? null) as PlanView | null;
+    },
+  });
+
   // Employee + IT service view resolve to the actor's own twin by default.
   // Managers/HR land on a default demo employee WITH an active plan so the DAG
   // is visible on page load; if a selection has no plan yet and the user has
@@ -494,22 +510,6 @@ export default function Onboarding() {
       setSelected(fallback);
     }
   }, [role, twin, selected, canView, user, employees.data, planOwners.data, plan.data]);
-
-  const plan = useQuery({
-    queryKey: ["plan", user?.id ?? "anon", selected],
-    enabled: !!selected && canView,
-    queryFn: async () => {
-      const { data } = await supabase
-        .from("onboarding_plans")
-        .select("*")
-        .eq("twin_id", selected)
-        .eq("org_id", twin?.org_id)
-        .order("version", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      return (data ?? null) as PlanView | null;
-    },
-  });
 
   const tasks = useQuery({
     queryKey: ["plan-tasks", user?.id ?? "anon", plan.data?.id ?? "none"],
