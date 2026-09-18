@@ -933,7 +933,7 @@ async function reseed(supabase, authIds: Record<string, string>) {
 // handling) and satisfy the "explicitly fictional demo organization" contract.
 // ---------------------------------------------------------------------------
 async function seedDemoStories(supabase, orgId: string, clock: string) {
-  const skillId = new Map<string, string>((DEMO_FIXTURES.skills ?? []).map((s) => [s.skill.trim().toLowerCase(), s.id]));
+  const skillId = new Map<string, string>((DEMO_FIXTURES.skills ?? []).map((s): [string, string] => [s.skill.trim().toLowerCase(), s.id]));
   const sid = (name: string) => {
     const id = skillId.get(name.trim().toLowerCase());
     if (!id) throw new Error(`seedDemoStories: unknown skill "${name}"`);
@@ -1056,7 +1056,17 @@ async function seedDemoStories(supabase, orgId: string, clock: string) {
     // Evidence items — one artifact per profile EXCEPT Juno, whose three
     // extracted claims share the SAME artifact (duplicate-import story:
     // one artifact must never inflate the evidence count N times).
-    const evidenceRows = a.skills.map((s) => ({
+    const evidenceRows: {
+      org_id: string;
+      twin_id: string;
+      source_type: string;
+      source_id: string;
+      source_version: string;
+      captured_at: string;
+      quote: string;
+      review_state: string;
+      metadata: { skill_id: string | null; synthetic_fixture: boolean; note?: string };
+    }[] = a.skills.map((s) => ({
       org_id: orgId,
       twin_id: a.id,
       source_type: "resume_document",

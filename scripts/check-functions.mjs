@@ -10,6 +10,7 @@
 // (`tsc -p tsconfig.functions-check.json`) — run both from `check:functions`.
 import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { sameBundle, driftReason } from "./bundle-eol.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const read = (p) => readFileSync(`${root}${p}`, "utf8");
@@ -102,9 +103,11 @@ for (const [name, deps] of Object.entries(FNS)) {
   const out = `${header}${[...deps.map((d) => SHARED[d]), body].join("\n\n")}`;
   const onDisk = read(`supabase/functions/${name}/index.ts`);
 
-  if (onDisk !== out) {
+  // Normalize line endings so CRLF checkouts compare equal to LF output; real
+  // code drift is still detected (bundle-eol.test.ts covers both).
+  if (!sameBundle(out, onDisk)) {
     failures += 1;
-    console.error(`[drift] ${name}: index.ts is stale vs source.ts/_shared — run node scripts/bundle-functions.mjs`);
+    console.error(`[drift] ${name}: index.ts is stale vs source.ts/_shared — run node scripts/bundle-functions.mjs (${driftReason(out, onDisk)})`);
   }
   if (!out.includes("Deno.serve(")) {
     failures += 1;

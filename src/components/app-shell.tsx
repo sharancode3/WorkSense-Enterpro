@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { LogOut, Menu, RotateCcw } from "lucide-react";
+import { LogOut, Menu, PanelLeftClose, PanelLeftOpen, RotateCcw } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 import { can, ROLE_BADGE_CLASS, ROLE_LABEL, type Role } from "@/lib/rbac";
 import { breadcrumbFor, type NavSection, visibleSections } from "@/lib/navigation";
@@ -31,17 +31,23 @@ function SectionList({
   section,
   pathname,
   onNavigate,
+  collapsed = false,
 }: {
   section: NavSection;
   pathname: string;
   onNavigate?: () => void;
+  collapsed?: boolean;
 }) {
   return (
     <div className="flex flex-col gap-0.5">
-      <p className="flex items-center gap-1.5 px-3 pb-1 pt-4 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/80">
-        <section.icon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-        {section.label}
-      </p>
+      {collapsed ? (
+        <span className="mx-auto my-1 h-px w-6 bg-border" aria-hidden="true" />
+      ) : (
+        <p className="flex items-center gap-1.5 px-3 pb-1 pt-4 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/80">
+          <section.icon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          {section.label}
+        </p>
+      )}
       <nav aria-label={section.label} className="flex flex-col gap-0.5">
         {section.items.map((item) => {
           const active = pathname === item.to;
@@ -51,10 +57,11 @@ function SectionList({
               to={item.to}
               onClick={onNavigate}
               aria-current={active ? "page" : undefined}
-              className={`flex items-center gap-2.5 rounded-md px-3 py-2 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${linkClass(active)}`}
+              title={collapsed ? item.label : undefined}
+              className={`flex items-center gap-2.5 rounded-md px-3 py-2 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${linkClass(active)} ${collapsed ? "justify-center px-0" : ""}`}
             >
               <item.icon className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden="true" />
-              <span className="truncate">{item.label}</span>
+              <span className={`truncate ${collapsed ? "sr-only" : ""}`}>{item.label}</span>
             </Link>
           );
         })}
@@ -78,7 +85,7 @@ function Brand({ compact = false }: { compact?: boolean }) {
   );
 }
 
-function AccountFooter() {
+function AccountFooter({ compact = false }: { compact?: boolean }) {
   const { role, twin, signOut } = useAuth();
   const [resetting, setResetting] = useState(false);
 
@@ -94,6 +101,37 @@ function AccountFooter() {
       setResetting(false);
     }
   };
+
+  if (compact) {
+    return (
+      <div className="flex flex-col gap-2.5 border-t border-border px-3 py-4">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="sm" className="mx-auto h-9 w-9 rounded-full p-0" aria-label={`Account menu for ${twin?.name ?? "user"}`}>
+              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-muted text-sm font-extrabold text-foreground">
+                {twin?.name?.charAt(0) ?? "?"}
+              </span>
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" side="right">
+            <DropdownMenuLabel className="max-w-[220px]">
+              <p className="truncate text-sm font-bold text-foreground">{twin?.name}</p>
+              <p className="truncate text-[11px] text-muted-foreground">{twin?.email}</p>
+            </DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            {role && can(role, "reset_demo") && (
+              <DropdownMenuItem onClick={() => void handleReset()} disabled={resetting}>
+                <RotateCcw className="h-4 w-4" /> Reset demo
+              </DropdownMenuItem>
+            )}
+            <DropdownMenuItem onClick={() => void signOut()}>
+              <LogOut className="h-4 w-4" /> Sign out
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-2.5 border-t border-border px-4 py-4">
@@ -123,6 +161,25 @@ function AccountFooter() {
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { role, twin, user, signOut } = useAuth();
   const [drawerOpen, setDrawerOpen] = useState(false);
+  // Phase 15: harmless UI preference only (never HR content).
+  const [collapsed, setCollapsed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem("worksense:sidebar:collapsed") === "1";
+    } catch {
+      return false;
+    }
+  });
+  const toggleCollapsed = () => {
+    setCollapsed((c) => {
+      const next = !c;
+      try {
+        localStorage.setItem("worksense:sidebar:collapsed", next ? "1" : "0");
+      } catch {
+        /* storage unavailable — fine */
+      }
+      return next;
+    });
+  };
   const location = useLocation();
 
   const health = useQuery({
@@ -154,24 +211,39 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex min-h-screen bg-canvas">
-      {/* Desktop sidebar — independently scrollable, account controls pinned. */}
-      <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col border-r border-border bg-white md:flex">
-        <div className="flex h-14 items-center px-5">
-          <Brand />
+      {/* Desktop sidebar — independently scrollable, account controls pinned.
+          Collapsible (minimized icon rail) with a persisted UI-only preference. */}
+      <aside
+        className={`sticky top-0 hidden h-screen shrink-0 flex-col border-r border-border bg-white transition-[width] duration-200 md:flex ${collapsed ? "w-[68px]" : "w-64"}`}
+        aria-label="Main navigation"
+      >
+        <div className="flex h-14 items-center justify-between px-3">
+          <Brand compact={collapsed} />
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={toggleCollapsed}
+            aria-expanded={!collapsed}
+            aria-label={collapsed ? "Expand sidebar" : "Minimize sidebar"}
+            title={collapsed ? "Expand sidebar" : "Minimize sidebar"}
+            className={collapsed ? "mx-auto" : ""}
+          >
+            {collapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+          </Button>
         </div>
-        {role && (
+        {role && !collapsed && (
           <div className="px-5 pb-2">
             <span className={`rounded-md px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wider ${ROLE_BADGE_CLASS[role]}`}>
               {ROLE_LABEL[role]}
             </span>
           </div>
         )}
-        <div className="flex-1 overflow-y-auto px-3 pb-4">
+        <div className={`flex-1 overflow-y-auto pb-4 ${collapsed ? "px-2" : "px-3"}`}>
           {sections.map((s) => (
-            <SectionList key={s.key} section={s} pathname={location.pathname} />
+            <SectionList key={s.key} section={s} pathname={location.pathname} collapsed={collapsed} />
           ))}
         </div>
-        <AccountFooter />
+        <AccountFooter compact={collapsed} />
       </aside>
 
       {/* Content column */}
