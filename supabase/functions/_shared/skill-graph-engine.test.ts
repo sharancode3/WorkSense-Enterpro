@@ -7,7 +7,9 @@ import {
   findEdge,
   fitIsStale,
   fitKey,
+  graphContentHash,
   MATCH_WEIGHTS,
+  personContextHash,
   requisitionContentHash,
   type GraphSkill,
   type RequiredSkill,
@@ -332,11 +334,13 @@ describe("skill-graph-engine (Phase 8 — evidence-based development)", () => {
     expect(legacy.sections.evidence.artifact_count).toBe(1); // one medium claim
   });
 
-  it("versions record engine, evidence and requisition hashes", () => {
+  it("versions record engine, evidence, requisition, graph and context hashes", () => {
     const fit = mkFit();
     expect(fit.versions?.engine).toBe(ENGINE_VERSION);
     expect(fit.versions?.evidence.length).toBeGreaterThan(0);
     expect(fit.versions?.requisition).toBe("abc");
+    expect(fit.versions?.graph?.length).toBeGreaterThan(0);
+    expect(fit.versions?.context?.length).toBeGreaterThan(0);
     expect(fit.assumptions?.horizon).toBe("Current");
     const future = computeFit({
       candidateSkills: [claim("JavaScript", 4, "medium")],
@@ -352,15 +356,38 @@ describe("skill-graph-engine (Phase 8 — evidence-based development)", () => {
     expect(future.assumptions?.horizon).toBe("12–24 month outlook");
   });
 
-  it("fitIsStale detects engine/evidence/requisition changes and legacy fits", () => {
+  it("fitIsStale detects engine/evidence/requisition/graph/context changes and legacy fits", () => {
     const fit = mkFit();
-    const current = { engine: fit.versions!.engine, evidence: fit.versions!.evidence, requisition: fit.versions!.requisition };
+    const current = {
+      engine: fit.versions!.engine,
+      evidence: fit.versions!.evidence,
+      requisition: fit.versions!.requisition,
+      graph: fit.versions!.graph,
+      context: fit.versions!.context,
+    };
     expect(fitIsStale(fit, current)).toBe(false);
     expect(fitIsStale(fit, { ...current, engine: "99" })).toBe(true);
     expect(fitIsStale(fit, { ...current, evidence: "changed" })).toBe(true);
     expect(fitIsStale(fit, { ...current, requisition: "changed" })).toBe(true);
+    expect(fitIsStale(fit, { ...current, graph: "changed" })).toBe(true);
+    expect(fitIsStale(fit, { ...current, context: "changed" })).toBe(true);
+    // A fit computed before graph/context fingerprints is stale once.
+    const legacy = { ...fit, versions: { ...fit.versions!, graph: undefined, context: undefined } };
+    expect(fitIsStale(legacy, current)).toBe(true);
     expect(fitIsStale({ ...fit, versions: undefined }, current)).toBe(true); // legacy fit is stale
     expect(fitIsStale(null, current)).toBe(true);
+  });
+
+  it("graph + context hashes are deterministic and content-sensitive", () => {
+    const g2: GraphSkill[] = [
+      { skill: "JavaScript", category: "Frontend", outgoing_edges: [{ target_skill: "React", type: "ADJACENT_TO", weight: 0.8 }] },
+      { skill: "React", category: "Frontend", outgoing_edges: [{ target_skill: "TypeScript", type: "ADJACENT_TO", weight: 0.6 }] },
+    ];
+    expect(graphContentHash(g2)).toBe(graphContentHash(g2));
+    expect(graphContentHash(graph)).not.toBe(graphContentHash(g2)); // missing an edge changes it
+    expect(personContextHash(3, 2, 5)).toBe(personContextHash(3, 2, 5));
+    expect(personContextHash(3, 2, 5)).not.toBe(personContextHash(4, 2, 5)); // seniority change
+    expect(personContextHash(3, 2, 5)).not.toBe(personContextHash(3, 3, 5)); // artifact count change
   });
 
   it("hashes are deterministic and content-sensitive", () => {

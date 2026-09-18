@@ -4,6 +4,8 @@ import {
   computeFit,
   fitKey,
   fitIsStale,
+  graphContentHash,
+  personContextHash,
   requisitionContentHash,
   DEFAULT_EVIDENCE_THRESHOLD,
   type FitRecord,
@@ -129,10 +131,32 @@ Deno.serve(async (req) => {
   const claims = await resolveSkillClaims(supabase, { id: targetTwin.id, verified_skills: targetTwin.verified_skills });
   const artifacts = await resolveEvidenceArtifacts(supabase, targetTwin.id);
 
+  // Batch E (E3): the full fingerprint — engine, claims (skills/proficiency/
+  // review state), requisition content + seniority, the graph relationships,
+  // and the person-level context (seniority + independent artifact count).
+  const { data: graphRows, error: graphErr } = await supabase
+    .from("skill_graph")
+    .select("skill, category, outgoing_edges")
+    .eq("org_id", caller.org_id);
+  if (graphErr) throw graphErr;
+  const graphVersion = graphContentHash(graphRows ?? []);
+  const contextVersion = personContextHash(
+    targetTwin.seniority_level ?? 3,
+    artifacts.count,
+    claims.length
+  );
+  const current = {
+    engine: "2",
+    evidence: claimHash(claims),
+    requisition: requisitionVersion,
+    graph: graphVersion,
+    context: contextVersion,
+  };
+
   // Cache: durable skill_fits row (atomic upsert => no concurrent
   // read-modify-write that could overwrite another stored result), with a
   // legacy fallback to twin.computed_fits. Recompute only when missing, stale
-  // (engine / evidence / requisition version changed) or force requested.
+  // (engine / evidence / requisition / graph / context changed) or force.
   const { data: storedRows } = await supabase
     .from("skill_fits")
     .select("fit")
@@ -148,7 +172,7 @@ Deno.serve(async (req) => {
   );
   const cached: FitRecord | null = (storedRows?.fit as FitRecord | undefined) ?? legacyFit ?? null;
 
-  const stale = fitIsStale(cached, { engine: "2", evidence: claimHash(claims), requisition: requisitionVersion });
+  const stale = fitIsStale(cached, current);
 
   if (cached && !body.force && !stale) {
     const lineage = await resolveLineage(supabase, targetTwin.id);
@@ -162,12 +186,6 @@ Deno.serve(async (req) => {
       evidence_artifacts: artifacts,
     });
   }
-
-  const { data: graphRows, error: graphErr } = await supabase
-    .from("skill_graph")
-    .select("skill, category, outgoing_edges")
-    .eq("org_id", caller.org_id);
-  if (graphErr) throw graphErr;
 
   const now = new Date().toISOString();
   const fit = computeFit({

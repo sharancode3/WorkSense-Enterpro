@@ -33,7 +33,7 @@ export interface FitRecord {
     transferable: FitItem[];
     gaps: FitItem[];
   };
-  versions?: { engine: string; evidence: string; requisition: string };
+  versions?: { engine: string; evidence: string; requisition: string; graph?: string; context?: string };
   assumptions?: { horizon: string; note: string };
   computed_at: string;
 }
@@ -98,3 +98,7 @@ export function fitBand(score: number): "high" | "mid" | "low" {
   if (score >= 0.45) return "mid";
   return "low";
 }
+
+// Batch E (E1/E2): pure helpers live in a client-free module (unit-testable);
+// re-exported here so the page keeps a single import path.
+export { coverageBreakdown, futureRequirementDiff } from "./skill-graph-metrics";

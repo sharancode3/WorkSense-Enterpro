@@ -125,7 +125,9 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
       "versions": {
         "engine": "2",
         "evidence": "9882b815",
-        "requisition": "unknown"
+        "requisition": "unknown",
+        "graph": "8aaab563",
+        "context": "c2c73c8e"
       },
       "assumptions": {
         "horizon": "Current",
@@ -190,7 +192,9 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
       "versions": {
         "engine": "2",
         "evidence": "9882b815",
-        "requisition": "unknown"
+        "requisition": "unknown",
+        "graph": "8aaab563",
+        "context": "c2c73c8e"
       },
       "assumptions": {
         "horizon": "12–24 month outlook",
@@ -317,7 +321,9 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
       "versions": {
         "engine": "2",
         "evidence": "bc60c95a",
-        "requisition": "unknown"
+        "requisition": "unknown",
+        "graph": "8aaab563",
+        "context": "c5c74147"
       },
       "assumptions": {
         "horizon": "Current",
@@ -454,7 +460,9 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
       "versions": {
         "engine": "2",
         "evidence": "176605a3",
-        "requisition": "unknown"
+        "requisition": "unknown",
+        "graph": "8aaab563",
+        "context": "6788a556"
       },
       "assumptions": {
         "horizon": "Current",
@@ -562,7 +570,9 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
       "versions": {
         "engine": "2",
         "evidence": "50873a41",
-        "requisition": "unknown"
+        "requisition": "unknown",
+        "graph": "8aaab563",
+        "context": "a9574bb1"
       },
       "assumptions": {
         "horizon": "Current",
@@ -689,7 +699,9 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
       "versions": {
         "engine": "2",
         "evidence": "ebe00abd",
-        "requisition": "unknown"
+        "requisition": "unknown",
+        "graph": "8aaab563",
+        "context": "aa574d44"
       },
       "assumptions": {
         "horizon": "Current",
@@ -4168,12 +4180,16 @@ export interface FitRecord {
     transferable: FitItem[];
     gaps: FitItem[];
   };
-  /** Phase 8: what the fit is versioned against (stale detection). Optional so
-   *  legacy generated fits remain valid; missing versions are treated as stale. */
+  /** Phase 8 / Batch E: what the fit is versioned against (stale detection).
+   *  Optional so legacy generated fits remain valid; missing versions are
+   *  treated as stale. graph + context were added in Batch E — fits computed
+   *  before them are recomputed once. */
   versions?: {
     engine: string;
     evidence: string;
     requisition: string;
+    graph?: string;
+    context?: string;
   };
   /** Phase 8: named horizon + assumption the fit was computed under. */
   assumptions?: {
@@ -4243,13 +4259,45 @@ export function claimHash(claims: SkillClaim[]): string {
   return graphFnv1aHex(payload);
 }
 
-/** Phase 8: a cached fit is stale when the engine, the person's evidence or
- *  the requisition content changed since it was computed. */
-export function fitIsStale(fit: FitRecord | null, current: { engine: string; evidence: string; requisition: string }): boolean {
+/** Batch E (E3): version hash over the whole graph (nodes + typed edges), so a
+ *  taxonomy change invalidates fits that relied on those edges. */
+export function graphContentHash(
+  graph: { skill: string; outgoing_edges: { target_skill: string; type: string; weight: number }[] }[]
+): string {
+  const payload = (graph ?? [])
+    .flatMap((n) => [
+      `node:${n.skill}`,
+      ...(n.outgoing_edges ?? []).map((e) => `${n.skill}|${e.type}|${e.target_skill}|${e.weight}`),
+    ])
+    .sort()
+    .join(";");
+  return graphFnv1aHex(payload);
+}
+
+/** Batch E (E3): person-level context that changes the score but is not part
+ *  of the claim set — seniority and the number of independent evidence
+ *  artifacts behind the claims. */
+export function personContextHash(candidateLevel: number, evidenceArtifactCount: number | undefined, claimCount: number): string {
+  const artifacts = evidenceArtifactCount !== undefined ? evidenceArtifactCount : claimCount;
+  return graphFnv1aHex(`level:${candidateLevel}|artifacts:${artifacts}`);
+}
+
+/** Phase 8 / Batch E: a cached fit is stale when the engine, the person's
+ *  evidence, the requisition content, the skill graph, or the person-level
+ *  context (seniority / evidence artifact count) changed since it was
+ *  computed. */
+export function fitIsStale(
+  fit: FitRecord | null,
+  current: { engine: string; evidence: string; requisition: string; graph?: string; context?: string }
+): boolean {
   if (!fit) return true;
   const v = fit.versions;
   if (!v) return true; // pre-version fits are always stale
-  return v.engine !== current.engine || v.evidence !== current.evidence || v.requisition !== current.requisition;
+  if (v.engine !== current.engine || v.evidence !== current.evidence || v.requisition !== current.requisition) return true;
+  // Batch E: legacy fits lack graph/context fingerprints -> stale once.
+  if (current.graph !== undefined && (v.graph ?? undefined) !== current.graph) return true;
+  if (current.context !== undefined && (v.context ?? undefined) !== current.context) return true;
+  return false;
 }
 
 const HORIZON_LABEL: Record<string, string> = {
@@ -4448,6 +4496,8 @@ export function computeFit(params: {
       engine: ENGINE_VERSION,
       evidence: claimHash(params.candidateSkills),
       requisition: params.requisitionVersion ?? "unknown",
+      graph: graphContentHash(graph),
+      context: personContextHash(params.candidateLevel, params.evidenceArtifactCount, params.candidateSkills.length),
     },
     assumptions: {
       horizon: params.scenario === "future" ? "12–24 month outlook" : "Current",

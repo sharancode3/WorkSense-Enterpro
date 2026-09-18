@@ -1,11 +1,11 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Info, Loader2, Lock, Search, Share2, ShieldCheck, Workflow } from "lucide-react";
+import { BadgeCheck, Info, Loader2, Lock, Search, Share2, ShieldCheck, Sparkles, Workflow } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/auth-context";
 import { AppShell } from "@/components/app-shell";
 import { FitCard } from "@/components/fit-card";
-import { computeSkillFit, type FitLineage, type FitRecord, type GraphNode, type SkillMatchResult } from "@/lib/skill-graph";
+import { computeSkillFit, coverageBreakdown, futureRequirementDiff, type FitLineage, type FitRecord, type GraphNode, type SkillMatchResult } from "@/lib/skill-graph";
 import { can } from "@/lib/rbac";
 import { Button } from "@/components/ui/button";
 
@@ -33,19 +33,39 @@ const EDGE_LIMITATION: Record<string, string> = {
   PREREQUISITE_OF: "Prerequisite relationship — the target typically builds on this skill.",
 };
 
+const EDGE_LEGEND: Record<string, { label: string; color: string; dashed?: boolean }> = {
+  ADJACENT_TO: { label: "Related skill", color: "var(--primary, #6d5efc)" },
+  TRANSFERABLE_TO: { label: "Transferable experience", color: "var(--secondary, #0ea5a4)", dashed: true },
+  PREREQUISITE_OF: { label: "Prerequisite", color: "var(--accent, #f59e0b)" },
+};
+
+// Batch E (E4): results are BOUND to the person + demand they were computed
+// for. Changing either marks them outdated; late responses are ignored.
+interface MatchResults {
+  twinId: string;
+  reqId: string;
+  current: FitRecord;
+  future: FitRecord | null;
+  futureUndefined: boolean;
+  lineage: FitLineage | null;
+  artifacts: { artifact_keys: string[]; count: number } | null;
+  scope: SkillMatchResult["scope"] | null;
+  cached: boolean;
+  computedAt: string;
+}
+
 export default function SkillGraph() {
   const { role, twin: me, user } = useAuth();
   const [twinId, setTwinId] = useState("");
   const [reqId, setReqId] = useState("");
-  const [current, setCurrent] = useState<FitRecord | null>(null);
-  const [future, setFuture] = useState<FitRecord | null>(null);
-  const [lineage, setLineage] = useState<FitLineage | null>(null);
-  const [artifacts, setArtifacts] = useState<{ artifact_keys: string[]; count: number } | null>(null);
-  const [scope, setScope] = useState<SkillMatchResult["scope"] | null>(null);
+  const [results, setResults] = useState<MatchResults | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [taxSearch, setTaxSearch] = useState("");
   const [focusedSkill, setFocusedSkill] = useState<string | null>(null);
+  // Monotonic run id: a completed request only commits its results when it is
+  // still the latest run (late previous-selection responses are dropped).
+  const runIdRef = useRef(0);
 
   const twins = useQuery({
     queryKey: ["graph-twins", user?.id ?? "anon"],
@@ -128,26 +148,59 @@ export default function SkillGraph() {
 
   const focusedNode = useMemo(() => graph.data?.find((n) => n.skill === focusedSkill), [graph.data, focusedSkill]);
 
+  // Batch E (E4): identity-bound run with a late-response guard.
   const runMatch = async (force = false) => {
     if (!twinId || !reqId) return;
+    const runId = ++runIdRef.current;
+    const selTwin = twinId;
+    const selReq = reqId;
+    const reqRow = (reqs.data ?? []).find((r) => r.id === selReq);
+    const hasFuture = Boolean(reqRow && Array.isArray(reqRow.future_skills) && reqRow.future_skills.length > 0);
     setBusy(true);
     setError(null);
     try {
       const [cur, fut] = await Promise.all([
-        computeSkillFit({ twin_id: twinId, target_id: reqId, scenario: "current", force }),
-        computeSkillFit({ twin_id: twinId, target_id: reqId, scenario: "future", force }),
+        computeSkillFit({ twin_id: selTwin, target_id: selReq, scenario: "current", force }),
+        hasFuture ? computeSkillFit({ twin_id: selTwin, target_id: selReq, scenario: "future", force }) : Promise.resolve(null),
       ]);
-      setCurrent(cur.fit);
-      setFuture(fut.fit);
-      setLineage(cur.lineage ?? fut.lineage ?? null);
-      setArtifacts(cur.evidence_artifacts ?? fut.evidence_artifacts ?? null);
-      setScope(cur.scope ?? fut.scope ?? null);
+      if (runIdRef.current !== runId) return; // superseded by a newer run
+      setResults({
+        twinId: selTwin,
+        reqId: selReq,
+        current: cur.fit,
+        future: fut?.fit ?? null,
+        futureUndefined: !hasFuture,
+        lineage: cur.lineage ?? fut?.lineage ?? null,
+        artifacts: cur.evidence_artifacts ?? fut?.evidence_artifacts ?? null,
+        scope: cur.scope ?? fut?.scope ?? null,
+        cached: Boolean(cur.cached && fut?.cached !== false),
+        computedAt: new Date().toISOString(),
+      });
     } catch (err) {
+      if (runIdRef.current !== runId) return;
       setError(err instanceof Error ? err.message : "Skill match failed");
     } finally {
-      setBusy(false);
+      if (runIdRef.current === runId) setBusy(false);
     }
   };
+
+  // E1: what changed between current and future requirement sets.
+  const futureDiff = useMemo(() => {
+    const reqRow = (reqs.data ?? []).find((r) => r.id === results?.reqId);
+    if (!reqRow) return null;
+    const cur = (reqRow.required_skills ?? []) as { skill: string; target_proficiency: number }[];
+    const fut = (reqRow.future_skills ?? []) as { skill: string; target_proficiency: number }[];
+    if (fut.length === 0) return null;
+    const d = futureRequirementDiff(cur, fut);
+    return d.added.length > 0 || d.raised.length > 0 || d.removed.length > 0 ? d : null;
+  }, [reqs.data, results?.reqId]);
+
+  // E2: verified coverage vs profile match (claims included).
+  const coverage = useMemo(() => {
+    if (!results?.current || !results.lineage) return null;
+    const c = coverageBreakdown(results.current.classification.direct, results.lineage.assertions);
+    return c.directTotal > 0 ? c : null;
+  }, [results]);
 
   if (role && !can(role, "explore_skill_graph")) {
     return (
@@ -169,7 +222,8 @@ export default function SkillGraph() {
   if (!user) return null;
 
   const scopeLabel =
-    scope === "self" ? "Your own skills" : scope === "team" ? "Your team" : scope === "candidates" ? "Authorized candidates" : "Organization";
+    results?.scope === "self" ? "Your own skills" : results?.scope === "team" ? "Your team" : results?.scope === "candidates" ? "Authorized candidates" : "Organization";
+  const selectionDirty = Boolean(results && (results.twinId !== twinId || results.reqId !== reqId));
 
   return (
     <AppShell>
@@ -183,8 +237,8 @@ export default function SkillGraph() {
             Pick a person and a demand to see how their <b>verified evidence</b> maps to the requirements. Every skill is
             shown with its support state (self-reported, extracted, assessment-supported, or reviewer-verified), the
             source artifact and excerpt, and what still needs verification. Adjacent or transferable support is labeled
-            as such — it is never presented as direct capability. You are only ever assessed against a demand you
-            select; nothing here evaluates everyone against every unrelated skill by default.
+            as such — it is never presented as direct capability. The overall match includes claims; verified coverage
+            is shown separately.
           </p>
           <p className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
             <ShieldCheck className="h-3.5 w-3.5 text-primary" /> Scope for this account: {scopeLabel} — enforced server-side.
@@ -241,12 +295,110 @@ export default function SkillGraph() {
           </div>
         )}
 
-        {current && future && (
+        {results && (
           <>
-            <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-2">
-              <FitCard fit={current} lineage={lineage ?? undefined} />
-              <FitCard fit={future} lineage={lineage ?? undefined} />
+            {/* E4: outdated-selection banner — results are bound to a selection. */}
+            {selectionDirty ? (
+              <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-lg border-2 border-accent/40 bg-accent/10 p-4">
+                <p className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                  <Info className="h-4 w-4 text-accent" /> Selection changed — these results were computed for a previous
+                  person or role.
+                </p>
+                <Button size="sm" variant="outline" onClick={() => void runMatch()} disabled={busy || !twinId || !reqId}>
+                  Recompute for this selection
+                </Button>
+              </div>
+            ) : (
+              <p className="mt-6 flex items-center gap-1.5 text-xs text-muted-foreground">
+                <ShieldCheck className="h-3.5 w-3.5 text-primary" />
+                Computed for this selection{results.cached ? " (served from cache)" : ""} · last computed{" "}
+                {new Date(results.computedAt).toLocaleString()}. Evidence, requisition, seniority, or graph changes
+                invalidate the cached result automatically (version fingerprint), so Recompute is always current.
+              </p>
+            )}
+
+            <div className="mt-4 grid grid-cols-1 gap-6 lg:grid-cols-2">
+              <FitCard fit={results.current} lineage={results.lineage ?? undefined} />
+              {results.future ? (
+                <FitCard fit={results.future} lineage={results.lineage ?? undefined} />
+              ) : (
+                /* E1: empty future requirements are shown honestly, never as a fabricated score. */
+                <div className="flex flex-col gap-3 rounded-lg bg-white p-6">
+                  <div className="flex items-start justify-between gap-2">
+                    <h3 className="text-lg font-extrabold tracking-tight text-foreground">Future requirements</h3>
+                  </div>
+                  <div className="flex items-center justify-between rounded-lg bg-muted p-5">
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Future readiness</p>
+                      <p className="mt-1 text-lg font-extrabold text-foreground">Future requirements not defined</p>
+                    </div>
+                    <Sparkles className="h-6 w-6 text-muted-foreground" />
+                  </div>
+                  <p className="text-xs leading-relaxed text-muted-foreground">
+                    This demand has no future-skills definition yet. No future score is computed — a fabricated 0 or 100
+                    would be meaningless. Edit the role's future requirements to enable the 12–24 month outlook.
+                  </p>
+                </div>
+              )}
             </div>
+
+            {/* E1: changed requirements between current and future */}
+            {futureDiff && (futureDiff.added.length > 0 || futureDiff.raised.length > 0 || futureDiff.removed.length > 0) && (
+              <div className="mt-6 rounded-lg bg-white p-5 text-sm">
+                <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                  <Workflow className="h-4 w-4 text-primary" /> How the future target differs from today
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  A lower future score can be legitimate — the future target is harder or different, not inflated.
+                </p>
+                <ul className="mt-2 flex flex-wrap gap-2">
+                  {futureDiff.added.map((s) => (
+                    <li key={`a-${s.skill}`} className="rounded-md bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary">Added: {s.skill} @ {s.target_proficiency}</li>
+                  ))}
+                  {futureDiff.raised.map((s) => (
+                    <li key={`r-${s.skill}`} className="rounded-md bg-accent/20 px-2.5 py-1 text-xs font-semibold text-accent">Raised target: {s.skill} @ {s.target_proficiency}</li>
+                  ))}
+                  {futureDiff.removed.map((s) => (
+                    <li key={`d-${s.skill}`} className="rounded-md bg-muted px-2.5 py-1 text-xs font-semibold text-muted-foreground">No longer required: {s.skill}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {/* E2: claim-inclusive match vs verified coverage */}
+            {coverage && coverage.directTotal > 0 && (
+              <div className="mt-6 rounded-lg bg-white p-5">
+                <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                  <BadgeCheck className="h-4 w-4 text-primary" /> Profile match vs verified coverage
+                </p>
+                <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-4">
+                  <div className="rounded-lg bg-muted p-3">
+                    <p className="text-xs font-semibold text-muted-foreground">Direct skills in role</p>
+                    <p className="text-xl font-extrabold text-foreground">{coverage.directTotal}</p>
+                  </div>
+                  <div className="rounded-lg bg-muted p-3">
+                    <p className="text-xs font-semibold text-muted-foreground">Verified coverage</p>
+                    <p className="text-xl font-extrabold text-secondary">{coverage.verified}</p>
+                    <p className="text-[10px] text-muted-foreground">reviewer-confirmed or assessment-supported</p>
+                  </div>
+                  <div className="rounded-lg bg-muted p-3">
+                    <p className="text-xs font-semibold text-muted-foreground">Unverified claims</p>
+                    <p className="text-xl font-extrabold text-accent">{coverage.unverified}</p>
+                    <p className="text-[10px] text-muted-foreground">self-reported or extracted only</p>
+                  </div>
+                  <div className="rounded-lg bg-muted p-3">
+                    <p className="text-xs font-semibold text-muted-foreground">Missing evidence</p>
+                    <p className="text-xl font-extrabold text-foreground">{coverage.missing}</p>
+                    <p className="text-[10px] text-muted-foreground">no recorded assertion</p>
+                  </div>
+                </div>
+                <p className="mt-2 text-[11px] leading-snug text-muted-foreground">
+                  The overall match percentage includes self-reported and extracted claims where evidence is thin.
+                  Verified coverage counts only accepted independent evidence — keywords alone never satisfy a mandatory
+                  gate.
+                </p>
+              </div>
+            )}
 
             {/* Requirements-vs-evidence matrix + gap bars */}
             <div className="mt-8 rounded-lg bg-white p-6">
@@ -254,8 +406,8 @@ export default function SkillGraph() {
                 <Workflow className="h-5 w-5 text-primary" strokeWidth={2.5} /> Requirements versus evidence
               </h2>
               <p className="mt-1 text-xs text-muted-foreground">
-                One row per required skill. Bars show the target (filled outline) against the person's current level.
-                "Support state" is the strongest evidence behind the skill.
+                One row per required skill (current scenario). Bars show the target (filled outline) against the person's
+                current level. "Support state" is the strongest evidence behind the skill.
               </p>
               <div className="mt-4 overflow-x-auto">
                 <table className="w-full min-w-[640px] text-left text-sm">
@@ -269,10 +421,10 @@ export default function SkillGraph() {
                     </tr>
                   </thead>
                   <tbody>
-                    {current.classification.direct
-                      .concat(current.classification.adjacent, current.classification.transferable, current.classification.gaps)
+                    {results.current.classification.direct
+                      .concat(results.current.classification.adjacent, results.current.classification.transferable, results.current.classification.gaps)
                       .map((item) => {
-                        const assertion = lineage?.assertions.find((a) => a.skill_name?.toLowerCase() === item.skill.toLowerCase());
+                        const assertion = results.lineage?.assertions.find((a) => a.skill_name?.toLowerCase() === item.skill.toLowerCase());
                         const meta = STATE_META[assertion?.review_state ?? ""] ?? { label: "No evidence", chip: "bg-muted text-foreground" };
                         const holds = item.candidate_proficiency ?? 0;
                         const target = item.required_proficiency;
@@ -321,9 +473,9 @@ export default function SkillGraph() {
               <p className="mt-3 text-[11px] text-muted-foreground">
                 Evidence count uses <b>independent artifacts</b> (deduplicated): multiple assertions from the same
                 resume or work sample count once.
-                {artifacts && (
+                {results.artifacts && (
                   <>
-                    {" "}This person currently has <b>{artifacts.count} independent artifact(s)</b> backing their scored skills.
+                    {" "}This person currently has <b>{results.artifacts.count} independent artifact(s)</b> backing their scored skills.
                   </>
                 )}
               </p>
@@ -331,7 +483,7 @@ export default function SkillGraph() {
           </>
         )}
 
-        {!current && (
+        {!results && (
           <div className="mt-10 flex flex-col items-center gap-3 rounded-lg bg-muted px-6 py-16 text-center">
             <Share2 className="h-8 w-8 text-primary" strokeWidth={2.5} />
             <p className="text-sm text-muted-foreground">
@@ -341,14 +493,14 @@ export default function SkillGraph() {
           </div>
         )}
 
-        {/* Searchable taxonomy + focused relationship view */}
+        {/* Searchable taxonomy + focused relationship view (E5) */}
         <div className="mt-16">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
-              <h2 className="text-xl font-extrabold tracking-tight text-foreground">Browse the skill taxonomy</h2>
+              <h2 className="text-xl font-extrabold tracking-tight text-foreground">Connections</h2>
               <p className="mt-1 text-sm text-muted-foreground">
-                Typed relationships — PREREQUISITE_OF, ADJACENT_TO, TRANSFERABLE_TO. Click a skill to see its focused
-                relationship view with weights and limitations.
+                Typed relationships between skills — Related skill, Transferable experience, Prerequisite. Click a skill
+                to see its focused ego network (only its direct neighbors, never the whole taxonomy).
               </p>
             </div>
             <label className="flex items-center gap-2 rounded-md bg-muted px-3 py-2">
@@ -374,6 +526,10 @@ export default function SkillGraph() {
                   Close
                 </button>
               </div>
+
+              {/* E5: focused SVG ego network */}
+              <EgoNetwork center={focusedNode.skill} nodes={graph.data ?? []} reverseEdges={reverseEdges} onSelect={setFocusedSkill} />
+
               <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-wider text-white/60">Outgoing relationships</p>
@@ -432,5 +588,112 @@ export default function SkillGraph() {
         </div>
       </div>
     </AppShell>
+  );
+}
+
+/**
+ * E5: a focused ego-network rendered as SVG. Only the center skill and its
+ * DIRECT neighbors are drawn — never the whole taxonomy. Outgoing edges go
+ * right, incoming edges come from the left. Clicking a neighbor re-centers the
+ * network on it. The relationship lists below the SVG remain the accessible
+ * table/list alternative.
+ */
+function EgoNetwork({
+  center,
+  nodes,
+  reverseEdges,
+  onSelect,
+}: {
+  center: string;
+  nodes: GraphNode[];
+  reverseEdges: Map<string, { from: string; type: string; weight: number }[]>;
+  onSelect: (skill: string) => void;
+}) {
+  const centerNode = nodes.find((n) => n.skill === center);
+  const outgoing = centerNode?.outgoing_edges ?? [];
+  const incoming = reverseEdges.get(center.toLowerCase()) ?? [];
+
+  const outNodes = outgoing.map((e) => nodes.find((n) => n.skill.toLowerCase() === e.target_skill.toLowerCase())?.skill ?? e.target_skill);
+  const inNodes = incoming.map((e) => e.from);
+  const uniqueOut = [...new Set(outNodes)];
+  const uniqueIn = [...new Set(inNodes)];
+
+  const W = 560;
+  const H = 240;
+  const CX = W / 2;
+  const CY = H / 2;
+
+  const outPos = uniqueOut.map((s, i) => {
+    const n = uniqueOut.length;
+    const angle = -Math.PI / 2 + (n > 1 ? (i / (n - 1)) * Math.PI : 0); // right half
+    return { skill: s, x: CX + 150 + Math.cos(angle) * 70, y: CY + Math.sin(angle) * 90, center: false };
+  });
+  const inPos = uniqueIn.map((s, i) => {
+    const n = uniqueIn.length;
+    const angle = -Math.PI / 2 + (n > 1 ? (i / (n - 1)) * Math.PI : 0); // left half
+    return { skill: s, x: CX - 150 - Math.cos(angle) * 70, y: CY + Math.sin(angle) * 90, center: false };
+  });
+  const all = [{ skill: center, x: CX, y: CY, center: true }, ...outPos, ...inPos];
+
+  const edgeStyle = (type: string) => {
+    const m = EDGE_LEGEND[type] ?? { label: type, color: "#94a3b8" };
+    return { stroke: m.color, strokeWidth: 1.6, strokeDasharray: m.dashed ? "5 4" : undefined };
+  };
+
+  return (
+    <div className="mt-4 rounded-lg bg-white/10 p-3">
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label={`Connection network around ${center}`}>
+        {/* outgoing edges */}
+        {outgoing.map((e) => {
+          const t = outPos.find((p) => p.skill.toLowerCase() === e.target_skill.toLowerCase());
+          if (!t) return null;
+          return (
+            <line key={`o-${e.target_skill}-${e.type}`} x1={CX} y1={CY} x2={t.x} y2={t.y} {...edgeStyle(e.type)} />
+          );
+        })}
+        {/* incoming edges */}
+        {incoming.map((e) => {
+          const f = inPos.find((p) => p.skill.toLowerCase() === e.from.toLowerCase());
+          if (!f) return null;
+          return (
+            <line key={`i-${e.from}-${e.type}`} x1={f.x} y1={f.y} x2={CX} y2={CY} {...edgeStyle(e.type)} />
+          );
+        })}
+        {/* nodes */}
+        {all.map((n) => (
+          <g key={n.skill} transform={`translate(${n.x}, ${n.y})`}>
+            <circle
+              r={n.center ? 26 : 20}
+              fill={n.center ? "rgba(255,255,255,0.22)" : "rgba(255,255,255,0.12)"}
+              stroke={n.center ? "#ffffff" : "rgba(255,255,255,0.5)"}
+              strokeWidth={n.center ? 2 : 1.2}
+              onClick={() => !n.center && onSelect(n.skill)}
+              style={{ cursor: n.center ? "default" : "pointer" }}
+            />
+            <text
+              textAnchor="middle"
+              dy="0.35em"
+              className="text-[10px] font-bold"
+              fill="#ffffff"
+              style={{ pointerEvents: "none" }}
+            >
+              {n.skill.length > 12 ? `${n.skill.slice(0, 11)}…` : n.skill}
+            </text>
+          </g>
+        ))}
+      </svg>
+      {/* legend */}
+      <div className="mt-2 flex flex-wrap items-center gap-4 text-[11px] text-white/80">
+        {Object.entries(EDGE_LEGEND).map(([type, m]) => (
+          <span key={type} className="flex items-center gap-1.5">
+            <svg width="22" height="6" aria-hidden="true">
+              <line x1="0" y1="3" x2="22" y2="3" stroke={m.color} strokeWidth="1.6" strokeDasharray={m.dashed ? "5 4" : undefined} />
+            </svg>
+            {m.label}
+          </span>
+        ))}
+        <span className="text-white/50">· A path between skills is a relationship, never proof of mastery in the target skill.</span>
+      </div>
+    </div>
   );
 }

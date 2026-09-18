@@ -122,7 +122,9 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
       "versions": {
         "engine": "2",
         "evidence": "9882b815",
-        "requisition": "unknown"
+        "requisition": "unknown",
+        "graph": "8aaab563",
+        "context": "c2c73c8e"
       },
       "assumptions": {
         "horizon": "Current",
@@ -187,7 +189,9 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
       "versions": {
         "engine": "2",
         "evidence": "9882b815",
-        "requisition": "unknown"
+        "requisition": "unknown",
+        "graph": "8aaab563",
+        "context": "c2c73c8e"
       },
       "assumptions": {
         "horizon": "12–24 month outlook",
@@ -314,7 +318,9 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
       "versions": {
         "engine": "2",
         "evidence": "bc60c95a",
-        "requisition": "unknown"
+        "requisition": "unknown",
+        "graph": "8aaab563",
+        "context": "c5c74147"
       },
       "assumptions": {
         "horizon": "Current",
@@ -451,7 +457,9 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
       "versions": {
         "engine": "2",
         "evidence": "176605a3",
-        "requisition": "unknown"
+        "requisition": "unknown",
+        "graph": "8aaab563",
+        "context": "6788a556"
       },
       "assumptions": {
         "horizon": "Current",
@@ -559,7 +567,9 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
       "versions": {
         "engine": "2",
         "evidence": "50873a41",
-        "requisition": "unknown"
+        "requisition": "unknown",
+        "graph": "8aaab563",
+        "context": "a9574bb1"
       },
       "assumptions": {
         "horizon": "Current",
@@ -686,7 +696,9 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
       "versions": {
         "engine": "2",
         "evidence": "ebe00abd",
-        "requisition": "unknown"
+        "requisition": "unknown",
+        "graph": "8aaab563",
+        "context": "aa574d44"
       },
       "assumptions": {
         "horizon": "Current",
