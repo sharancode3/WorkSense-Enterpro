@@ -7,8 +7,10 @@ import {
   interviewKitSchema,
   meResultSchema,
   myWorkSchema,
+  onboardingQueueSchema,
   staffingComparisonSchema,
   type CandidateCompare,
+  type OnboardingQueue,
 } from "./contracts";
 import type { z } from "zod";
 
@@ -277,7 +279,7 @@ export interface PlanTaskView {
   evidence_requirements: { kind: "note" | "assessment_id"; label: string; required: boolean }[];
   state: PlanTaskState;
   blocked_reasons: string[];
-  blockers: { id: string; note: string; reported_by: string; at: string; status: "open" | "resolved" }[];
+  blockers: { id: string; note: string; reported_by: string; at: string; status: "open" | "resolved"; resolved_by?: string; resolved_at?: string }[];
   waiver: { by_twin_id: string; by_name: string; reason: string; policy_basis: { doc_code: string; version: number | null } | null; at: string } | null;
   completion_record: {
     actor_twin_id: string;
@@ -309,6 +311,10 @@ export interface PlanView {
     projected_ready_date: string | null;
     blocked_count: number;
     note: string;
+    provisional: boolean;
+    critical_path: string[];
+    dimensions: { key: "access" | "compliance" | "capability"; label: string; satisfied: number; total: number; pct: number; note: string }[];
+    working_calendar: "business_days";
   };
   carryover: { task_code: string; from_version: number; from_plan_id: string; note: string }[];
   audit_events: { actor: string; action: string; note?: string; timestamp: string }[];
@@ -340,6 +346,9 @@ export const onboardingTaskAction = (planId: string, taskCode: string, action: "
     "onboarding-task",
     { plan_id: planId, task_code: taskCode, action, ...payload }
   );
+
+export const onboardingQueue = () =>
+  invoke<OnboardingQueue>("onboarding-queue", {}, onboardingQueueSchema, "onboarding-queue");
 
 // ---- Policy Studio ----
 

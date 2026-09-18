@@ -297,7 +297,8 @@ async function handle(supabase: ReturnType<typeof createClient>, req: Request): 
     const idx = blockers.findIndex((b) => b.id === blockerId);
     if (idx === -1) return json({ error: "NOT_FOUND", message: "Blocker not found on this task." }, 404);
     if (blockers[idx].status !== "open") return json({ error: "CONFLICT", message: "Blocker is already resolved." }, 409);
-    const nextBlockers = blockers.map((b) => (b.id === blockerId ? { ...b, status: "resolved" as const } : b));
+    const resolvedBlocker = { ...blockers[idx], status: "resolved" as const, resolved_by: caller.name ?? caller.email ?? caller.id, resolved_at: now };
+    const nextBlockers = blockers.map((b) => (b.id === blockerId ? resolvedBlocker : b));
 
     const facts = factsOf(allTasks);
     facts.blockers[taskCode] = nextBlockers;

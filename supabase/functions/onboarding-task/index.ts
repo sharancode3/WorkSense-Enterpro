@@ -53,6 +53,8 @@ export interface Blocker {
   reported_by: string;
   at: string;
   status: "open" | "resolved";
+  resolved_by?: string;
+  resolved_at?: string;
 }
 
 export interface Waiver {
@@ -94,14 +96,36 @@ export interface PlanTask extends TaskDef {
   adaptation: Adaptation | null;
 }
 
+export interface ReadinessDimension {
+  key: "access" | "compliance" | "capability";
+  label: string;
+  /** satisfied = done (or waived for access/compliance; waived NEVER counts as
+   *  capability — a waived task must not imply a skill was verified). */
+  satisfied: number;
+  total: number;
+  pct: number;
+  note: string;
+}
+
 export interface ReadinessEstimate {
+  /** Overall task completion (done + waived). */
   ready_pct: number;
   satisfied: number;
   total: number;
+  /** Remaining critical path, in duration-days (not node count). */
   remaining_critical_days: number;
+  /** Business-day projection from today; null when blockers make it unknown. */
   projected_ready_date: string | null;
   blocked_count: number;
   note: string;
+  /** True when the projection is provisional (open blockers on the path). */
+  provisional: boolean;
+  /** Remaining critical path as task codes (ordered, by duration). */
+  critical_path: string[];
+  /** Access / compliance / role-capability readiness shown separately from
+   *  overall completion. */
+  dimensions: ReadinessDimension[];
+  working_calendar: "business_days";
 }
 
 export interface CarryoverEntry {
@@ -366,18 +390,69 @@ export function criticalPath(defs: TaskDef[], satisfied: Set<string>): { tasks: 
   return { tasks: best.tasks, total_days: best.days };
 }
 
-/** Honest readiness: satisfied/total + remaining critical path from today. */
+/** Business-day calendar: duration days map onto working days only. */
+function addBusinessDays(start: Date, workingDays: number): Date {
+  const d = new Date(start);
+  let remaining = workingDays;
+  while (remaining > 0) {
+    d.setUTCDate(d.getUTCDate() + 1);
+    const dow = d.getUTCDay();
+    if (dow === 0 || dow === 6) continue; // weekend
+    remaining -= 1;
+  }
+  return d;
+}
+
+/**
+ * Honest readiness: overall task completion shown SEPARATELY from access,
+ * compliance and role-capability readiness. The critical path uses remaining
+ * durations (business days) over prerequisites — never the longest node chain.
+ * Blockers on the path make the projection provisional (unknown date); waived
+ * learning/verification tasks never count as capability.
+ */
 export function estimateReadiness(defs: TaskDef[], tasks: PlanTask[], startDate: string, now: string): ReadinessEstimate {
   const satisfied = satisfiedSet(tasks);
   const total = defs.length;
   const readyPct = total === 0 ? 0 : Math.round((satisfied.size / total) * 1000) / 10;
-  const { total_days } = criticalPath(defs, satisfied);
+  const { tasks: path, total_days } = criticalPath(defs, satisfied);
   const blockedCount = tasks.filter((t) => t.state === "blocked" || t.state === "failed").length;
-  const projected = total_days === 0 ? null : addDays(new Date(now), total_days).toISOString();
-  const note =
-    blockedCount > 0
-      ? "Estimated readiness — projected earliest completion if every blocker clears today; blocked work makes this provisional, not a guarantee."
-      : "Estimated readiness — projected earliest completion from today's date; an estimate, not a guarantee.";
+
+  // A blocker on any remaining critical-path task means the date is unknown,
+  // not confidently projected — label the estimate provisional (spec: forecast
+  // dates must account for blockers; label provisional estimates).
+  const openOnPath = path.filter((code) => tasks.find((t) => t.task_code === code)?.blockers.some((b) => b.status === "open"));
+  const provisional = openOnPath.length > 0;
+  const projected = total_days === 0 ? null : provisional ? null : addBusinessDays(new Date(now), total_days).toISOString();
+
+  const dimensionFor = (key: ReadinessDimension["key"], types: TaskType[], countWaived: boolean): ReadinessDimension => {
+    const members = tasks.filter((t) => types.includes(t.task_type));
+    const sat = members.filter((t) => t.state === "done" || (countWaived && t.state === "waived")).length;
+    const pct = members.length === 0 ? 100 : Math.round((sat / members.length) * 1000) / 10;
+    return {
+      key,
+      label: key === "access" ? "Access readiness" : key === "compliance" ? "Compliance readiness" : "Role capability",
+      satisfied: sat,
+      total: members.length,
+      pct,
+      note:
+        key === "capability"
+          ? "Waived tasks never count as verified skill — capability needs a completed learning or verification task."
+          : key === "access"
+            ? "Provisioning and system-access tasks complete the technical floor."
+            : "Mandatory policy tasks are done before systems stay open.",
+    };
+  };
+
+  const dimensions: ReadinessDimension[] = [
+    dimensionFor("access", ["provisioning", "access"], true),
+    dimensionFor("compliance", ["policy"], true),
+    dimensionFor("capability", ["learning", "verification"], false),
+  ];
+
+  const note = provisional
+    ? `Estimated readiness — ${openOnPath.length} blocker(s) remain on the critical path, so the ready date is unknown until they clear. Blocked work makes this provisional, not a guarantee.`
+    : "Estimated readiness — projected earliest completion in business days from today; an estimate, not a guarantee.";
+
   return {
     ready_pct: readyPct,
     satisfied: satisfied.size,
@@ -386,6 +461,10 @@ export function estimateReadiness(defs: TaskDef[], tasks: PlanTask[], startDate:
     projected_ready_date: projected,
     blocked_count: blockedCount,
     note,
+    provisional,
+    critical_path: path,
+    dimensions,
+    working_calendar: "business_days",
   };
 }
 
@@ -1050,7 +1129,8 @@ async function handle(supabase: ReturnType<typeof createClient>, req: Request): 
     const idx = blockers.findIndex((b) => b.id === blockerId);
     if (idx === -1) return json({ error: "NOT_FOUND", message: "Blocker not found on this task." }, 404);
     if (blockers[idx].status !== "open") return json({ error: "CONFLICT", message: "Blocker is already resolved." }, 409);
-    const nextBlockers = blockers.map((b) => (b.id === blockerId ? { ...b, status: "resolved" as const } : b));
+    const resolvedBlocker = { ...blockers[idx], status: "resolved" as const, resolved_by: caller.name ?? caller.email ?? caller.id, resolved_at: now };
+    const nextBlockers = blockers.map((b) => (b.id === blockerId ? resolvedBlocker : b));
 
     const facts = factsOf(allTasks);
     facts.blockers[taskCode] = nextBlockers;

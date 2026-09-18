@@ -134,6 +134,15 @@ export interface CandidateCompare {
 const approvalRefSchema = z.object({ by: z.string(), by_twin_id: z.string(), at: z.string() });
 const sourceEvidenceSchema = z.object({ source_type: z.string(), fact: z.string(), ref: z.string().optional() });
 
+export const readinessDimensionSchema = z.object({
+  key: z.enum(["access", "compliance", "capability"]),
+  label: z.string(),
+  satisfied: z.number(),
+  total: z.number(),
+  pct: z.number(),
+  note: z.string(),
+});
+
 export const planViewSchema = z.object({
   id: z.string(),
   twin_id: z.string(),
@@ -153,6 +162,10 @@ export const planViewSchema = z.object({
     projected_ready_date: z.string().nullable(),
     blocked_count: z.number(),
     note: z.string(),
+    provisional: z.boolean().default(false),
+    critical_path: z.array(z.string()).default([]),
+    dimensions: z.array(readinessDimensionSchema).default([]),
+    working_calendar: z.enum(["business_days"]).default("business_days"),
   }),
   carryover: z.array(z.object({ task_code: z.string(), from_version: z.number(), from_plan_id: z.string(), note: z.string() })),
   audit_events: z.array(z.object({ actor: z.string(), action: z.string(), note: z.string().optional(), timestamp: z.string() }))}) as z.ZodType<PlanView>;
@@ -174,7 +187,7 @@ export const planTaskViewSchema = z.object({
   // NOTE: onboarding_tasks has NO blocked_reasons column; the query normalizer
   // injects [] for every row before this schema runs.
   blocked_reasons: z.array(z.string()),
-  blockers: z.array(z.object({ id: z.string(), note: z.string(), reported_by: z.string(), at: z.string(), status: z.enum(["open", "resolved"]) })),
+  blockers: z.array(z.object({ id: z.string(), note: z.string(), reported_by: z.string(), at: z.string(), status: z.enum(["open", "resolved"]), resolved_by: z.string().optional(), resolved_at: z.string().optional() })),
   waiver: z
     .object({
       by_twin_id: z.string(),
@@ -204,6 +217,93 @@ export const planTaskViewSchema = z.object({
       actor_twin_id: z.string(),
     })
     .nullable()}) as z.ZodType<PlanTaskView>;
+
+// ---------------------------------------------------------------------------
+// Onboarding operational queue (Phase 6) — role-scoped journeys + filters.
+// ---------------------------------------------------------------------------
+
+const queueTaskRefSchema = z.object({
+  task_code: z.string(),
+  title: z.string(),
+  task_type: z.string(),
+  owner_role: z.string(),
+  state: z.string(),
+  due_date: z.string().nullable(),
+  topological_level: z.number(),
+  plan_id: z.string(),
+  twin_id: z.string(),
+});
+
+export const onboardingQueueSchema = z.object({
+  ok: z.literal(true),
+  role: z.enum(["employee", "manager", "hr", "it_security"]),
+  journeys: z.array(
+    z.object({
+      twin_id: z.string(),
+      employee_name: z.string(),
+      job_title: z.string().nullable(),
+      manager_id: z.string().nullable(),
+      plan_id: z.string(),
+      version: z.number(),
+      status: z.string(),
+      start_date: z.string(),
+      readiness_pct: z.number(),
+      projected_ready_date: z.string().nullable(),
+      provisional: z.boolean(),
+      blocked_count: z.number(),
+      pending_manager_approval: z.boolean(),
+      pending_hr_approval: z.boolean(),
+      overdue: z.boolean(),
+      overdue_count: z.number(),
+      stalled: z.boolean(),
+      stall_reasons: z.array(z.string()),
+      viewer_actions: z.array(queueTaskRefSchema),
+      waiting_on: z.array(queueTaskRefSchema),
+    })
+  ),
+  provisioning: z.array(queueTaskRefSchema),
+  filters: z.object({ all: z.number(), pending_approval: z.number(), overdue: z.number(), stalled: z.number() }),
+}) as z.ZodType<OnboardingQueue>;
+export interface OnboardingQueue {
+  ok: true;
+  role: "employee" | "manager" | "hr" | "it_security";
+  journeys: QueueJourney[];
+  provisioning: QueueTaskRef[];
+  filters: { all: number; pending_approval: number; overdue: number; stalled: number };
+}
+export interface QueueTaskRef {
+  task_code: string;
+  title: string;
+  task_type: string;
+  owner_role: string;
+  state: string;
+  due_date: string | null;
+  topological_level: number;
+  plan_id: string;
+  twin_id: string;
+}
+export interface QueueJourney {
+  twin_id: string;
+  employee_name: string;
+  job_title: string | null;
+  manager_id: string | null;
+  plan_id: string;
+  version: number;
+  status: string;
+  start_date: string;
+  readiness_pct: number;
+  projected_ready_date: string | null;
+  provisional: boolean;
+  blocked_count: number;
+  pending_manager_approval: boolean;
+  pending_hr_approval: boolean;
+  overdue: boolean;
+  overdue_count: number;
+  stalled: boolean;
+  stall_reasons: string[];
+  viewer_actions: QueueTaskRef[];
+  waiting_on: QueueTaskRef[];
+}
 
 // ---------------------------------------------------------------------------
 // Recommendation hub row contract.

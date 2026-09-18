@@ -3,26 +3,31 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import {
+  AlertOctagon,
   AlertTriangle,
   ArrowRight,
+  ArrowUpRight,
   BadgeCheck,
   CalendarClock,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
+  ClipboardCheck,
+  FileCheck2,
   GitBranch,
   GraduationCap,
+  Hourglass,
+  KeyRound,
+  LayoutList,
   Loader2,
   Lock,
+  Network,
   RefreshCw,
+  Scale,
   ShieldCheck,
   UserCheck,
   Users,
   XCircle,
-  ClipboardCheck,
-  FileCheck2,
-  KeyRound,
-  Scale,
   ArrowRightLeft,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
@@ -36,11 +41,18 @@ import { can, ROLE_LABEL } from "@/lib/rbac";
 import {
   onboardingPlanApprove,
   onboardingPlanBuild,
+  onboardingQueue,
   onboardingTaskAction,
   type PlanTaskView,
   type PlanView,
 } from "@/lib/api";
-import { decode, planTaskViewSchema, planViewSchema } from "@/lib/contracts";
+import {
+  decode,
+  planTaskViewSchema,
+  planViewSchema,
+  type QueueJourney,
+  type QueueTaskRef,
+} from "@/lib/contracts";
 import { TASK_STATE_META } from "@/lib/onboarding-progress";
 
 const OWNER_LABEL: Record<PlanTaskView["owner_role"], string> = {
@@ -154,6 +166,7 @@ function TaskCard({
   const [blockerText, setBlockerText] = useState("");
   const [completeOpen, setCompleteOpen] = useState(false);
   const [evidence, setEvidence] = useState<Record<string, string>>({});
+  const [evErrors, setEvErrors] = useState<Set<string>>(new Set());
   const [note, setNote] = useState("");
   const [waiveOpen, setWaiveOpen] = useState(false);
   const [waiveReason, setWaiveReason] = useState("");
@@ -166,17 +179,26 @@ function TaskCard({
 
   const openBlockers = (task.blockers ?? []).filter((b) => b.status === "open");
 
+  const setEvidenceValue = (label: string, value: string) => {
+    setEvidence((s) => ({ ...s, [label]: value }));
+    if (value.trim()) setEvErrors((prev) => new Set([...prev].filter((l) => l !== label)));
+  };
+
+  const requiredEvidence = (task.evidence_requirements ?? []).filter((r) => r.required);
+  const evidenceComplete = requiredEvidence.every((r) => (evidence[r.label] ?? "").trim().length > 0);
+
   const doComplete = () => {
-    const ev = (task.evidence_requirements ?? [])
-      .filter((r) => r.required)
-      .map((r) => ({ kind: r.kind as "note" | "assessment_id", label: r.label, value: (evidence[r.label] ?? "").trim() }));
-    if (ev.some((e) => !e.value)) {
+    const ev = requiredEvidence.map((r) => ({ kind: r.kind as "note" | "assessment_id", label: r.label, value: (evidence[r.label] ?? "").trim() }));
+    const missingLabels = new Set(ev.filter((e) => !e.value).map((e) => e.label));
+    if (missingLabels.size > 0) {
+      setEvErrors(missingLabels);
       toast.error("All required evidence fields must be filled before completing.");
       return;
     }
     onComplete(ev, note.trim() || undefined);
     setCompleteOpen(false);
     setEvidence({});
+    setEvErrors(new Set());
     setNote("");
   };
 
@@ -245,7 +267,7 @@ function TaskCard({
               <span>
                 <AlertTriangle className="mr-1 inline h-3 w-3" />
                 {b.note}
-                <span className="block text-destructive/80">reported by {b.reported_by}</span>
+                <span className="block text-destructive/80">reported by {b.reported_by} · {fmt(b.at)}</span>
               </span>
               {canResolve && (
                 <Button size="sm" variant="outline" className="h-6 shrink-0 px-2 text-[10px]" onClick={() => onResolve(b.id)} disabled={busy}>
@@ -254,6 +276,23 @@ function TaskCard({
               )}
             </div>
           ))}
+        </div>
+      )}
+
+      {detailsOpen && (task.blockers ?? []).some((b) => b.status === "resolved") && (
+        <div className="flex flex-col gap-1.5">
+          {(task.blockers ?? [])
+            .filter((b) => b.status === "resolved")
+            .map((b) => (
+              <div key={b.id} className="rounded-md bg-secondary/10 px-2 py-1.5 text-[11px] leading-snug">
+                <span className="flex items-center gap-1 font-semibold text-secondary">
+                  <CheckCircle2 className="h-3 w-3" /> Resolved: {b.note}
+                </span>
+                <span className="block text-muted-foreground">
+                  reported by {b.reported_by} · resolved by {b.resolved_by ?? "—"} on {b.resolved_at ? fmt(b.resolved_at) : "—"}
+                </span>
+              </div>
+            ))}
         </div>
       )}
 
@@ -353,23 +392,33 @@ function TaskCard({
             <DialogDescription>Genuine completion requires evidence per task requirements.</DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-3">
-            {(task.evidence_requirements ?? []).map((r) => (
-              <label key={r.label} className="flex flex-col gap-1 text-xs font-semibold text-foreground">
-                {r.label}
-                {r.kind === "note" ? (
-                  <Input value={evidence[r.label] ?? ""} onChange={(e) => setEvidence((s) => ({ ...s, [r.label]: e.target.value }))} placeholder="Evidence reference…" className="text-sm font-normal" />
-                ) : (
-                  <Input value={evidence[r.label] ?? ""} onChange={(e) => setEvidence((s) => ({ ...s, [r.label]: e.target.value }))} placeholder="Assessment evidence id…" className="text-sm font-normal" />
-                )}
-              </label>
-            ))}
+            {(task.evidence_requirements ?? []).map((r) => {
+              const hasError = evErrors.has(r.label);
+              return (
+                <label key={r.label} className="flex flex-col gap-1 text-xs font-semibold text-foreground">
+                  <span className={hasError ? "text-destructive" : ""}>
+                    {r.label} {r.required ? "" : "(optional)"}
+                  </span>
+                  <Input
+                    value={evidence[r.label] ?? ""}
+                    onChange={(e) => setEvidenceValue(r.label, e.target.value)}
+                    placeholder={r.kind === "note" ? "Evidence reference…" : "Assessment evidence id…"}
+                    className={`text-sm font-normal ${hasError ? "border-destructive focus-visible:ring-destructive" : ""}`}
+                    aria-invalid={hasError}
+                  />
+                  {hasError && <span className="text-[11px] font-normal text-destructive">Required before completion — add a value to continue.</span>}
+                </label>
+              );
+            })}
             <label className="flex flex-col gap-1 text-xs font-semibold text-foreground">
               Note (optional)
               <Textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)} className="h-auto min-h-0 text-xs font-normal" />
             </label>
           </div>
           <DialogFooter>
-            <Button onClick={doComplete} disabled={busy}><CheckCircle2 className="h-4 w-4" /> Confirm completion</Button>
+            <Button onClick={doComplete} disabled={busy || !evidenceComplete} title={!evidenceComplete ? "Complete all required evidence fields first" : undefined}>
+              <CheckCircle2 className="h-4 w-4" /> Confirm completion
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -440,6 +489,169 @@ function TaskCard({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+function EmployeeQueue({ journey, onOpen }: { journey: QueueJourney; onOpen: (code: string) => void }) {
+  const waiting = journey.waiting_on ?? [];
+  return (
+    <div className="rounded-lg bg-white p-5">
+      <div className="flex flex-wrap items-center gap-2">
+        <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Waiting on others</p>
+        {journey.overdue && (
+          <span className="flex items-center gap-1 rounded-md bg-accent/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-accent">
+            <Hourglass className="h-3 w-3" /> {journey.overdue_count} overdue
+          </span>
+        )}
+        {journey.stalled && (
+          <span className="flex items-center gap-1 rounded-md bg-destructive/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-destructive">
+            <AlertOctagon className="h-3 w-3" /> Stalled · {journey.stall_reasons.join(", ")}
+          </span>
+        )}
+      </div>
+      {waiting.length === 0 ? (
+        <p className="mt-2 text-sm text-muted-foreground">
+          Nothing is blocking you — tasks owned by others are all complete. Your next action is below.
+        </p>
+      ) : (
+        <div className="mt-2 flex flex-col gap-2">
+          {waiting.map((t) => (
+            <div key={t.task_code} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-muted px-3 py-2">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-foreground">{t.title}</p>
+                <p className="text-[11px] text-muted-foreground">owned by {OWNER_LABEL[t.owner_role as PlanTaskView["owner_role"]] ?? t.owner_role} · due {fmt(t.due_date)}</p>
+              </div>
+              <span className={`shrink-0 rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${(TASK_STATE_META[t.state as PlanTaskView["state"]] ?? TASK_STATE_META.pending).cls}`}>
+                {TASK_STATE_META[t.state as PlanTaskView["state"]]?.label ?? t.state}
+              </span>
+              <Button size="sm" variant="outline" className="h-7" onClick={() => onOpen(t.task_code)}>
+                Open task <ArrowUpRight className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function JourneysQueue({
+  journeys,
+  filters,
+  filter,
+  setFilter,
+  onSelect,
+}: {
+  journeys: QueueJourney[];
+  filters: { all: number; pending_approval: number; overdue: number; stalled: number };
+  filter: "all" | "pending_approval" | "overdue" | "stalled";
+  setFilter: (f: "all" | "pending_approval" | "overdue" | "stalled") => void;
+  onSelect: (twinId: string) => void;
+}) {
+  const chips: { key: typeof filter; label: string; count: number }[] = [
+    { key: "all", label: "All", count: filters.all },
+    { key: "pending_approval", label: "Pending approval", count: filters.pending_approval },
+    { key: "overdue", label: "Overdue", count: filters.overdue },
+    { key: "stalled", label: "Stalled", count: filters.stalled },
+  ];
+  const visible = journeys.filter((j) => (filter === "all" ? true : filter === "stalled" ? j.stalled : filter === "overdue" ? j.overdue : j.pending_manager_approval || j.pending_hr_approval));
+  return (
+    <div className="rounded-lg bg-white p-5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">All onboarding journeys</p>
+        <div className="flex flex-wrap gap-1.5">
+          {chips.map((c) => (
+            <button
+              key={c.key}
+              type="button"
+              onClick={() => setFilter(c.key)}
+              className={`rounded-md px-2.5 py-1 text-xs font-bold uppercase tracking-wider transition-colors ${
+                filter === c.key ? "bg-foreground text-white" : "bg-muted text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {c.label} ({c.count})
+            </button>
+          ))}
+        </div>
+      </div>
+      {visible.length === 0 && <p className="mt-3 text-sm text-muted-foreground">No journeys match this filter.</p>}
+      <div className="mt-3 flex flex-col gap-2">
+        {visible.map((j) => (
+          <button
+            key={j.twin_id}
+            type="button"
+            onClick={() => onSelect(j.twin_id)}
+            className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-muted p-3 text-left transition-all duration-200 hover:bg-border"
+          >
+            <div className="min-w-0">
+              <p className="truncate text-sm font-bold text-foreground">{j.employee_name}</p>
+              <p className="text-[11px] text-muted-foreground">{j.job_title ?? "Employee"} · plan v{j.version} · {j.readiness_pct}% complete</p>
+              {(j.pending_manager_approval || j.pending_hr_approval) && (
+                <p className="mt-1 flex flex-wrap gap-1">
+                  {j.pending_manager_approval && <span className="rounded bg-primary/15 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-primary">Manager approval needed</span>}
+                  {j.pending_hr_approval && <span className="rounded bg-primary/15 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-primary">HR approval needed</span>}
+                </p>
+              )}
+              {j.viewer_actions.length > 0 && (
+                <p className="mt-1 truncate text-[11px] text-muted-foreground">
+                  Your actions: {j.viewer_actions.slice(0, 2).map((a) => a.title).join(" · ")}
+                  {j.viewer_actions.length > 2 ? ` +${j.viewer_actions.length - 2} more` : ""}
+                </p>
+              )}
+            </div>
+            <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+              {j.status === "pending_approval" && <span className="rounded-md bg-accent px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-foreground">Pending</span>}
+              {j.status === "approved" && <span className="rounded-md bg-secondary px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">Active</span>}
+              {j.overdue && (
+                <span className="flex items-center gap-1 rounded-md bg-accent/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-accent">
+                  <Hourglass className="h-3 w-3" /> Overdue
+                </span>
+              )}
+              {j.stalled && (
+                <span className="flex items-center gap-1 rounded-md bg-destructive/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-destructive">
+                  <AlertOctagon className="h-3 w-3" /> Stalled
+                </span>
+              )}
+            </div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ProvisioningQueue({ items, names, onOpen }: { items: QueueTaskRef[]; names: Map<string, string>; onOpen: (twinId: string, code: string) => void }) {
+  return (
+    <div className="rounded-lg bg-white p-5">
+      <div className="flex items-center gap-2">
+        <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Provisioning & access queue</p>
+        <span className="rounded-md bg-foreground px-2 py-0.5 text-[10px] font-bold text-white">{items.length}</span>
+      </div>
+      {items.length === 0 && <p className="mt-2 text-sm text-muted-foreground">No provisioning or access tasks are waiting right now.</p>}
+      <div className="mt-2 flex flex-col gap-2">
+        {items.map((t) => (
+          <button
+            key={`${t.twin_id}-${t.task_code}`}
+            type="button"
+            onClick={() => onOpen(t.twin_id, t.task_code)}
+            className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-muted px-3 py-2 text-left transition-all duration-200 hover:bg-border"
+          >
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold text-foreground">{t.title}</p>
+              <p className="text-[11px] text-muted-foreground">
+                for {names.get(t.twin_id) ?? "employee"} · due {fmt(t.due_date)}
+              </p>
+            </div>
+            <span className={`shrink-0 rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${(TASK_STATE_META[t.state as PlanTaskView["state"]] ?? TASK_STATE_META.pending).cls}`}>
+              {TASK_STATE_META[t.state as PlanTaskView["state"]]?.label ?? t.state}
+            </span>
+            <Button size="sm" variant="outline" className="h-7">
+              Open task <ArrowUpRight className="h-3.5 w-3.5" />
+            </Button>
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
@@ -566,6 +778,28 @@ export default function Onboarding() {
     },
   });
 
+  // Phase 6: role-scoped operational queue (all journeys for HR/manager/IT,
+  // own journey for employees) with stalled/overdue signals.
+  const queue = useQuery({
+    queryKey: ["ob-queue", user?.id ?? "anon"],
+    enabled: canView,
+    queryFn: onboardingQueue,
+  });
+  const [view, setView] = useState<"timeline" | "dag">("timeline");
+  const [queueFilter, setQueueFilter] = useState<"all" | "pending_approval" | "overdue" | "stalled">("all");
+  const [activeCode, setActiveCode] = useState<string | null>(null);
+
+  // Scroll to a specific task after its plan/tasks finish loading (queue deep link).
+  useEffect(() => {
+    if (!activeCode) return;
+    const id = `task-${activeCode}`;
+    const t = setTimeout(() => {
+      document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "center" });
+      setActiveCode(null);
+    }, 250);
+    return () => clearTimeout(t);
+  }, [activeCode, plan.data?.id, tasks.data]);
+
   const build = async (regen = false) => {
     if (!selected) return;
     setBusy("gen");
@@ -620,6 +854,51 @@ export default function Onboarding() {
 
   const viewer = twin ? { id: twin.id, role: twin.role } : null;
 
+  const renderTaskCard = (task: PlanTaskView) => {
+    const ownerMatch =
+      task.owner_role === "employee"
+        ? isOwner
+        : task.owner_role === "manager"
+          ? role === "manager" && twin?.id === planData?.twin_id
+          : task.owner_role === "hr"
+            ? role === "hr_executive" || role === "hr_partner"
+            : role === "it_security";
+    const canComplete = planActive && ownerMatch && task.state === "ready";
+    const canWaiveAct = (role === "manager" && twin?.id === planData?.twin_id) || role === "hr_executive" || role === "hr_partner";
+    const canAdaptAct = canWaiveAct;
+    const canFail = canAdaptAct;
+    // Blocker resolution mirrors the server matrix: HR and the employee's
+    // manager may resolve any blocker; the owner resolves on their own task.
+    const canResolve =
+      role === "hr_executive" ||
+      role === "hr_partner" ||
+      (role === "manager" && twin?.id === planData?.twin_id) ||
+      (role === "employee" && isOwner && task.owner_role === "employee") ||
+      (role === "it_security" && task.owner_role === "it_security");
+    return (
+      <div key={task.task_code} id={`task-${task.task_code}`} className="scroll-mt-24">
+        <TaskCard
+          task={task}
+          plan={planData!}
+          viewer={viewer}
+          canComplete={canComplete}
+          canWaive={canWaiveAct}
+          canAdapt={canAdaptAct}
+          canFail={canFail}
+          canResolve={canResolve}
+          titleFor={(code) => allTasks.find((t) => t.task_code === code)?.title ?? code}
+          onComplete={(evidence, note) => void act(task.task_code, "complete", { evidence, note })}
+          onBlock={(note) => void act(task.task_code, "block", { note })}
+          onResolve={(blockerId) => void act(task.task_code, "resolve", { blocker_id: blockerId })}
+          onWaive={(reason, policyDoc) => void act(task.task_code, "waive", { waiver: { reason, policy_basis: policyDoc ? { doc_code: policyDoc, version: null } : null } })}
+          onAdapt={(note) => void act(task.task_code, "adapt", { note, skill: inferSkill(task) })}
+          onFail={(note) => void act(task.task_code, "fail", { note, skill: inferSkill(task) })}
+          busy={busy === `complete-${task.task_code}` || busy === `block-${task.task_code}` || busy === `resolve-${task.task_code}` || busy === `waive-${task.task_code}` || busy === `adapt-${task.task_code}` || busy === `fail-${task.task_code}`}
+        />
+      </div>
+    );
+  };
+
   const columns = useMemo(() => {
     const list = tasks.data ?? [];
     const maxLevel = list.reduce((m, t) => Math.max(m, t.topological_level ?? 0), -1);
@@ -635,36 +914,41 @@ export default function Onboarding() {
   const nextUnblocked = allTasks.find((t) => t.state !== "done" && t.state !== "waived" && (t.state === "ready" || t.state === "in_progress"));
   const heroTask = nextUnblocked ?? nextTask;
   const heroLevel = heroTask?.topological_level ?? 0;
+  // Critical path comes from the engine (remaining DURATIONS over prerequisites,
+  // business days) — never the chain with the largest number of nodes.
   const critical = useMemo(() => {
-    // Critical path (longest remaining chain) — local UI estimate mirrors the engine.
     const list = tasks.data ?? [];
-    const doneSetLocal = new Set(list.filter((t) => t.state === "done" || t.state === "waived").map((t) => t.task_code));
     const byCode = new Map(list.map((t) => [t.task_code, t]));
+    const path = plan.data?.readiness?.critical_path ?? [];
+    if (path.length > 0) {
+      return path.map((code) => ({ code, title: byCode.get(code)?.title ?? code, days: byCode.get(code)?.duration_days ?? 0 }));
+    }
+    // Fallback for legacy stored readiness: recompute by duration, mirroring the engine.
+    const doneSetLocal = new Set(list.filter((t) => t.state === "done" || t.state === "waived").map((t) => t.task_code));
     const adj = new Map<string, string[]>();
     for (const t of list) for (const d of t.depends_on ?? []) adj.set(d, [...(adj.get(d) ?? []), t.task_code]);
-    const memo = new Map<string, string[]>();
-    const chain = (id: string): string[] => {
+    const memo = new Map<string, { tasks: { code: string; title: string; days: number }[]; days: number }>();
+    const chain = (id: string): { tasks: { code: string; title: string; days: number }[]; days: number } => {
       const known = memo.get(id);
       if (known) return known;
-      const deps = adj.get(id) ?? [];
-      let best: string[] = [];
-      for (const c of deps) {
+      const t = byCode.get(id);
+      let best: { tasks: { code: string; title: string; days: number }[]; days: number } = { tasks: [], days: 0 };
+      for (const c of adj.get(id) ?? []) {
         const ch = chain(c);
-        if (ch.length > best.length) best = ch;
+        if (ch.days > best.days) best = ch;
       }
-      const res = [id, ...best];
+      const res = { tasks: [{ code: id, title: t?.title ?? id, days: t?.duration_days ?? 0 }, ...best.tasks], days: (t?.duration_days ?? 0) + best.days };
       memo.set(id, res);
       return res;
     };
-    let best: string[] = [];
+    let best: { tasks: { code: string; title: string; days: number }[]; days: number } = { tasks: [], days: 0 };
     for (const t of list) {
       if (doneSetLocal.has(t.task_code)) continue;
       const ch = chain(t.task_code);
-      if (ch.length > best.length) best = ch;
+      if (ch.days > best.days) best = ch;
     }
-    void byCode;
-    return best;
-  }, [tasks.data]);
+    return best.tasks;
+  }, [tasks.data, plan.data?.readiness?.critical_path]);
 
   const isOwner = selected === twin?.id;
   const canApprove =
@@ -710,6 +994,40 @@ export default function Onboarding() {
             requires an authorized owner and genuine evidence.
           </p>
         </div>
+
+        {/* Role-scoped operational queue (Phase 6) */}
+        {queue.isPending && (
+          <div className="mt-8 flex items-center gap-2 rounded-lg bg-muted p-4 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" /> Loading your onboarding queue…
+          </div>
+        )}
+        {queue.data && queue.data.journeys.length > 0 && (
+          <div className="mt-8 flex flex-col gap-4">
+            {role === "employee" && <EmployeeQueue journey={queue.data.journeys[0]} onOpen={(code) => setActiveCode(code)} />}
+            {(role === "manager" || role === "hr_executive" || role === "hr_partner") && (
+              <JourneysQueue
+                journeys={queue.data.journeys}
+                filters={queue.data.filters}
+                filter={queueFilter}
+                setFilter={setQueueFilter}
+                onSelect={(twinId) => {
+                  userPickedRef.current = true;
+                  setSelected(twinId);
+                }}
+              />
+            )}
+            {role === "it_security" && (
+              <ProvisioningQueue
+                items={queue.data.provisioning}
+                names={new Map(queue.data.journeys.map((j) => [j.twin_id, j.employee_name]))}
+                onOpen={(twinId, code) => {
+                  setSelected(twinId);
+                  setActiveCode(code);
+                }}
+              />
+            )}
+          </div>
+        )}
 
         {role !== "employee" && (
           <div className="mt-8 flex flex-wrap items-center gap-3">
@@ -764,16 +1082,29 @@ export default function Onboarding() {
                       {planData.status === "approved" ? "Active" : planData.status === "pending_approval" ? "Pending approval" : planData.status}
                     </span>
                     <span className="text-sm text-muted-foreground">
-                      v<b className="text-foreground">{planData.version}</b> · hash{" "}
-                      <code className="rounded bg-muted px-1.5 py-0.5 text-[11px] text-foreground">{planData.plan_hash.slice(0, 12)}…</code>
+                      v<b className="text-foreground">{planData.version}</b>
+                      <span className="ml-2">
+                        <details className="inline">
+                          <summary className="inline cursor-pointer font-semibold text-primary">version details</summary>
+                          <code className="ml-1 rounded bg-muted px-1.5 py-0.5 text-[11px] text-foreground">{planData.plan_hash}</code>
+                        </details>
+                      </span>
                     </span>
                   </div>
-                  <div className="flex items-center gap-4 text-sm">
-                    <span className={`flex items-center gap-1.5 ${mgrApproved ? "text-secondary" : "text-muted-foreground"}`}>
-                      <UserCheck className="h-4 w-4" /> Manager {mgrApproved ? `approved (${planData.manager_approval?.by})` : "pending"}
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+                    <span className={`flex min-w-0 items-center gap-1.5 ${mgrApproved ? "text-secondary" : "text-muted-foreground"}`}>
+                      <UserCheck className="h-4 w-4 shrink-0" />
+                      <span className="truncate">
+                        Manager {mgrApproved ? "approved by " : "pending"}
+                        {mgrApproved && <b className="break-all">{planData.manager_approval?.by}</b>}
+                      </span>
                     </span>
-                    <span className={`flex items-center gap-1.5 ${hrApproved ? "text-secondary" : "text-muted-foreground"}`}>
-                      <BadgeCheck className="h-4 w-4" /> HR Exec {hrApproved ? `approved (${planData.hr_approval?.by})` : "pending"}
+                    <span className={`flex min-w-0 items-center gap-1.5 ${hrApproved ? "text-secondary" : "text-muted-foreground"}`}>
+                      <BadgeCheck className="h-4 w-4 shrink-0" />
+                      <span className="truncate">
+                        HR Exec {hrApproved ? "approved by " : "pending"}
+                        {hrApproved && <b className="break-all">{planData.hr_approval?.by}</b>}
+                      </span>
                     </span>
                   </div>
                 </div>
@@ -810,23 +1141,66 @@ export default function Onboarding() {
               {readiness && (
                 <div className="mt-4 rounded-lg bg-muted p-4">
                   <div className="flex flex-wrap items-end justify-between gap-2">
-                    <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Onboarding Readiness</p>
+                    <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Task completion</p>
                     <p className="text-3xl font-extrabold leading-none text-foreground">{readiness.ready_pct}%</p>
                   </div>
                   <div className="mt-3 flex h-3 w-full overflow-hidden rounded-full bg-white">
                     <div className="h-full bg-primary transition-all duration-500" style={{ width: `${readiness.ready_pct}%` }} />
                   </div>
                   <p className="mt-2 text-xs text-muted-foreground">
-                    {readiness.satisfied} of {readiness.total} tasks completed{readiness.blocked_count > 0 ? ` · ${readiness.blocked_count} blocked by prerequisites` : ""}
-                    {readiness.remaining_critical_days != null ? ` · ${readiness.remaining_critical_days}d on critical path` : ""}
+                    {readiness.satisfied} of {readiness.total} tasks completed
+                    {readiness.blocked_count > 0 ? ` · ${readiness.blocked_count} blocked` : ""}
+                    {readiness.remaining_critical_days != null ? ` · ${readiness.remaining_critical_days}d remaining on critical path (business days)` : ""}
                   </p>
+                  {/* Readiness dimensions shown separately from completion */}
+                  {(readiness.dimensions ?? []).length > 0 && (
+                    <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                      {readiness.dimensions.map((d) => (
+                        <div key={d.key} className="rounded-lg bg-white p-3" title={d.note}>
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">{d.label}</p>
+                            <p className="text-sm font-extrabold text-foreground">{d.pct}%</p>
+                          </div>
+                          <div className="mt-1.5 flex h-2 w-full overflow-hidden rounded-full bg-muted">
+                            <div
+                              className={`h-full transition-all duration-500 ${
+                                d.key === "capability" ? "bg-secondary" : d.key === "compliance" ? "bg-accent" : "bg-primary"
+                              }`}
+                              style={{ width: `${d.pct}%` }}
+                            />
+                          </div>
+                          <p className="mt-1.5 text-[10px] leading-snug text-muted-foreground">
+                            {d.satisfied}/{d.total} · {d.key === "capability" ? "waived never counts as verified" : "done or waived"}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                    {readiness.provisional && (
+                      <span className="flex items-center gap-1 rounded-md bg-accent/20 px-2 py-0.5 font-bold uppercase tracking-wider text-accent">
+                        <AlertOctagon className="h-3 w-3" /> Provisional estimate
+                      </span>
+                    )}
+                    <span className="text-muted-foreground">
+                      Ready {readiness.projected_ready_date ? (
+                        <b className="text-foreground">
+                          ~{new Date(readiness.projected_ready_date).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                        </b>
+                      ) : (
+                        <b className="text-accent">unknown — blockers open</b>
+                      )}
+                      {readiness.provisional && " · will update once blockers clear"}
+                    </span>
+                  </div>
                   {readiness.note && <p className="mt-1 text-[11px] leading-snug text-muted-foreground">{readiness.note}</p>}
                 </div>
               )}
 
               {(planData.carryover ?? []).length > 0 && (
                 <p className="mt-3 text-[11px] text-muted-foreground">
-                  Preserved from v{(planData.carryover ?? [])[0].from_version}: {(planData.carryover ?? []).map((c) => c.task_code).join(", ")}
+                  Preserved from v{(planData.carryover ?? [])[0].from_version}:{" "}
+                  {(planData.carryover ?? []).map((c) => allTasks.find((t) => t.task_code === c.task_code)?.title ?? c.task_code).join(", ")}
                 </p>
               )}
             </div>
@@ -881,94 +1255,96 @@ export default function Onboarding() {
               </div>
             )}
 
-            {/* Critical path strip */}
+            {/* Critical path strip (remaining durations over prerequisites) */}
             {critical.length > 0 && (
               <div className="flex flex-wrap items-center gap-2 rounded-lg bg-white p-4 text-xs text-muted-foreground">
                 <span className="font-bold uppercase tracking-wider text-primary">Critical path</span>
                 <GitBranch className="h-3.5 w-3.5" />
                 <span className="flex flex-wrap items-center gap-1">
                   {critical.map((c, i) => (
-                    <span key={c} className="flex items-center gap-1">
-                      <span className="rounded bg-muted px-1.5 py-0.5 font-semibold text-foreground">{c}</span>
+                    <span key={c.code} className="inline-flex items-center gap-1 whitespace-nowrap">
+                      <span className="rounded bg-muted px-1.5 py-0.5 font-semibold text-foreground">
+                        {c.title} <span className="text-muted-foreground">({c.days}d)</span>
+                      </span>
                       {i < critical.length - 1 && <ArrowRight className="h-3 w-3" />}
                     </span>
                   ))}
+                  <span className="ml-1 whitespace-nowrap text-muted-foreground">
+                    — {readiness?.remaining_critical_days ?? critical.reduce((n, c) => n + c.days, 0)} business days remaining
+                  </span>
                 </span>
               </div>
             )}
 
-            {/* DAG view */}
+            {/* Plan views: checklist/timeline + dependency map */}
             <div id="onboarding-dag" className="scroll-mt-24">
-              <div className="flex items-center justify-between">
-                <h2 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                  Steps — scroll to explore
-                </h2>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h2 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Plan views</h2>
                 <div className="flex gap-1">
-                  <Button size="sm" variant="outline" aria-label="Previous step" onClick={() => dagRef.current?.scrollBy({ left: -420, behavior: "smooth" })}>
-                    ‹ Prev
+                  <Button
+                    size="sm"
+                    variant={view === "timeline" ? "default" : "outline"}
+                    onClick={() => setView("timeline")}
+                  >
+                    <LayoutList className="h-3.5 w-3.5" /> Checklist timeline
                   </Button>
-                  <Button size="sm" variant="outline" aria-label="Next step" onClick={() => dagRef.current?.scrollBy({ left: 420, behavior: "smooth" })}>
-                    Next ›
+                  <Button size="sm" variant={view === "dag" ? "default" : "outline"} onClick={() => setView("dag")}>
+                    <Network className="h-3.5 w-3.5" /> Dependency map
                   </Button>
                 </div>
               </div>
-              <div ref={dagRef} className="mt-4 flex flex-col gap-6 overflow-x-auto pb-2 lg:flex-row lg:items-start">
-                {columns.map((col, level) => (
-                  <div key={level} className="flex-1">
-                    <div className="mb-2 flex items-center gap-2">
-                      <span className="flex h-6 w-6 items-center justify-center rounded-md bg-foreground text-xs font-bold text-white">{stepFor(level).n}</span>
-                      <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Step {stepFor(level).n}: {stepFor(level).label}</span>
+
+              {view === "timeline" && (
+                <div className="mt-4 flex flex-col gap-3">
+                  {columns.map((col, level) => (
+                    <div key={level} className="rounded-lg bg-white p-4">
+                      <div className="mb-3 flex items-center gap-2">
+                        <span className={`flex h-6 w-6 items-center justify-center rounded-md text-xs font-bold ${col.every((t) => t.state === "done" || t.state === "waived") ? "bg-secondary text-white" : "bg-foreground text-white"}`}>
+                          {stepFor(level).n}
+                        </span>
+                        <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                          Step {stepFor(level).n}: {stepFor(level).label}
+                        </span>
+                        <span className="text-[11px] text-muted-foreground">
+                          {col.filter((t) => t.state === "done" || t.state === "waived").length}/{col.length} done
+                        </span>
+                      </div>
+                      <div className="flex flex-col gap-3">
+                        {col.map((task) => renderTaskCard(task))}
+                      </div>
                     </div>
-                    <div className="flex flex-col gap-3">
-                      {col.map((task) => {
-                        const ownerMatch =
-                          task.owner_role === "employee"
-                            ? isOwner
-                            : task.owner_role === "manager"
-                              ? role === "manager" && twin?.id === planData.twin_id
-                              : task.owner_role === "hr"
-                                ? role === "hr_executive" || role === "hr_partner"
-                                : role === "it_security";
-                        const canComplete = planActive && ownerMatch && task.state === "ready";
-                        const canWaiveAct =
-                          (role === "manager" && twin?.id === planData.twin_id) || role === "hr_executive" || role === "hr_partner";
-                        const canAdaptAct = canWaiveAct;
-                        const canFail = canAdaptAct;
-                        const canResolve =
-                          (role === "manager" && twin?.id === planData.twin_id) ||
-                          role === "hr_executive" ||
-                          role === "hr_partner" ||
-                          role === "it_security" ||
-                          (role === "employee" && isOwner);
-                        return (
-                          <TaskCard
-                            key={task.task_code}
-                            task={task}
-                            plan={planData}
-                            viewer={viewer}
-                            canComplete={canComplete}
-                            canWaive={canWaiveAct}
-                            canAdapt={canAdaptAct}
-                            canFail={canFail}
-                            canResolve={canResolve}
-                            titleFor={(code) => allTasks.find((t) => t.task_code === code)?.title ?? code}
-                            onComplete={(evidence, note) => void act(task.task_code, "complete", { evidence, note })}
-                            onBlock={(note) => void act(task.task_code, "block", { note })}
-                            onResolve={(blockerId) => void act(task.task_code, "resolve", { blocker_id: blockerId })}
-                            onWaive={(reason, policyDoc) => void act(task.task_code, "waive", { waiver: { reason, policy_basis: policyDoc ? { doc_code: policyDoc, version: null } : null } })}
-                            onAdapt={(note) => void act(task.task_code, "adapt", { note, skill: inferSkill(task) })}
-                            onFail={(note) => void act(task.task_code, "fail", { note, skill: inferSkill(task) })}
-                            busy={busy === `complete-${task.task_code}` || busy === `block-${task.task_code}` || busy === `resolve-${task.task_code}` || busy === `waive-${task.task_code}` || busy === `adapt-${task.task_code}` || busy === `fail-${task.task_code}`}
-                          />
-                        );
-                      })}
-                    </div>
-                    {level < columns.length - 1 && (
-                      <ArrowRight className="mx-auto my-3 hidden h-5 w-5 text-muted-foreground lg:block" strokeWidth={2.5} />
-                    )}
+                  ))}
+                </div>
+              )}
+
+              {view === "dag" && (
+                <>
+                  <div className="mt-4 flex items-center justify-end gap-1">
+                    <Button size="sm" variant="outline" aria-label="Previous step" onClick={() => dagRef.current?.scrollBy({ left: -420, behavior: "smooth" })}>
+                      ‹ Prev
+                    </Button>
+                    <Button size="sm" variant="outline" aria-label="Next step" onClick={() => dagRef.current?.scrollBy({ left: 420, behavior: "smooth" })}>
+                      Next ›
+                    </Button>
                   </div>
-                ))}
-              </div>
+                  <div ref={dagRef} className="mt-4 flex flex-col gap-6 overflow-x-auto pb-2 lg:flex-row lg:items-start">
+                    {columns.map((col, level) => (
+                      <div key={level} className="min-w-full lg:min-w-[300px] lg:flex-1">
+                        <div className="mb-2 flex items-center gap-2">
+                          <span className="flex h-6 w-6 items-center justify-center rounded-md bg-foreground text-xs font-bold text-white">{stepFor(level).n}</span>
+                          <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Step {stepFor(level).n}: {stepFor(level).label}</span>
+                        </div>
+                        <div className="flex flex-col gap-3">
+                          {col.map((task) => renderTaskCard(task))}
+                        </div>
+                        {level < columns.length - 1 && (
+                          <ArrowRight className="mx-auto my-3 hidden h-5 w-5 text-muted-foreground lg:block" strokeWidth={2.5} />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
 
             <div className="rounded-lg bg-muted p-4 text-xs leading-relaxed text-muted-foreground">

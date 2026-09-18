@@ -4,8 +4,9 @@ import {
   tryDecode,
   requisitionRowSchema,
   candidateCompareSchema,
-  planTaskViewSchema,
   planViewSchema,
+  planTaskViewSchema,
+  onboardingQueueSchema,
   recommendationRowSchema,
   meResultSchema,
   interviewKitSchema,
@@ -288,5 +289,130 @@ describe("decode (unknown -> validated schema -> typed contract)", () => {
 
   it("tryDecode returns null instead of throwing for non-matching payloads", () => {
     expect(tryDecode(healthViewSchema, { nope: true }, "health")).toBeNull();
+  });
+});
+
+describe("Phase 6 onboarding contracts", () => {
+  it("decodes extended readiness (dimensions, critical path, provisional, business days)", () => {
+    const plan = {
+      id: "p1",
+      twin_id: "t1",
+      application_id: null,
+      version: 2,
+      plan_hash: "abc123",
+      status: "approved",
+      manager_approval: null,
+      hr_approval: null,
+      start_date: "2026-09-01T09:00:00Z",
+      generated_at: "2026-09-01T09:00:00Z",
+      readiness: {
+        ready_pct: 40,
+        satisfied: 2,
+        total: 5,
+        remaining_critical_days: 3,
+        projected_ready_date: null,
+        blocked_count: 1,
+        note: "provisional",
+        provisional: true,
+        critical_path: ["access_sso", "team_intro", "learn_go"],
+        dimensions: [
+          { key: "access", label: "Access readiness", satisfied: 0, total: 2, pct: 0, note: "n" },
+          { key: "compliance", label: "Compliance readiness", satisfied: 1, total: 1, pct: 100, note: "n" },
+          { key: "capability", label: "Role capability", satisfied: 0, total: 2, pct: 0, note: "n" },
+        ],
+        working_calendar: "business_days",
+      },
+      carryover: [],
+      audit_events: [],
+    };
+    const parsed = decode(planViewSchema, plan, "plan");
+    expect(parsed.readiness.provisional).toBe(true);
+    expect(parsed.readiness.critical_path).toContain("learn_go");
+    expect(parsed.readiness.dimensions.map((d) => d.key)).toEqual(["access", "compliance", "capability"]);
+    expect(parsed.readiness.working_calendar).toBe("business_days");
+  });
+
+  it("defaults new readiness fields on legacy plans (safe decode)", () => {
+    const legacy = {
+      id: "p2",
+      twin_id: "t1",
+      application_id: null,
+      version: 1,
+      plan_hash: "h",
+      status: "approved",
+      manager_approval: null,
+      hr_approval: null,
+      start_date: "2026-09-01T09:00:00Z",
+      generated_at: "2026-09-01T09:00:00Z",
+      readiness: { ready_pct: 50, satisfied: 1, total: 2, remaining_critical_days: 1, projected_ready_date: null, blocked_count: 0, note: "n" },
+      carryover: [],
+      audit_events: [],
+    };
+    const parsed = decode(planViewSchema, legacy, "legacy-plan");
+    expect(parsed.readiness.provisional).toBe(false);
+    expect(parsed.readiness.critical_path).toEqual([]);
+    expect(parsed.readiness.dimensions).toEqual([]);
+  });
+
+  it("decodes a task blocker with resolution owner", () => {
+    const task = {
+      task_code: "access_sso",
+      title: "System Access",
+      task_type: "access",
+      owner_role: "it_security",
+      required: true,
+      non_waivable: true,
+      depends_on: [],
+      duration_days: 0.5,
+      due_date: "2026-09-15T09:00:00Z",
+      topological_level: 1,
+      why_evidence: { reason: "r", source_evidence: [] },
+      evidence_requirements: [],
+      state: "ready",
+      blocked_reasons: [],
+      blockers: [{ id: "b1", note: "n", reported_by: "elena", at: "2026-09-12T09:00:00Z", status: "resolved", resolved_by: "elena", resolved_at: "2026-09-14T09:00:00Z" }],
+      waiver: null,
+      completion_record: null,
+      adaptation: null,
+    };
+    const parsed = decode(planTaskViewSchema, task, "task");
+    expect(parsed.blockers[0].resolved_by).toBe("elena");
+  });
+
+  it("decodes an onboarding queue payload", () => {
+    const payload = {
+      ok: true as const,
+      role: "hr" as const,
+      journeys: [
+        {
+          twin_id: "t1",
+          employee_name: "Alex Chen",
+          job_title: "Engineer",
+          manager_id: "m1",
+          plan_id: "p1",
+          version: 2,
+          status: "approved",
+          start_date: "2026-09-01T09:00:00Z",
+          readiness_pct: 40,
+          projected_ready_date: null,
+          provisional: true,
+          blocked_count: 1,
+          pending_manager_approval: false,
+          pending_hr_approval: false,
+          overdue: true,
+          overdue_count: 1,
+          stalled: true,
+          stall_reasons: ["1 open blocker(s)"],
+          viewer_actions: [],
+          waiting_on: [{ task_code: "team_intro", title: "Team Introduction", task_type: "onboarding_admin", owner_role: "manager", state: "pending", due_date: null, topological_level: 2, plan_id: "p1", twin_id: "t1" }],
+        },
+      ],
+      provisioning: [],
+      filters: { all: 1, pending_approval: 0, overdue: 1, stalled: 1 },
+    };
+    const parsed = decode(onboardingQueueSchema, payload, "queue");
+    expect(parsed.journeys[0].stalled).toBe(true);
+    expect(parsed.journeys[0].waiting_on[0].title).toBe("Team Introduction");
+    expect(parsed.filters.stalled).toBe(1);
   });
 });
