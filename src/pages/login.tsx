@@ -93,7 +93,7 @@ export default function Login() {
               <span className="text-primary">Sense</span>
             </h1>
             <p className="mt-1.5 text-sm text-muted-foreground">
-              Evidence-first workforce decision intelligence platform.
+              Turn workforce evidence into approved action plans.
             </p>
           </div>
 
@@ -183,10 +183,9 @@ export default function Login() {
             {demoOpen && (
               <div className="animate-fade-in border-t border-border px-4 pb-4 pt-3">
                 <p className="text-xs leading-relaxed text-muted-foreground">
-                  Pre-seeded personas authenticate with real JWT tokens and row-level security — one
-                  click, zero typing.
+                  Realistic fictional demo data — personas log in with real credentials and row-level access.
                 </p>
-                <div className="mt-3 grid grid-cols-2 gap-2">
+                <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
                   {DEMO_ACCOUNTS.map((account, i) => (
                     <button
                       key={account.role}

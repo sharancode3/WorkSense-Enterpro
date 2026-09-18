@@ -4,10 +4,10 @@ import {
   BarChart3,
   CheckCircle2,
   Clock,
+  Cpu,
   Loader2,
   MessageSquarePlus,
   Send,
-  Sparkles,
   TriangleAlert,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
@@ -413,7 +413,7 @@ export function AssessmentReviewPanel({ open, onOpenChange, application, candida
                         The candidate submitted answers. Run the evidence-linked evaluation to produce anchor judgments.
                       </p>
                       <Button className="mt-3" onClick={() => void runEvaluate()} disabled={evaluating || jobPolling}>
-                        {evaluating || jobPolling ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                        {evaluating || jobPolling ? <Loader2 className="h-4 w-4 animate-spin" /> : <Cpu className="h-4 w-4" />}
                         Evaluate against rubric
                       </Button>
                       <p className="mt-2 text-xs text-muted-foreground">
@@ -431,7 +431,7 @@ export function AssessmentReviewPanel({ open, onOpenChange, application, candida
                     <div className="rounded-lg bg-white p-4">
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <p className="flex items-center gap-2 font-bold text-foreground">
-                          <Sparkles className="h-4 w-4 text-primary" /> AI judgment ·{" "}
+                          <Cpu className="h-4 w-4 text-primary" /> AI judgment ·{" "}
                           <span className="text-xs font-medium text-muted-foreground">{detail.evaluation.ai.model}</span>
                         </p>
                         {!detail.evaluation.reviewed ? (

@@ -1,13 +1,15 @@
 import { ArrowRight } from "lucide-react";
 
-export type CardTone = "primary" | "secondary" | "accent" | "muted" | "dark";
+// Neutral card tones — the single brand blue plus ink/neutral surfaces.
+// Green/amber/red are reserved for semantic states and never used as
+// arbitrary category colors on role cards.
+export type CardTone = "primary" | "dark" | "muted" | "outline";
 
 const TONE_CLASS: Record<CardTone, { block: string; hover: string }> = {
   primary: { block: "bg-primary text-white", hover: "hover:bg-primary/85" },
-  secondary: { block: "bg-secondary text-white", hover: "hover:bg-secondary/85" },
-  accent: { block: "bg-accent text-foreground", hover: "hover:bg-accent/85" },
-  muted: { block: "bg-muted text-foreground", hover: "hover:bg-border" },
   dark: { block: "bg-foreground text-white", hover: "hover:bg-black" },
+  muted: { block: "bg-muted text-foreground", hover: "hover:bg-border" },
+  outline: { block: "bg-white border border-border text-foreground", hover: "hover:bg-muted" },
 };
 
 interface RoleCardProps {
@@ -22,8 +24,8 @@ interface RoleCardProps {
 }
 
 export function RoleCard({ tone, eyebrow, title, description, meta, cta, loading, onClick }: RoleCardProps) {
-  const t = TONE_CLASS[tone];
-  const onDark = tone === "primary" || tone === "secondary" || tone === "dark";
+  const t = TONE_CLASS[tone] ?? TONE_CLASS.muted;
+  const onDark = tone === "primary" || tone === "dark";
   return (
     <button
       type="button"

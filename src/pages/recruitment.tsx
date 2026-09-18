@@ -12,7 +12,7 @@ import {
   Lock,
   MessagesSquare,
   Plus,
-  Star,
+  Target,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/auth-context";
@@ -585,7 +585,7 @@ export default function Recruitment() {
 
                         <div className="mt-4 flex flex-wrap gap-2">
                           <Button size="sm" variant="secondary" onClick={() => void showFit(c)} disabled={busyAction === `fit-${c.id}`}>
-                            {busyAction === `fit-${c.id}` ? <Loader2 className="h-4 w-4 animate-spin" /> : <Star className="h-4 w-4" />} Fit card
+                            {busyAction === `fit-${c.id}` ? <Loader2 className="h-4 w-4 animate-spin" /> : <Target className="h-4 w-4" />} Fit card
                           </Button>
                           <Button size="sm" variant="secondary" onClick={() => void showKit(c)} disabled={busyAction === `kit-${c.id}`}>
                             {busyAction === `kit-${c.id}` ? <Loader2 className="h-4 w-4 animate-spin" /> : <MessagesSquare className="h-4 w-4" />} Interview kit
@@ -656,7 +656,7 @@ export default function Recruitment() {
           {kit && (
             <div className="flex max-h-[70vh] flex-col gap-4 overflow-y-auto pr-1">
               <div className="flex items-center gap-3 rounded-lg bg-muted p-4">
-                <Star className="h-5 w-5 text-primary" strokeWidth={2.5} />
+                <Target className="h-5 w-5 text-primary" strokeWidth={2.5} />
                 <p className="text-sm text-foreground">
                   Fit <span className="font-bold">{Math.round(kit.score * 100)}/100</span> — probes biased to:{" "}
                   <span className="font-bold">{kit.focus_items.join(", ") || "core skills"}</span>

@@ -15,7 +15,6 @@ import {
   Lock,
   RefreshCw,
   ShieldCheck,
-  Sparkles,
   UserCheck,
   Users,
   XCircle,
@@ -23,6 +22,7 @@ import {
   FileCheck2,
   KeyRound,
   Scale,
+  ArrowRightLeft,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/auth-context";
@@ -287,7 +287,7 @@ function TaskCard({
       {detailsOpen && task.adaptation && (
         <div className="rounded-md bg-accent/20 px-2 py-1.5 text-[11px] leading-snug">
           <p className="flex items-center gap-1 font-semibold text-foreground">
-            <Sparkles className="h-3 w-3 text-primary" />
+            <ArrowRightLeft className="h-3 w-3 text-primary" />
             {task.adaptation.kind === "replaced" ? `Adapted → ${task.adaptation.replaced_by}` : "Verification failed — gap re-opened"}
           </p>
           <p className="text-muted-foreground">{task.adaptation.reason}</p>
@@ -312,7 +312,7 @@ function TaskCard({
           )}
           {canAdapt && task.task_type === "learning" && (
             <Button size="sm" variant="ghost" onClick={() => setAdaptOpen(true)} disabled={busy}>
-              <Sparkles className="h-3.5 w-3.5" /> Adapt to verification
+              <ArrowRightLeft className="h-3.5 w-3.5" /> Adapt to verification
             </Button>
           )}
           {canFail && task.task_type === "verification" && (

@@ -2,25 +2,10 @@ import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
-import {
-  Activity,
-  Briefcase,
-  Database,
-  GitBranch,
-  Layers,
-  ListChecks,
-  LogOut,
-  Menu,
-  MessageSquareText,
-  RotateCcw,
-  Settings,
-  ShieldCheck,
-  TrendingUp,
-  UserCog,
-  Users,
-} from "lucide-react";
+import { LogOut, Menu, RotateCcw } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 import { can, ROLE_BADGE_CLASS, ROLE_LABEL, type Role } from "@/lib/rbac";
+import { breadcrumbFor, type NavSection, visibleSections } from "@/lib/navigation";
 import { fetchHealth, resetDemo } from "@/lib/api";
 import { BUILD_INFO } from "@/generated/build-info";
 import { Button } from "@/components/ui/button";
@@ -32,78 +17,70 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 
-function HealthChip({
-  gateway,
-  modelReady,
-  authOk,
-  checking,
+/** Active link style — blue tint + ink text, with an explicit focus ring. */
+function linkClass(active: boolean): string {
+  return active
+    ? "bg-primary/10 text-primary"
+    : "text-foreground/75 hover:bg-muted hover:text-foreground";
+}
+
+/** Renders one section's nav items (shared by sidebar and mobile drawer). */
+function SectionList({
+  section,
+  pathname,
+  onNavigate,
 }: {
-  gateway?: "reachable" | "unreachable";
-  modelReady?: boolean;
-  authOk?: boolean;
-  checking: boolean;
+  section: NavSection;
+  pathname: string;
+  onNavigate?: () => void;
 }) {
-  let label = "AI gateway: checking…";
-  let cls = "bg-white/10 text-white/70";
-  if (!checking && gateway === "reachable" && modelReady) {
-    label = authOk ? "AI ready · authenticated" : "AI ready · tunnel not gateway-authenticated";
-    cls = authOk ? "bg-secondary text-white" : "bg-accent text-foreground";
-  } else if (!checking && gateway === "reachable" && !modelReady) {
-    label = "AI gateway up · model unavailable";
-    cls = "bg-accent text-foreground";
-  } else if (!checking) {
-    label = "AI gateway unreachable";
-    cls = "bg-destructive text-white";
-  }
-  return <span className={`rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${cls}`}>{label}</span>;
+  return (
+    <div className="flex flex-col gap-0.5">
+      <p className="flex items-center gap-1.5 px-3 pb-1 pt-4 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/80">
+        <section.icon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+        {section.label}
+      </p>
+      <nav aria-label={section.label} className="flex flex-col gap-0.5">
+        {section.items.map((item) => {
+          const active = pathname === item.to;
+          return (
+            <Link
+              key={item.to}
+              to={item.to}
+              onClick={onNavigate}
+              aria-current={active ? "page" : undefined}
+              className={`flex items-center gap-2.5 rounded-md px-3 py-2 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${linkClass(active)}`}
+            >
+              <item.icon className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden="true" />
+              <span className="truncate">{item.label}</span>
+            </Link>
+          );
+        })}
+      </nav>
+    </div>
+  );
 }
 
-// ---- Phase 27/29: role-scoped navigation ------------------------------------
-// One flat list of icon-backed tabs, each gated by the same server-enforced
-// actions as the page it opens. No locked placeholders.
-interface NavLinkDef {
-  label: string;
-  to: string;
-  icon: typeof Users;
-  show: (role: Role) => boolean;
+function Brand({ compact = false }: { compact?: boolean }) {
+  return (
+    <Link to="/app" className="flex items-center gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-md">
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary text-base font-extrabold text-white">
+        W
+      </span>
+      {!compact && (
+        <span className="text-base font-bold tracking-tight text-foreground">
+          Work<span className="text-primary">Sense</span>
+        </span>
+      )}
+    </Link>
+  );
 }
 
-const NAV_LINKS: NavLinkDef[] = [
-  { label: "Overview", to: "/app", icon: ShieldCheck, show: () => true },
-  { label: "Recruitment", to: "/recruitment", icon: Briefcase, show: (role) => can(role, "manage_recruitment") },
-  { label: "Workforce review", to: "/workforce", icon: Users, show: (role) => can(role, "view_all_workforce") || can(role, "view_team") || role === "employee" },
-  { label: "Staffing planner", to: "/staffing", icon: TrendingUp, show: (role) => can(role, "view_all_workforce") || can(role, "view_team") },
-  { label: "Onboarding", to: "/onboarding", icon: ListChecks, show: (role) => can(role, "view_onboarding") },
-  { label: "Recommendation hub", to: "/hub", icon: Layers, show: (role) => can(role, "approve_recommendations") },
-  { label: "Skill graph", to: "/graph", icon: GitBranch, show: (role) => can(role, "explore_skill_graph") },
-  { label: "Policy studio", to: "/policy", icon: MessageSquareText, show: (role) => can(role, "use_policy_studio") },
-  { label: "Access & users", to: "/admin/access", icon: UserCog, show: (role) => can(role, "manage_users") },
-  { label: "System health", to: "/status", icon: Activity, show: (role) => can(role, "manage_users") },
-  { label: "Data quality", to: "/workforce/data-quality", icon: Database, show: (role) => can(role, "manage_users") },
-];
-
-const isGovernance = (l: NavLinkDef) =>
-  l.to.startsWith("/admin") || l.to.startsWith("/status") || l.to.startsWith("/workforce/data-quality");
-
-function visibleLinks(role: Role): NavLinkDef[] {
-  return NAV_LINKS.filter((l) => l.show(role));
-}
-
-export function AppShell({ children }: { children: React.ReactNode }) {
-  const { role, twin, signOut, user } = useAuth();
+function AccountFooter() {
+  const { role, twin, signOut } = useAuth();
   const [resetting, setResetting] = useState(false);
-  const location = useLocation();
-
-  // Limited AI-gateway health indicator (4 states): app backend ok (implicit),
-  // gateway reachable, model ready, generation failed is surfaced per job.
-  const health = useQuery({
-    queryKey: ["ai-health", user?.id ?? "anon"],
-    queryFn: fetchHealth,
-    refetchInterval: 60_000,
-    enabled: !!user,
-    retry: false,
-  });
 
   const handleReset = async () => {
     setResetting(true);
@@ -118,141 +95,169 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const links = role ? visibleLinks(role) : [];
-  const mainLinks = links.filter((l) => !isGovernance(l));
-  const governanceLinks = links.filter(isGovernance);
-  const aiState = health.data
-    ? health.data.model_ready
-      ? "AI gateway: ready"
-      : "AI gateway: model unavailable"
-    : health.isError
-      ? "AI gateway: unreachable"
-      : "AI gateway: checking…";
+  return (
+    <div className="flex flex-col gap-2.5 border-t border-border px-4 py-4">
+      <div className="flex items-center gap-2.5 min-w-0">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-extrabold text-foreground">
+          {twin?.name?.charAt(0) ?? "?"}
+        </span>
+        <div className="min-w-0">
+          <p className="truncate text-sm font-bold text-foreground">{twin?.name}</p>
+          <p className="truncate text-[11px] text-muted-foreground">{twin?.email}</p>
+        </div>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {role && can(role, "reset_demo") && (
+          <Button size="sm" variant="secondary" onClick={() => void handleReset()} disabled={resetting} className="flex-1">
+            <RotateCcw className="h-3.5 w-3.5" /> Reset demo
+          </Button>
+        )}
+        <Button size="sm" variant="outline" onClick={() => void signOut()} className="flex-1">
+          <LogOut className="h-3.5 w-3.5" /> Sign out
+        </Button>
+      </div>
+    </div>
+  );
+}
 
-  // Renders ONE navigation link. Kept separate from the layout below.
-  const renderLink = (l: NavLinkDef, variant: "sidebar" | "mobile" = "sidebar") => {
-    const active = location.pathname === l.to;
-    const cls =
-      variant === "mobile"
-        ? "flex items-center gap-2 rounded-md px-3 py-2 text-sm font-semibold text-foreground transition-colors hover:bg-muted"
-        : `flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-semibold transition-colors ${
-            active ? "bg-primary/10 text-primary" : "text-foreground/80 hover:bg-muted hover:text-foreground"
-          }`;
-    return (
-      <Link key={l.to} to={l.to} className={cls} aria-current={active ? "page" : undefined}>
-        <l.icon className="h-4 w-4 shrink-0 text-primary" />
-        {l.label}
-      </Link>
-    );
-  };
+export function AppShell({ children }: { children: React.ReactNode }) {
+  const { role, twin, user, signOut } = useAuth();
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const location = useLocation();
+
+  const health = useQuery({
+    queryKey: ["ai-health", user?.id ?? "anon"],
+    queryFn: fetchHealth,
+    refetchInterval: 60_000,
+    enabled: !!user,
+    retry: false,
+  });
+
+  const healthDot = health.data
+    ? health.data.model_ready
+      ? "bg-secondary"
+      : "bg-accent"
+    : health.isError
+      ? "bg-destructive"
+      : "bg-muted";
+  const healthLabel = health.data
+    ? health.data.model_ready
+      ? "AI gateway ready"
+      : "AI gateway up, model unavailable"
+    : health.isError
+      ? "AI gateway unreachable"
+      : "Checking AI gateway…";
+
+  const sections = role ? visibleSections(role) : [];
+  const breadcrumb = breadcrumbFor(location.pathname);
+  const showBreadcrumb = breadcrumb && breadcrumb.crumb !== breadcrumb.label;
 
   return (
-    <div className="flex min-h-screen bg-background">
-      {/* Fixed vertical left sidebar (desktop) */}
+    <div className="flex min-h-screen bg-canvas">
+      {/* Desktop sidebar — independently scrollable, account controls pinned. */}
       <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col border-r border-border bg-white md:flex">
-        <div className="flex items-center gap-2 px-5 py-5">
-          <Link to="/" className="flex items-center gap-2">
-            <span className="flex h-9 w-9 items-center justify-center rounded-md bg-primary text-lg font-extrabold text-white">W</span>
-            <span className="text-lg font-bold tracking-tight text-foreground">WorkSense</span>
-          </Link>
+        <div className="flex h-14 items-center px-5">
+          <Brand />
         </div>
         {role && (
-          <div className="px-5 pb-3">
-            <span className={`rounded-md px-2.5 py-1 text-xs font-semibold uppercase tracking-wider ${ROLE_BADGE_CLASS[role]}`}>
+          <div className="px-5 pb-2">
+            <span className={`rounded-md px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wider ${ROLE_BADGE_CLASS[role]}`}>
               {ROLE_LABEL[role]}
             </span>
           </div>
         )}
         <div className="flex-1 overflow-y-auto px-3 pb-4">
-          <nav aria-label="Primary" className="flex flex-col gap-1">
-            {mainLinks.map((l) => renderLink(l, "sidebar"))}
-          </nav>
-          {governanceLinks.length > 0 && (
-            <>
-              <p className="mt-5 px-3 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/70">Governance</p>
-              <nav aria-label="Governance" className="mt-1 flex flex-col gap-1">
-                {governanceLinks.map((l) => renderLink(l, "sidebar"))}
-              </nav>
-            </>
-          )}
+          {sections.map((s) => (
+            <SectionList key={s.key} section={s} pathname={location.pathname} />
+          ))}
         </div>
-        <div className="flex flex-col gap-2 border-t border-border px-5 py-4">
-          <div className="flex items-center gap-2">
-            <span className={`h-2 w-2 shrink-0 rounded-full ${health.data?.model_ready ? "bg-secondary" : health.isError ? "bg-destructive" : "bg-muted"}`} />
-            <HealthChip
-              gateway={health.data?.gateway}
-              modelReady={health.data?.model_ready}
-              authOk={health.data?.gateway_authenticated}
-              checking={health.isLoading}
-            />
-          </div>
-          <p className="truncate text-xs font-semibold text-foreground">{twin?.email}</p>
-          <div className="flex flex-wrap gap-2">
-            {role && can(role, "reset_demo") && (
-              <Button size="sm" variant="secondary" onClick={() => void handleReset()} disabled={resetting}>
-                <RotateCcw className="h-3.5 w-3.5" /> Reset demo
-              </Button>
-            )}
-            <Button size="sm" variant="outline" onClick={() => void signOut()}>
-              <LogOut className="h-3.5 w-3.5" /> Sign out
-            </Button>
-          </div>
-        </div>
+        <AccountFooter />
       </aside>
 
-      {/* Scrollable content panel */}
+      {/* Content column */}
       <div className="flex min-h-screen min-w-0 flex-1 flex-col">
-        {/* Phase 14: unmistakable demo-mode indicator + live build/health */}
-        <div className="border-b border-border bg-foreground text-white">
-          <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-4 gap-y-1 px-4 py-1.5 text-[11px] font-semibold sm:px-6">
-            <span className="flex items-center gap-1.5">
-              <span className="rounded bg-destructive px-1.5 py-0.5 text-[9px] font-extrabold uppercase tracking-wider text-white">Demo mode</span>
-              All data is fictional · seeded for this demonstration
+        {/* Top bar — concise demo indicator; diagnostics live in the account menu + status page. */}
+        <header className="sticky top-0 z-30 border-b border-border bg-white">
+          <div className="flex h-12 items-center gap-3 px-4 sm:px-6">
+            <Sheet open={drawerOpen} onOpenChange={setDrawerOpen}>
+              <SheetTrigger asChild>
+                <Button variant="secondary" size="sm" className="md:hidden" aria-label="Open navigation menu">
+                  <Menu className="h-4 w-4" />
+                  <span className="sr-only">Menu</span>
+                </Button>
+              </SheetTrigger>
+              <SheetContent side="left" className="flex w-72 flex-col gap-0 p-0 sm:max-w-sm">
+                <SheetHeader className="h-14 justify-center border-b border-border px-5 text-left">
+                  <SheetTitle className="sr-only">WorkSense navigation</SheetTitle>
+                  <Brand />
+                </SheetHeader>
+                {role && (
+                  <div className="border-b border-border px-5 py-2">
+                    <span className={`rounded-md px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wider ${ROLE_BADGE_CLASS[role]}`}>
+                      {ROLE_LABEL[role]}
+                    </span>
+                  </div>
+                )}
+                <div className="flex-1 overflow-y-auto px-3 pb-4">
+                  {sections.map((s) => (
+                    <SectionList
+                      key={s.key}
+                      section={s}
+                      pathname={location.pathname}
+                      onNavigate={() => setDrawerOpen(false)}
+                    />
+                  ))}
+                </div>
+                <AccountFooter />
+              </SheetContent>
+            </Sheet>
+
+            <span className="inline-flex items-center gap-1.5 rounded-md bg-muted px-2 py-1 text-[11px] font-semibold text-muted-foreground">
+              Demo
+              <span className="hidden sm:inline">· fictional data</span>
             </span>
-            <span className="hidden items-center gap-1.5 text-white/70 sm:flex">
-              <span className={`h-1.5 w-1.5 rounded-full ${health.data?.model_ready ? "bg-secondary" : health.isError ? "bg-destructive" : "bg-muted"}`} />
-              {aiState}
-            </span>
-            <span className="hidden text-white/50 lg:inline">build {BUILD_INFO.commit.slice(0, 7)} · schema {BUILD_INFO.schemaVersion}</span>
+            {role && <span className="hidden text-xs font-semibold text-muted-foreground md:inline">{ROLE_LABEL[role]}</span>}
+
             <div className="ml-auto flex items-center gap-2">
-              {/* Mobile navigation (sidebar is hidden below md) */}
-              {links.length > 0 && (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="secondary" size="sm" className="md:hidden" aria-label="Open navigation menu">
-                      <Menu className="h-4 w-4" />
-                      <span className="sr-only">Menu</span>
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-64 max-h-[70vh] overflow-y-auto">
-                    <DropdownMenuLabel>Navigate</DropdownMenuLabel>
-                    <DropdownMenuSeparator />
-                    <div className="flex flex-col px-2 pb-2 pt-1">
-                      {links.map((l) => renderLink(l, "mobile"))}
-                    </div>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              )}
+              <span
+                title={healthLabel}
+                aria-label={healthLabel}
+                className={`h-2 w-2 rounded-full ${healthDot}`}
+              />
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="secondary" size="sm">
-                    <Settings className="h-4 w-4" />
-                    <span className="hidden sm:inline">{twin?.name ?? "Account"}</span>
+                    <span className="hidden sm:inline">{twin?.name?.split(" ")[0] ?? "Account"}</span>
+                    <span className="sm:hidden">Account</span>
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuContent align="end" className="w-64">
                   <DropdownMenuLabel>
                     {twin?.name}
-                    <p className="text-xs font-normal text-muted-foreground">{twin?.email}</p>
+                    <p className="truncate text-xs font-normal text-muted-foreground">{twin?.email}</p>
                   </DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  {/* Diagnostics: gateway state + build identity — out of the page UI. */}
+                  <div className="px-2 py-2">
+                    <p className="px-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Diagnostics</p>
+                    <p className="px-2 pt-1 text-xs text-muted-foreground">
+                      <span className={`mr-1.5 inline-block h-1.5 w-1.5 rounded-full ${healthDot}`} />
+                      {healthLabel}
+                    </p>
+                    <p className="px-2 pt-1 font-mono text-[11px] text-muted-foreground">
+                      build {BUILD_INFO.commit.slice(0, 7)} · schema {BUILD_INFO.schemaVersion}
+                    </p>
+                  </div>
                   <DropdownMenuSeparator />
                   {role && can(role, "reset_demo") && (
                     <>
                       <DropdownMenuItem
-                        disabled={resetting}
                         onSelect={(e) => {
                           e.preventDefault();
-                          void handleReset();
+                          void resetDemo().then(() => {
+                            toast.success("Demo data restored to the known-good state.");
+                            window.location.href = "/";
+                          }).catch((err: Error) => toast.error(err.message ?? "Reset failed"));
                         }}
                       >
                         <RotateCcw className="mr-2 h-4 w-4" />
@@ -274,25 +279,39 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </DropdownMenu>
             </div>
           </div>
-        </div>
+        </header>
+
+        {/* Breadcrumb for nested/grouped pages. */}
+        {showBreadcrumb && breadcrumb && (
+          <nav aria-label="Breadcrumb" className="border-b border-border bg-white">
+            <ol className="mx-auto flex max-w-7xl items-center gap-1.5 px-4 py-2 text-xs sm:px-6">
+              <li>
+                <Link to="/app" className="font-semibold text-muted-foreground hover:text-foreground">
+                  WorkSense
+                </Link>
+              </li>
+              <li aria-hidden="true" className="text-muted-foreground/50">/</li>
+              <li>
+                <span className="font-semibold text-muted-foreground">{breadcrumb.crumb}</span>
+              </li>
+              <li aria-hidden="true" className="text-muted-foreground/50">/</li>
+              <li aria-current="page" className="font-bold text-foreground">
+                {breadcrumb.label}
+              </li>
+            </ol>
+          </nav>
+        )}
 
         <main className="flex-1">{children}</main>
 
-        <footer className="bg-foreground text-white">
-          <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-6 text-sm sm:px-6">
-            <div className="flex flex-col gap-1">
-              <div className="flex items-center gap-2">
-                <ShieldCheck className="h-4 w-4 text-secondary" />
-                <span className="font-medium">Every recommendation is approved by a human before it moves.</span>
-              </div>
-              <p className="text-white/60">
-                Skill matching, onboarding scheduling, and risk scoring are deterministic — AI is used
-                only to extract, explain, and generate language, never to decide.
-              </p>
-            </div>
-            <span className="text-xs text-white/40">
-              Demonstration data is fictional. build {BUILD_INFO.commit} · {new Date(BUILD_INFO.builtAt).toLocaleString()} · schema {BUILD_INFO.schemaVersion}
-            </span>
+        <footer className="border-t border-border bg-white">
+          <div className="mx-auto flex max-w-7xl flex-col gap-1 px-4 py-5 sm:px-6">
+            <p className="text-sm font-medium text-foreground">
+              Every recommendation is approved by a human before it moves.
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Demonstration data is fictional and seeded for this preview.
+            </p>
           </div>
         </footer>
       </div>

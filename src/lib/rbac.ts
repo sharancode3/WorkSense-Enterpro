@@ -52,14 +52,17 @@ export const ROLE_BADGE_LABEL: Record<Role, string> = {
   it_security: "IT SEC",
 };
 
+// Neutral role badges — green/amber/red stay reserved for semantic states,
+// never arbitrary role or category colors. Only the administrator role gets
+// the brand blue; everyone else reads as ink/neutral.
 export const ROLE_BADGE_CLASS: Record<Role, string> = {
   hr_executive: "bg-primary text-white",
-  hr_partner: "bg-primary text-white",
-  manager: "bg-secondary text-white",
-  recruiter: "bg-accent text-foreground",
-  employee: "bg-accent text-foreground",
+  hr_partner: "bg-foreground text-white",
+  manager: "bg-muted text-foreground",
+  recruiter: "bg-muted text-foreground",
+  employee: "bg-muted text-foreground",
   candidate: "bg-muted text-foreground",
-  it_security: "bg-secondary text-white",
+  it_security: "bg-muted text-foreground",
 };
 
 /**

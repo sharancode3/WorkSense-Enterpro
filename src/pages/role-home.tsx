@@ -200,24 +200,24 @@ function StatBlock({
 }: {
   label: string;
   value: number | string | null;
-  tone: "primary" | "secondary" | "accent" | "muted" | "dark";
+  tone: "primary" | "dark" | "muted" | "subtle" | "outline";
   definition?: string;
 }) {
   const cls = {
     primary: "bg-primary text-white",
-    secondary: "bg-secondary text-white",
-    accent: "bg-accent text-foreground",
-    muted: "bg-muted text-foreground",
     dark: "bg-foreground text-white",
+    muted: "bg-muted text-foreground",
+    subtle: "bg-primary/10 text-primary",
+    outline: "bg-white border border-border text-foreground",
   }[tone];
   return (
     <div className={`flex flex-col justify-between gap-6 rounded-lg p-5 transition-all duration-200 hover:scale-[1.02] ${cls}`}>
-      <span className={`text-xs font-bold uppercase tracking-wider ${tone === "dark" ? "text-white/70" : "text-foreground/60"}`}>
+      <span className={`text-xs font-bold uppercase tracking-wider ${tone === "dark" || tone === "primary" ? "text-white/70" : "text-muted-foreground"}`}>
         {label}
       </span>
       <span className="text-4xl font-extrabold tracking-tight">{value ?? "—"}</span>
       {definition && (
-        <span className={`text-[11px] leading-snug ${tone === "dark" ? "text-white/60" : "text-foreground/55"}`}>{definition}</span>
+        <span className={`text-[11px] leading-snug ${tone === "dark" || tone === "primary" ? "text-white/60" : "text-muted-foreground"}`}>{definition}</span>
       )}
     </div>
   );
@@ -451,12 +451,12 @@ export default function RoleHome() {
                     tone="primary"
                     definition="Requisitions with status open (on-hold/filled/closed excluded)."
                   />
-                  <StatBlock label="Active candidates" value={recruiterData.data?.candidates.length} tone="secondary" definition="Candidate twins across the organization." />
-                  <StatBlock label="In final round" value={recruiterData.data?.finalRound} tone="accent" definition="Applicants at final_round on open requisitions." />
+                  <StatBlock label="Active candidates" value={recruiterData.data?.candidates.length} tone="dark" definition="Candidate twins across the organization." />
+                  <StatBlock label="In final round" value={recruiterData.data?.finalRound} tone="muted" definition="Applicants at final_round on open requisitions." />
                   <StatBlock
                     label="Avg applicant match"
                     value={recruiterData.data?.avgScore !== null && recruiterData.data?.avgScore !== undefined ? `${Math.round(recruiterData.data.avgScore * 100)}%` : null}
-                    tone="dark"
+                    tone="subtle"
                     definition="Mean Skill Graph match score across open-requisition applicants."
                   />
                 </>
@@ -472,14 +472,14 @@ export default function RoleHome() {
                   <StatBlock
                     label="Active recommendations"
                     value={myRecs.data}
-                    tone="secondary"
+                    tone="muted"
                     definition="Your non-terminal recommendations (awaiting or in execution)."
                   />
-                  <StatBlock label="Verified skills" value={twin.verified_skills.length} tone="accent" definition="Skills with high/medium-rigor evidence on your profile." />
+                  <StatBlock label="Verified skills" value={twin.verified_skills.length} tone="dark" definition="Skills with high/medium-rigor evidence on your profile." />
                   <StatBlock
                     label="Workforce review index"
                     value={signalValue(twin, "workforce_review_index") !== null ? `${signalValue(twin, "workforce_review_index")}/100` : null}
-                    tone="dark"
+                    tone="subtle"
                     definition="Interpretable decision support — not a probability of leaving."
                   />
                 </>

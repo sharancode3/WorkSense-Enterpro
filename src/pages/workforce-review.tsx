@@ -13,7 +13,6 @@ import {
   RefreshCw,
   Search,
   ShieldAlert,
-  Sparkles,
   TrendingDown,
   TrendingUp,
   UserCheck,
@@ -253,7 +252,7 @@ export default function WorkforceReview() {
                       <div className="flex shrink-0 items-center gap-2">
                         {c.seeking_growth && (
                           <span className="flex items-center gap-1 rounded-md bg-secondary px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">
-                            <Sparkles className="h-3 w-3" /> growth interest
+                            <TrendingUp className="h-3 w-3" /> growth interest
                           </span>
                         )}
                         <span className={`rounded-md px-2.5 py-1 text-xs font-bold uppercase tracking-wider ${PRIORITY_CLS[c.priority] ?? "bg-muted text-foreground"}`}>
@@ -303,7 +302,7 @@ export default function WorkforceReview() {
                     <span>Data completeness: {Math.round(detail.data_completeness * 100)}%</span>
                     {detail.seeking_growth && (
                       <span className="flex items-center gap-1.5 rounded-md bg-secondary px-2.5 py-1 text-xs font-bold text-white">
-                        <Sparkles className="h-3.5 w-3.5" /> Reports development interest — a growth conversation, not risk
+                        <TrendingUp className="h-3.5 w-3.5" /> Reports development interest — a growth conversation, not risk
                       </span>
                     )}
                   </div>

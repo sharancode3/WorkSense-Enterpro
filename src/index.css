@@ -7,9 +7,19 @@
 
 @layer base {
   :root {
-    /* WorkSense Flat Design palette — light mode only */
+    /* WorkSense design tokens — light mode only.
+       Palette intent:
+       - primary is the single brand blue.
+       - secondary (green) = success, accent (amber) = warning, destructive
+         (red) = error. These are SEMANTIC states only, never arbitrary
+         metric categories or role badges.
+       - canvas is the neutral page background behind white cards. */
+
     --background: 0 0% 100%;
     --foreground: 220 39% 11%;
+
+    /* Neutral application canvas — sits behind the white card surfaces. */
+    --canvas: 220 22% 96.5%;
 
     --card: 0 0% 100%;
     --card-foreground: 220 39% 11%;
@@ -37,6 +47,18 @@
     --ring: 217 91% 60%;
 
     --radius: 0.5rem;
+
+    /* Chart tokens: blue family + neutrals so color never implies state. */
+    --chart-1: 217 91% 60%;
+    --chart-2: 224 68% 48%;
+    --chart-3: 220 22% 72%;
+    --chart-4: 222 16% 44%;
+    --chart-5: 220 39% 11%;
+
+    /* Layered, flat shadows — subtle elevation, no depth illusions. */
+    --shadow-card: 0 1px 2px 0 rgb(15 23 42 / 0.05);
+    --shadow-panel: 0 1px 3px 0 rgb(15 23 42 / 0.06);
+    --shadow-pop: 0 10px 30px -8px rgb(15 23 42 / 0.16), 0 2px 8px -4px rgb(15 23 42 / 0.08);
 
     --sidebar-background: 220 14% 96%;
     --sidebar-foreground: 220 39% 11%;

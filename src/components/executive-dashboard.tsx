@@ -221,7 +221,7 @@ export function ExecutiveDashboard() {
             <StatCard
               label="Open requisitions"
               value={d.cards.open_requisitions}
-              tone="secondary"
+              tone="muted"
               sub={`on hold ${d.cards.requisition_statuses.on_hold ?? 0} · filled ${d.cards.requisition_statuses.filled ?? 0} · closed ${d.cards.requisition_statuses.closed ?? 0}`}
               definition={d.definitions.open_requisitions}
               to="/recruitment"
@@ -229,7 +229,7 @@ export function ExecutiveDashboard() {
             <StatCard
               label="Active candidates"
               value={d.cards.active_candidates}
-              tone="accent"
+              tone="dark"
               sub="in pipeline on open reqs"
               definition={d.definitions.active_candidates}
               to="/recruitment"
@@ -255,7 +255,7 @@ export function ExecutiveDashboard() {
         <StatCard
           label="Pending recommendations"
           value={d.cards.pending_recommendations}
-          tone="accent"
+          tone="muted"
           definition="Recommendations in scope awaiting human review (status needs_review)."
           to={can(role, "approve_recommendations") ? "/hub" : undefined}
         />

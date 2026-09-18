@@ -8,12 +8,12 @@ import { resolveLanding, type Role } from "@/lib/rbac";
 import { RoleCard, type CardTone } from "@/components/role-card";
 
 const ROLE_TONE: Record<string, CardTone> = {
-  hr_executive: "dark",
-  hr_partner: "primary",
-  manager: "secondary",
-  recruiter: "accent",
+  hr_executive: "primary",
+  hr_partner: "dark",
+  manager: "muted",
+  recruiter: "outline",
   employee: "muted",
-  it_security: "secondary",
+  it_security: "outline",
 };
 
 /**
