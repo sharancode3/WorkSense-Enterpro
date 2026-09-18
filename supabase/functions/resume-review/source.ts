@@ -222,5 +222,11 @@ Deno.serve(async (req) => {
     evidence_saved: evidenceRows.length,
     conflicts_resolved: review.conflicts ?? [],
     fit,
+    provenance: {
+      artifact_ref: `doc:${documentId}:v${version}`,
+      file_name: doc.file_name,
+      checksum_short: doc.checksum.slice(0, 12),
+      source_type: "resume_document",
+    },
   });
 });

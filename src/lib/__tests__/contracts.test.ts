@@ -3,6 +3,7 @@ import {
   decode,
   tryDecode,
   requisitionRowSchema,
+  candidateCompareSchema,
   planTaskViewSchema,
   planViewSchema,
   recommendationRowSchema,
@@ -27,6 +28,75 @@ describe("decode (unknown -> validated schema -> typed contract)", () => {
     const parsed = decode(requisitionRowSchema, row, "req-row");
     expect(parsed.id).toBe("r1");
     expect(parsed.applicants[0].match_score).toBe(0.5);
+  });
+
+  it("defaults requisition criteria to [] when absent (legacy rows still decode)", () => {
+    const legacy = {
+      id: "r2",
+      title: "Data Analyst",
+      department: "Data",
+      status: "open",
+      seniority_level: 3,
+      required_skills: [{ skill: "SQL", target_proficiency: 4 }],
+      future_skills: [],
+      applicants: [],
+    };
+    expect(decode(requisitionRowSchema, legacy, "legacy-req").requisition_criteria).toEqual([]);
+  });
+
+  it("decodes weighted criteria on a requisition row", () => {
+    const row = {
+      id: "r3",
+      title: "DevOps Engineer",
+      department: "Platform",
+      status: "open",
+      seniority_level: 3,
+      required_skills: [{ skill: "Kubernetes", target_proficiency: 3 }],
+      future_skills: [],
+      applicants: [],
+      requisition_criteria: [
+        { skill: "Kubernetes", target_proficiency: 3, requirement: "required", weight: 0.6, evidence_expectation: "K8s cluster artifact." },
+        { skill: "AWS", target_proficiency: 2, requirement: "preferred", weight: 0.4, evidence_expectation: "Cloud cert in progress." },
+      ],
+    };
+    const parsed = decode(requisitionRowSchema, row, "criteria-req");
+    expect(parsed.requisition_criteria).toHaveLength(2);
+    expect(parsed.requisition_criteria[0].requirement).toBe("required");
+  });
+
+  it("rejects a criterion with an out-of-range weight", () => {
+    const bad = {
+      id: "r4",
+      title: "X",
+      department: "Y",
+      status: "open",
+      seniority_level: 3,
+      required_skills: [],
+      future_skills: [],
+      applicants: [],
+      requisition_criteria: [{ skill: "Go", target_proficiency: 3, requirement: "required", weight: 7, evidence_expectation: "e" }],
+    };
+    expect(tryDecode(requisitionRowSchema, bad, "bad-criteria")).toBeNull();
+  });
+
+  it("decodes a candidate comparison payload", () => {
+    const payload = {
+      ok: true as const,
+      req_id: "r1",
+      req_title: "Backend Engineer",
+      criteria: [{ skill: "Go", target_proficiency: 4, requirement: "required", weight: 1, evidence_expectation: "Go work sample." }],
+      rows: [
+        { twin_id: "t1", name: "Aria", email: "aria@example.com", stage: "final_round", version: 2, application_code: "WS-1", applied_at: "2026-08-12T09:00:00Z", status: "scored", score: 0.83, score_at: "2026-08-20T09:00:00Z", gaps: [], adjacent: [], transferable: [] },
+        { twin_id: "t2", name: "Bo", email: null, stage: "screening", version: 1, application_code: "WS-2", applied_at: "2026-09-01T09:00:00Z", status: "unscored", score: null, score_at: null, gaps: [], adjacent: [], transferable: [] },
+      ],
+      scored_count: 1,
+      unscored_count: 1,
+      stale_count: 0,
+    };
+    const parsed = decode(candidateCompareSchema, payload, "candidate-compare");
+    expect(parsed.rows[0].status).toBe("scored");
+    expect(parsed.rows[1].score).toBeNull();
+    expect(parsed.unscored_count).toBe(1);
   });
 
   it("rejects a requisition row missing its id (required contract surface)", () => {

@@ -4091,6 +4091,7 @@ export type Database = {
           id: string
           org_id: string
           required_skills: Json
+          requisition_criteria: Json
           rubrics: Json
           seniority_level: number
           status: string
@@ -4106,6 +4107,7 @@ export type Database = {
           id?: string
           org_id: string
           required_skills?: Json
+          requisition_criteria?: Json
           rubrics?: Json
           seniority_level?: number
           status?: string
@@ -4121,6 +4123,7 @@ export type Database = {
           id?: string
           org_id?: string
           required_skills?: Json
+          requisition_criteria?: Json
           rubrics?: Json
           seniority_level?: number
           status?: string

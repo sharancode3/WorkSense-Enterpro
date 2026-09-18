@@ -839,6 +839,92 @@ async function reseed(supabase, authIds: Record<string, string>) {
     const { error: assErr } = await supabase.from("assessments").insert(assessments);
     if (assErr) throw new Error(`assessments insert: ${assErr.message}`);
   }
+
+  // 12) Recruitment workspace: deterministic per-requisition rubrics + weighted
+  // selection criteria. Rubrics are seeded offline so the demo "Interview kit"
+  // flow succeeds deterministically (cached per role) instead of depending on a
+  // live model call; criteria drive the Compare workspace.
+  await seedRecruitmentWorkspace(supabase, DEMO_ORG_ID, fx.clock);
+}
+
+// ---------------------------------------------------------------------------
+// Phase 4: recruitment workspace seed — deterministic rubrics + criteria.
+// Offline, high-quality rubrics make interview-kit generation deterministic in
+// the demo (no live model dependency); weighted criteria power the Compare tab.
+// ---------------------------------------------------------------------------
+interface SeedReqRow {
+  id: string;
+  title: string;
+  required_skills: { skill: string; target_proficiency: number }[];
+  future_skills: { skill: string; target_proficiency: number }[];
+}
+
+function demoRubricFor(competency: string, title: string): { competency: string; question: string; follow_up_probes: string[]; rubric: Record<string, string> } {
+  const c = competency;
+  const probe = c === "Collaboration"
+    ? `Tell me about a cross-functional disagreement you navigated while delivering against ${title}. What was your role in reaching the outcome?`
+    : `Walk me through a time you applied ${c} under a real constraint for a ${title} outcome. What did you choose, why, and what went wrong?`;
+  return {
+    competency: c,
+    question: probe,
+    follow_up_probes: ["What would you change with hindsight, and how do you know it would have helped?", "How did you validate the result with evidence rather than opinion?"],
+    rubric: {
+      tier_1: `Ignores ${c} constraints in the ${title} context — regresses the team baseline with no defensible reasoning.`,
+      tier_2: `Applies ${c} only when prompted; cannot explain trade-offs or own the outcome independently.`,
+      tier_3: `Consistently applies ${c} at the ${title} baseline and defends key decisions with concrete, verifiable examples.`,
+      tier_4: `Drives ${c} improvements across the team's scope, coaches peers, and catches regressions early with evidence.`,
+      tier_5: `Sets the ${c} standard for the organization — designs approaches others adopt and audits outcomes rigorously.`,
+    },
+  };
+}
+
+async function seedRecruitmentWorkspace(supabase, orgId: string, clock: string) {
+  const { data: rows } = await supabase
+    .from("job_requisitions")
+    .select("id, title, required_skills, future_skills, requisition_criteria, rubrics, audit_events")
+    .eq("org_id", orgId);
+
+  for (const req of (rows ?? []) as (SeedReqRow & { requisition_criteria?: unknown[]; rubrics?: unknown[]; audit_events?: unknown[] })[]) {
+    const required = req.required_skills ?? [];
+    const future = req.future_skills ?? [];
+
+    const rubrics = [...required.map((s) => s.skill), "Collaboration"].map((comp) => demoRubricFor(comp, req.title));
+
+    const nReq = Math.max(required.length, 1);
+    const criteria = [
+      ...required.map((s, i) => ({
+        skill: s.skill,
+        target_proficiency: s.target_proficiency,
+        requirement: "required" as const,
+        weight: Number((1 / nReq).toFixed(2)),
+        evidence_expectation: `Source artifact proving ${s.skill} at proficiency ${s.target_proficiency}: prior-role project output, work sample, or verified reference.`,
+      })),
+      ...future.map((s) => ({
+        skill: s.skill,
+        target_proficiency: s.target_proficiency,
+        requirement: "preferred" as const,
+        weight: 0.4,
+        evidence_expectation: `Evidence of trajectory toward ${s.skill} (learning artifact, stretch work, or certification in progress).`,
+      })),
+    ];
+
+    const criteriaChanged =
+      JSON.stringify(req.requisition_criteria ?? []) !== JSON.stringify(criteria) ||
+      (req.rubrics ?? []).length === 0;
+
+    if (!criteriaChanged) continue;
+    const audit = [...(req.audit_events ?? [])];
+    if ((req.rubrics ?? []).length === 0) {
+      audit.push({ actor: "seed", action: "rubrics_seeded", note: "Deterministic interview rubrics seeded per role.", timestamp: clock });
+    }
+    if (JSON.stringify(req.requisition_criteria ?? []) !== JSON.stringify(criteria)) {
+      audit.push({ actor: "seed", action: "criteria_seeded", note: "Weighted selection criteria established for the Compare workspace.", timestamp: clock });
+    }
+    await supabase
+      .from("job_requisitions")
+      .update({ rubrics, requisition_criteria: criteria, audit_events: audit })
+      .eq("id", req.id);
+  }
 }
 
 Deno.serve(async (req) => {

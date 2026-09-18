@@ -1,0 +1,8 @@
+-- Phase 4: recruitment workspace.
+-- Additive JSONB extension on job_requisitions for weighted selection criteria
+-- (required vs preferred, weight, evidence expectation). Existing
+-- required_skills / future_skills stay readable and in sync (required skills are
+-- derived from criteria where requirement = 'required').
+
+alter table public.job_requisitions
+  add column if not exists requisition_criteria jsonb not null default '[]'::jsonb;

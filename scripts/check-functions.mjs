@@ -40,6 +40,7 @@ const SHARED_SOURCES = [
   "seed-data.ts",
   "stage-engine.ts",
   "assessment.ts",
+  "candidate-compare.ts",
   "policy-context.ts",
   "leave-calc.ts",
   "policy-seed.ts",
@@ -81,6 +82,7 @@ const FNS = {
   "assessment-evaluate": ["qwen", "jobs", "validate", "assessment"],
   "assessment-review": ["skill-graph-engine", "evidence", "assessment"],
   "application-stage": ["skill-graph-engine", "stage-engine"],
+  "candidate-compare": ["candidate-compare"],
 };
 
 const SHARED = Object.fromEntries(

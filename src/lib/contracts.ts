@@ -50,6 +50,15 @@ export const reqSkillSchema = z.object({
   target_proficiency: z.number(),
 });
 
+export const requisitionCriterionSchema = z.object({
+  skill: z.string(),
+  target_proficiency: z.number().int().min(1).max(5),
+  requirement: z.enum(["required", "preferred"]),
+  weight: z.number().min(0).max(1),
+  evidence_expectation: z.string(),
+});
+export type RequisitionCriterion = z.infer<typeof requisitionCriterionSchema>;
+
 export const applicantRowSchema = z.object({
   twin_id: z.string(),
   stage: z.string(),
@@ -65,6 +74,8 @@ export const requisitionRowSchema = z.object({
   required_skills: z.array(reqSkillSchema),
   future_skills: z.array(reqSkillSchema),
   applicants: z.array(applicantRowSchema),
+  requisition_criteria: z.array(requisitionCriterionSchema).default([]),
+  rubrics: z.array(z.unknown()).optional(),
 });
 export type RequisitionRow = z.infer<typeof requisitionRowSchema>;
 
@@ -76,6 +87,45 @@ export const candidateRowSchema = z.object({
   status: z.string(),
 });
 export type CandidateRow = z.infer<typeof candidateRowSchema>;
+
+// Phase 4: candidate comparison (scored / unscored / stale buckets).
+export const candidateCompareRowSchema = z.object({
+  twin_id: z.string(),
+  name: z.string(),
+  email: z.string().nullable(),
+  stage: z.string(),
+  version: z.number(),
+  application_code: z.string(),
+  applied_at: z.string(),
+  status: z.enum(["scored", "unscored", "stale"]),
+  score: z.number().nullable(),
+  score_at: z.string().nullable(),
+  gaps: z.array(z.string()),
+  adjacent: z.array(z.string()),
+  transferable: z.array(z.string()),
+});
+export type CandidateCompareRow = z.infer<typeof candidateCompareRowSchema>;
+
+export const candidateCompareSchema = z.object({
+  ok: z.literal(true),
+  req_id: z.string(),
+  req_title: z.string(),
+  criteria: z.array(requisitionCriterionSchema).default([]),
+  rows: z.array(candidateCompareRowSchema),
+  scored_count: z.number(),
+  unscored_count: z.number(),
+  stale_count: z.number(),
+}) as z.ZodType<CandidateCompare>;
+export interface CandidateCompare {
+  ok: true;
+  req_id: string;
+  req_title: string;
+  criteria: RequisitionCriterion[];
+  rows: CandidateCompareRow[];
+  scored_count: number;
+  unscored_count: number;
+  stale_count: number;
+}
 
 // ---------------------------------------------------------------------------
 // Onboarding adaptive plan contracts (plan + tasks).

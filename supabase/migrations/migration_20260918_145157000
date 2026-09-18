@@ -1,0 +1,2 @@
+alter table public.job_requisitions
+  add column if not exists requisition_criteria jsonb not null default '[]'::jsonb;

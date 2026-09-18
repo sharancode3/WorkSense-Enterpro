@@ -1,5 +1,5 @@
-import { useState, type FormEvent } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { useEffect, useState, type FormEvent } from "react";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { ArrowLeft, ArrowRight, ChevronDown, Eye, EyeOff, KeyRound, Loader2, ShieldCheck } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
@@ -23,6 +23,7 @@ export default function Login() {
   const { signInWithEmail, signInDemo } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams] = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
@@ -30,6 +31,22 @@ export default function Login() {
   const [demoOpen, setDemoOpen] = useState(true);
 
   const from = (location.state as { from?: string } | null)?.from ?? "/app";
+
+  // Deep-linkable demo persona: /login?as=recruiter signs in with that role.
+  useEffect(() => {
+    const roleParam = searchParams.get("as");
+    if (!roleParam) return;
+    const target = DEMO_ACCOUNTS.find((a) => a.role === roleParam);
+    if (!target) return;
+    setBusy(target.role);
+    void signInDemo(target.role)
+      .then(() => navigate(searchParams.get("to") ?? resolveLanding(target.role), { replace: true }))
+      .catch((err) => {
+        toast.error(err instanceof Error ? err.message : "Demo login failed");
+        setBusy(null);
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();

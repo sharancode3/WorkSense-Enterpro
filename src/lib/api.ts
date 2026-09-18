@@ -1,12 +1,14 @@
 import { supabase } from "@/integrations/supabase/client";
 import type { Role } from "./rbac";
 import {
+  candidateCompareSchema,
   decode,
   healthViewSchema,
   interviewKitSchema,
   meResultSchema,
   myWorkSchema,
   staffingComparisonSchema,
+  type CandidateCompare,
 } from "./contracts";
 import type { z } from "zod";
 
@@ -174,13 +176,31 @@ export const recruiterDecision = (twinId: string, reqId: string, decision: "move
     { twin_id: twinId, req_id: reqId, decision, note }
   );
 
+export interface RequisitionCriterionInput {
+  skill: string;
+  target_proficiency: number;
+  requirement: "required" | "preferred";
+  weight: number;
+  evidence_expectation: string;
+}
+
 export const requisitionCreate = (payload: {
   title: string;
   department: string;
   seniority_level: number;
   required_skills: { skill: string; target_proficiency: number }[];
   future_skills: { skill: string; target_proficiency: number }[];
-}) => invoke<{ ok: true; requisition: unknown }>("requisition", { action: "create", ...payload });
+  criteria?: RequisitionCriterionInput[];
+}) =>
+  invoke<{ ok: true; requisition: unknown }>("requisition", { action: "create", ...payload });
+
+export const requisitionUpdate = (reqId: string, payload: Partial<{ title: string; department: string; seniority_level: number; criteria: RequisitionCriterionInput[] }>) =>
+  invoke<{ ok: true; requisition: unknown; unchanged?: boolean }>("requisition", { action: "update", req_id: reqId, ...payload });
+
+// ---- Phase 4: candidate comparison workspace ----
+
+export const candidateCompare = (reqId: string) =>
+  invoke<CandidateCompare>("candidate-compare", { req_id: reqId }, candidateCompareSchema, "candidate-compare");
 
 // ---- Onboarding ----
 
@@ -845,6 +865,12 @@ export interface ResumeReviewSaveResult {
   evidence_saved: number;
   conflicts_resolved: string[];
   fit: FitRecordShape | null;
+  provenance?: {
+    artifact_ref: string;
+    file_name: string;
+    checksum_short: string;
+    source_type: string;
+  };
 }
 export interface ResumeDownloadResult {
   ok: true;
