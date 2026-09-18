@@ -64,7 +64,7 @@ describe("rbac", () => {
     expect(ROLE_LABEL.recruiter).toBe("Technical Recruiter");
     expect(ROLE_LABEL.employee).toBe("Employee");
     expect(ROLE_LABEL.candidate).toBe("Candidate");
-    expect(ROLE_LABEL.it_security).toBe("IT Security");
+    expect(ROLE_LABEL.it_security).toBe("IT Provisioning");
   });
 
   it("it_security sees onboarding but no HR/recruitment powers", () => {
@@ -74,6 +74,10 @@ describe("rbac", () => {
     expect(can("it_security", "approve_recommendations")).toBe(false);
     expect(can("it_security", "reset_demo")).toBe(false);
     expect(resolveLanding("it_security")).toBe("/app");
+  });
+
+  it("Batch 3: administrators land on the operational home, not access administration", () => {
+    expect(resolveLanding("hr_executive")).toBe("/app");
   });
 
   it("role union is stable", () => {

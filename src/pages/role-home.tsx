@@ -6,10 +6,13 @@ import {
   Activity,
   AlertTriangle,
   ArrowRight,
+  CalendarDays,
   CheckCircle2,
   Database,
   History,
+  Hourglass,
   Loader2,
+  Server,
   ShieldAlert,
   ShieldCheck,
   UserCheck,
@@ -25,9 +28,10 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { can, ROLE_LABEL, type Role } from "@/lib/rbac";
-import { actionTaskUpdate, fetchMyWork, type ActionTaskRow, type Twin } from "@/lib/api";
-import { decode, planTaskViewSchema, planViewSchema, requisitionRowSchema, type RequisitionRow } from "@/lib/contracts";
+import { actionTaskUpdate, fetchMyWork, onboardingQueue, type ActionTaskRow, type Twin } from "@/lib/api";
+import { decode, planTaskViewSchema, planViewSchema, requisitionRowSchema, type OnboardingQueue, type RequisitionRow } from "@/lib/contracts";
 import { nextActionTask, derivePlanCounts, TASK_STATE_META } from "@/lib/onboarding-progress";
+import { deriveItQueueCounts, upcomingStarts } from "@/lib/it-provisioning";
 
 // My Action Tasks: tasks assigned to me from dispatched recommendations
 // (Phase 11). Owners act on their own tasks with evidence + rationale.
@@ -318,6 +322,169 @@ function AdminGovernancePanel() {
   );
 }
 
+// Batch 3 (3.2/3.3): a compact, role-scoped "needs attention" surface above the
+// shared dashboard. HR (and administrators) see organization journeys; managers
+// see their own team — both come from the same server-scoped queue function.
+function JourneyAttentionStrip({
+  queue,
+  title,
+  scopeLabel,
+}: {
+  queue: OnboardingQueue | null;
+  title: string;
+  scopeLabel: string;
+}) {
+  const journeys = (queue?.journeys ?? []).filter((j) => j.pending_manager_approval || j.pending_hr_approval || j.stalled || j.overdue);
+  const pending = journeys.filter((j) => j.pending_manager_approval || j.pending_hr_approval).length;
+  const stalled = journeys.filter((j) => j.stalled).length;
+  const overdue = journeys.filter((j) => j.overdue).length;
+  if (journeys.length === 0) return null;
+
+  return (
+    <section aria-label={title} className="mt-10">
+      <div className="flex flex-wrap items-center gap-2">
+        <h2 className="flex items-center gap-2 text-lg font-extrabold tracking-tight text-foreground">
+          <AlertTriangle className="h-5 w-5 text-accent" strokeWidth={2.5} /> {title}
+        </h2>
+        <span className="rounded-md bg-muted px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+          {scopeLabel}
+        </span>
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <div className="rounded-lg bg-white p-4 shadow-card">
+          <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Pending approval</p>
+          <p className="mt-1 text-3xl font-extrabold text-foreground">{pending}</p>
+          <p className="text-[11px] text-muted-foreground">journeys awaiting manager/HR sign-off</p>
+        </div>
+        <div className="rounded-lg bg-white p-4 shadow-card">
+          <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Stalled</p>
+          <p className="mt-1 text-3xl font-extrabold text-foreground">{stalled}</p>
+          <p className="text-[11px] text-muted-foreground">open blocker or actionable task overdue 7+ days</p>
+        </div>
+        <div className="rounded-lg bg-white p-4 shadow-card">
+          <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Overdue</p>
+          <p className="mt-1 text-3xl font-extrabold text-foreground">{overdue}</p>
+          <p className="text-[11px] text-muted-foreground">actionable task past its due date</p>
+        </div>
+      </div>
+      <div className="mt-3 flex flex-col gap-2">
+        {journeys.slice(0, 5).map((j) => (
+          <Link
+            key={j.twin_id}
+            to={`/onboarding?twin=${j.twin_id}`}
+            className="group flex flex-wrap items-center justify-between gap-2 rounded-lg bg-white p-3.5 transition-all duration-200 hover:scale-[1.01] hover:shadow-card"
+          >
+            <div className="min-w-0">
+              <p className="truncate text-sm font-bold text-foreground">{j.employee_name}</p>
+              <p className="text-xs text-muted-foreground">
+                {j.stall_reasons.length > 0
+                  ? j.stall_reasons.join(" · ")
+                  : j.pending_manager_approval
+                    ? "awaiting manager approval"
+                    : j.pending_hr_approval
+                      ? "awaiting HR approval"
+                      : `${j.overdue_count} overdue task${j.overdue_count > 1 ? "s" : ""}`}
+              </p>
+            </div>
+            <span className="flex items-center gap-1 text-xs font-bold text-primary">
+              Open journey <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-1" />
+            </span>
+          </Link>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+// Batch 3 (3.6): a focused IT Provisioning workspace — real server-scoped
+// provisioning tasks plus employee identity (name, start date, manager). No
+// readiness, gates or approvals cross the boundary into this role's home.
+function ItProvisioningPanel({ queue }: { queue: OnboardingQueue | null }) {
+  const now = new Date().toISOString();
+  const items = queue?.provisioning ?? [];
+  const counts = deriveItQueueCounts(items, now);
+  const starts = upcomingStarts(queue?.people ?? [], now);
+  const names = new Map((queue?.people ?? []).map((p) => [p.twin_id, p.name]));
+
+  return (
+    <section aria-label="IT provisioning workspace" className="mt-10">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="flex items-center gap-2 text-lg font-extrabold tracking-tight text-foreground">
+            <Server className="h-5 w-5 text-primary" strokeWidth={2.5} /> Provisioning workspace
+          </h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Laptop, SSO and access work that unblocks approved new-hire onboarding — complete tasks with evidence in the onboarding center.
+          </p>
+        </div>
+        <Link to="/onboarding" className="flex items-center gap-1 text-sm font-bold text-primary">
+          Open provisioning queue <ArrowRight className="h-4 w-4" />
+        </Link>
+      </div>
+
+      <div className="mt-4 grid grid-cols-2 gap-4 lg:grid-cols-5">
+        <StatBlock label="Ready" value={counts.ready} tone="primary" definition="Tasks with prerequisites satisfied, ready to action." />
+        <StatBlock label="In progress" value={counts.in_progress} tone="dark" definition="Started but not yet completed with evidence." />
+        <StatBlock label="Blocked" value={counts.blocked} tone="muted" definition="Waiting on an upstream dependency or a reported blocker." />
+        <StatBlock label="Overdue" value={counts.overdue} tone="muted" definition="Actionable task past its due date." />
+        <StatBlock label="Completed" value={counts.done} tone="subtle" definition="Accepted provisioning work across in-scope journeys." />
+      </div>
+
+      {starts.length > 0 && (
+        <div className="mt-4 rounded-lg bg-white p-4 shadow-card">
+          <h3 className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
+            <CalendarDays className="h-3.5 w-3.5" /> Upcoming start dates (next 14 days)
+          </h3>
+          <ul className="mt-2 flex flex-col divide-y divide-border">
+            {starts.map((s) => (
+              <li key={s.twin_id} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
+                <span className="font-bold text-foreground">{s.name}</span>
+                <span className="text-xs text-muted-foreground">
+                  starts {new Date(s.start_date).toLocaleDateString()}
+                  {s.manager_name ? ` · manager ${s.manager_name}` : ""}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <div className="mt-4 rounded-lg bg-white p-5 shadow-card">
+        <div className="flex items-center gap-2">
+          <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Provisioning & access tasks</p>
+          <span className="rounded-md bg-foreground px-2 py-0.5 text-[10px] font-bold text-white">{items.length}</span>
+        </div>
+        {items.length === 0 ? (
+          <p className="mt-3 text-sm text-muted-foreground">
+            No provisioning or access tasks are waiting right now. New-hire work appears here once their plan is approved.
+          </p>
+        ) : (
+          <ul className="mt-3 flex flex-col divide-y divide-border">
+            {items.map((t) => {
+              const chip = TASK_STATE_META[t.state as keyof typeof TASK_STATE_META] ?? TASK_STATE_META.pending;
+              return (
+                <li key={`${t.twin_id}-${t.task_code}`} className="flex flex-wrap items-center justify-between gap-2 py-2.5">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-foreground">{t.title}</p>
+                    <p className="text-[11px] text-muted-foreground">
+                      for {names.get(t.twin_id) ?? "employee"}
+                      {t.blockers && t.blockers.length > 0 ? ` · ${t.blockers.length} blocker(s)` : ""}
+                      {t.depends_on && t.depends_on.length > 0 ? ` · waits on ${t.depends_on.join(", ")}` : ""}
+                      {t.evidence_requirements && t.evidence_requirements.length > 0 ? " · evidence required" : ""}
+                      {` · due ${t.due_date ? new Date(t.due_date).toLocaleDateString() : "—"}`}
+                    </p>
+                  </div>
+                  <span className={`shrink-0 rounded-md px-2.5 py-1 text-xs font-bold uppercase tracking-wider ${chip.cls}`}>{chip.label}</span>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+    </section>
+  );
+}
+
 export default function RoleHome() {
   const { role, twin, user } = useAuth();
 
@@ -334,6 +501,16 @@ export default function RoleHome() {
     queryKey: ["my-work", user?.id ?? "anon"],
     enabled: !!user,
     queryFn: fetchMyWork,
+    retry: false,
+  });
+
+  // Batch 3: role-scoped onboarding queue — drives the attention strip
+  // (HR/admin/manager), the employee "waiting on" line, and the IT
+  // provisioning workspace. Same canonical function as the onboarding center.
+  const queue = useQuery({
+    queryKey: ["ob-queue", user?.id ?? "anon"],
+    enabled: !!user && ["employee", "hr_executive", "hr_partner", "manager", "it_security"].includes(role ?? ""),
+    queryFn: onboardingQueue,
     retry: false,
   });
 
@@ -399,12 +576,14 @@ export default function RoleHome() {
     queryKey: ["recruiter", twin?.id ?? "anon"],
     enabled: role === "recruiter",
     queryFn: async () => {
-      const [reqsRes, candidatesRes] = await Promise.all([
+      const [reqsRes, candidatesRes, sessionsRes] = await Promise.all([
         supabase.from("job_requisitions").select("*"),
         supabase.from("digital_twins").select("id, name, role, status").eq("role", "candidate"),
+        supabase.from("candidate_sessions").select("status"),
       ]);
       const reqs = (reqsRes.data ?? []).map((r) => decode(requisitionRowSchema, r, "requisition-row"));
       const candidates = (candidatesRes.data ?? []) as { id: string; name: string }[];
+      const sessions = (sessionsRes.data ?? []) as { status: string }[];
       const openReqs = reqs
         .filter((r) => r.status === "open")
         .map((r) => ({ ...r, applicants: [...(r.applicants ?? [])].sort((a, b) => (b.match_score ?? 0) - (a.match_score ?? 0)) }));
@@ -413,7 +592,11 @@ export default function RoleHome() {
       const scored = applicants.filter((a) => typeof a.match_score === "number");
       const avgScore =
         scored.length > 0 ? scored.reduce((s, a) => s + (a.match_score ?? 0), 0) / scored.length : null;
-      return { reqs, openReqs, candidates, applicants, finalRound, avgScore };
+      // Batch 3 (3.4): interviews/tests are discoverable from the home — real
+      // session rows, never a bare "no assessments" when reads fail.
+      const invitationsAwaiting = sessions.filter((s) => s.status === "invited" || s.status === "in_progress").length;
+      const submittedForReview = sessions.filter((s) => s.status === "submitted").length;
+      return { reqs, openReqs, candidates, applicants, finalRound, avgScore, invitationsAwaiting, submittedForReview };
     },
   });
 
@@ -464,9 +647,17 @@ export default function RoleHome() {
         </section>
 
         {["hr_executive", "hr_partner", "manager"].includes(role) ? (
-          <div className="mt-10">
-            <ExecutiveDashboard />
-          </div>
+          <>
+            {/* Batch 3: role-scoped attention first (HR org / manager team), then the shared dashboard. */}
+            <JourneyAttentionStrip
+              queue={queue.data ?? null}
+              title={role === "manager" ? "My team needs attention" : "Onboarding needs attention"}
+              scopeLabel={role === "manager" ? "Team scope" : "Organization scope"}
+            />
+            <div className="mt-10">
+              <ExecutiveDashboard />
+            </div>
+          </>
         ) : (
           <>
             {/* Role-scoped stats */}
@@ -486,6 +677,18 @@ export default function RoleHome() {
                     value={recruiterData.data?.avgScore !== null && recruiterData.data?.avgScore !== undefined ? `${Math.round(recruiterData.data.avgScore * 100)}%` : null}
                     tone="subtle"
                     definition="Mean Skill Graph match score across open-requisition applicants."
+                  />
+                  <StatBlock
+                    label="Invitations awaiting response"
+                    value={recruiterData.data?.invitationsAwaiting ?? null}
+                    tone="outline"
+                    definition="Candidate sessions still invited or in progress — real rows, linked to the recruitment workspace."
+                  />
+                  <StatBlock
+                    label="Submitted for review"
+                    value={recruiterData.data?.submittedForReview ?? null}
+                    tone="outline"
+                    definition="Candidate assessments/interviews submitted and awaiting human review."
                   />
                 </>
               )}
@@ -620,6 +823,20 @@ export default function RoleHome() {
                           <span className="font-bold">Next up:</span> {nextTask.title}
                         </p>
                       )}
+                      {queue.data && queue.data.journeys[0] && queue.data.journeys[0].waiting_on.length > 0 && (
+                        <div className="mt-4 rounded-md bg-accent/10 px-4 py-3 text-sm text-foreground">
+                          <p className="font-bold">Waiting on others</p>
+                          <ul className="mt-1.5 flex flex-col gap-1">
+                            {queue.data.journeys[0].waiting_on.map((w) => (
+                              <li key={w.task_code} className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                                <Hourglass className="h-3.5 w-3.5 shrink-0 text-accent" />
+                                <span className="font-semibold text-foreground">{w.title}</span>
+                                <span className="capitalize">({w.owner_role.replace(/_/g, " ")})</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <p className="mt-4 text-sm text-muted-foreground">No active onboarding plan yet.</p>
@@ -627,16 +844,7 @@ export default function RoleHome() {
                 </div>
               )}
 
-              {role === "it_security" && (
-                <div className="rounded-lg bg-muted p-6">
-                  <ShieldCheck className="h-6 w-6 text-primary" strokeWidth={2.5} />
-                  <h3 className="mt-3 text-base font-bold text-foreground">Provisioning service</h3>
-                  <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
-                    Laptop, SSO, and access tasks across authorized new hires appear in your work feed —
-                    complete them with evidence in the onboarding center.
-                  </p>
-                </div>
-              )}
+              {role === "it_security" && <ItProvisioningPanel queue={queue.data ?? null} />}
             </div>
           </>
         )}

@@ -507,3 +507,19 @@ New reviewer spec ("Role workspaces, authorization and connected HR logic repair
 **Browser verification:** not performed (auth-gated pages cannot be screenshotted). Live API verification via `scripts/verify-batch-2.mjs` — 17/17 pass; demo left pristine.
 
 **Remaining:** Batch 3 (role-specific workspaces), Batch 4 (IT onboarding handoff), Batch 5 (interview/assessment discoverability), Batch 6 (cross-module handoffs), Batch 7 (fixtures), Batch 8 (honest coverage matrix), Batch 9 (regression + release proof).
+
+## 42. Role workspaces spec — Batch 3 (role-specific workspaces)
+
+- **3.1 — Administrator operational home: COMPLETED.** `ROLE_LANDING.hr_executive` changed from `/admin/access` to `/app` (unit-tested). Admins now land on the operational home: the shared org-scoped dashboard (pending decisions, review cases, blocked journeys), the governance panel (access/audit/health/quality), and the new org-scope attention strip. The internal `hr_executive` → "Administrator" mapping is documented and unchanged.
+- **3.2 / 3.3 — HR + manager attention surfaces: COMPLETED.** New shared `JourneyAttentionStrip` above the dashboard, fed by the same server-scoped queue function: HR partners and administrators see organization journeys, managers see their team — pending-approval / stalled / overdue counts plus a top-5 actionable list with deep links (`/onboarding?twin=`). No new modules; same engine, different scope and labels ("My team needs attention" vs "Onboarding needs attention").
+- **3.4 — Recruiter discoverability: COMPLETED (home counts).** The recruiter home now shows real candidate-session rows: "Invitations awaiting response" (invited/in_progress) and "Submitted for review" (submitted) — genuine counts from the RLS-scoped `candidate_sessions` table, never "no assessments" on a failed read. Deep-dive queueing/UX lands in Batch 5.
+- **3.5 — Employee home: COMPLETED (waiting-on line).** The onboarding panel now shows "Waiting on others" from the canonical queue's `waiting_on` refs (e.g., laptop/SSO owned by IT, orientation by manager) with owner labels.
+- **3.6 — IT Provisioning workspace + label: COMPLETED.** Role label renamed to "IT Provisioning" (badge "IT PROV"); the generic filler card is replaced by a real workspace: ready/in-progress/blocked/overdue/completed counts, upcoming start dates (next 14 days) with manager, and the full provisioning/access task list with employee, due date, blocker, dependency and evidence-required hints — all from the Batch 2 minimal IT projection. New pure helpers `deriveItQueueCounts` + `upcomingStarts` in `src/lib/it-provisioning.ts` (tested).
+- **3.7 — Candidate: unchanged** (token-scoped status/assessment flow, strict scope).
+- **3.8 — Shared design: unchanged** — all panels reuse the existing StatBlock/queue/design-system tokens; differentiation is by scope, content and actions only.
+
+**Tests run:** `pnpm check` green — 385 tests / 37 files (+4 rbac/landing + it-provisioning helpers), 44 bundles, no drift. `pnpm build` green. No backend function changed this batch (data paths reused from Batch 2).
+
+**Browser verification:** not performed (auth-gated pages cannot be screenshotted). Live API verification via `scripts/verify-batch-3.mjs` — 12/12 (Elena/IT: minimal projection with people+provisioning context, IT direct reads of plans but zero evidence/fits; recruiter session counts resolve — 6 invited, 0 submitted is a genuine count, not a read failure). Batches 1–2 re-run green (10/10, 17/17). Demo left pristine.
+
+**Remaining:** Batch 4 (IT onboarding handoff: task completion + propagation + fixtures), Batch 5 (interview/assessment discoverability UX), Batch 6 (cross-module handoffs), Batch 7 (role-relevant fictional data), Batch 8 (honest coverage matrix), Batch 9 (regression + release proof).

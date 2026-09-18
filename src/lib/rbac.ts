@@ -38,7 +38,9 @@ export const ROLE_LABEL: Record<Role, string> = {
   recruiter: "Technical Recruiter",
   employee: "Employee",
   candidate: "Candidate",
-  it_security: "IT Security",
+  // Batch 3 (3.6): the IT persona runs the provisioning handoff, not a
+  // general security module — the label says what the workspace does.
+  it_security: "IT Provisioning",
 };
 
 /** Short badge text shown on quick-access cards (matches the reference UI). */
@@ -49,7 +51,7 @@ export const ROLE_BADGE_LABEL: Record<Role, string> = {
   recruiter: "RECRUITER",
   employee: "EMPLOYEE",
   candidate: "CANDIDATE",
-  it_security: "IT SEC",
+  it_security: "IT PROV",
 };
 
 // Neutral role badges — green/amber/red stay reserved for semantic states,
@@ -70,7 +72,9 @@ export const ROLE_BADGE_CLASS: Record<Role, string> = {
  * (RLS policies + backend functions); this map only drives client routing.
  */
 export const ROLE_LANDING: Record<Role, string> = {
-  hr_executive: "/admin/access",
+  // Batch 3 (3.1): administrators land on the operational home (governance
+  // panel + pending decisions + blockers), not on access administration.
+  hr_executive: "/app",
   hr_partner: "/app",
   manager: "/app",
   recruiter: "/app",
