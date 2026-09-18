@@ -97,6 +97,8 @@ export default function AdminAccess() {
   const [busySuspend, setBusySuspend] = useState(false);
 
   const [auditOpen, setAuditOpen] = useState(false);
+  const [inviteToken, setInviteToken] = useState<string | null>(null);
+  const [invitedEmail, setInvitedEmail] = useState<string | null>(null);
 
   const members = useQuery({
     queryKey: ["admin-members", twin?.id ?? "anon"],
@@ -109,22 +111,48 @@ export default function AdminAccess() {
     },
   });
 
+  // Merged security audit feed: access-management actions + candidate
+  // conversions + policy waivers, sorted newest first.
   const audit = useQuery({
     queryKey: ["admin-audit", twin?.id ?? "anon"],
     queryFn: async () => {
-      const { data } = await supabase
-        .from("admin_actions")
-        .select("id, action, actor_twin_id, target_twin_id, target_email, before_data, after_data, reason, created_at")
-        .order("created_at", { ascending: false })
-        .limit(100);
-      return (data ?? []) as AdminActionRow[];
+      const [adm, conv, wv] = await Promise.all([
+        supabase
+          .from("admin_actions")
+          .select("id, action, actor_twin_id, target_twin_id, target_email, before_data, after_data, reason, created_at")
+          .order("created_at", { ascending: false })
+          .limit(60),
+        supabase
+          .from("application_stage_events")
+          .select("id, new_stage, reason, at")
+          .in("new_stage", ["selected", "rejected"])
+          .order("at", { ascending: false })
+          .limit(30),
+        supabase
+          .from("onboarding_tasks")
+          .select("id, task_code, waiver, updated_at")
+          .not("waiver", "is", null)
+          .order("updated_at", { ascending: false })
+          .limit(30),
+      ]);
+      const events: { id: string; kind: string; label: string; detail: string; reason: string | null; at: string }[] = [];
+      for (const a of (adm.data ?? []) as AdminActionRow[]) {
+        events.push({ id: `adm:${a.id}`, kind: a.action, label: (ACTION_LABEL[a.action] ?? a.action).toUpperCase(), detail: a.target_email ?? "member", reason: a.reason, at: a.created_at });
+      }
+      for (const c of (conv.data ?? []) as { id: string; new_stage: string; reason: string | null; at: string }[]) {
+        events.push({ id: `conv:${c.id}`, kind: "convert", label: c.new_stage === "selected" ? "CANDIDATE_CONVERTED" : "CANDIDATE_DECISION", detail: c.reason ?? "application decision", reason: null, at: c.at });
+      }
+      for (const w of (wv.data ?? []) as { id: string; task_code: string; waiver?: { by_name?: string; reason?: string; policy_basis?: { doc_code?: string } }; updated_at: string }[]) {
+        events.push({ id: `wv:${w.id}`, kind: "waive", label: "POLICY_WAIVED", detail: `${w.task_code} · ${w.waiver?.by_name ?? "manager"}${w.waiver?.policy_basis?.doc_code ? ` · ${w.waiver.policy_basis.doc_code}` : ""}`, reason: w.waiver?.reason ?? null, at: w.updated_at });
+      }
+      return events.sort((a, b) => String(b.at).localeCompare(String(a.at))).slice(0, 100);
     },
   });
 
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase();
     return (members.data ?? []).filter((m) => {
-      if (m.role === "candidate") return false; // candidates live in the recruitment pipeline, not the roster
+      if (m.role === "candidate" && roleFilter !== "candidate") return false; // candidates shown only when explicitly filtered
       if (roleFilter !== "all" && m.role !== roleFilter) return false;
       if (statusFilter === "suspended" && m.status !== "suspended") return false;
       if (statusFilter === "active" && m.status === "suspended") return false;
@@ -146,10 +174,13 @@ export default function AdminAccess() {
     setBusyInvite(true);
     try {
       const res = await adminAccessInvite(invEmail.trim(), invRole, invName.trim() || invEmail.trim().split("@")[0]);
-      toast.success(`${res.email} invited as ${res.role}.`);
-      setInviteOpen(false);
+      // Demo invitation token — fictional artifact for the walkthrough.
+      const token = `WS-INV-${Math.random().toString(36).slice(2, 6).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+      setInviteToken(token);
+      setInvitedEmail(res.email);
       setInvEmail("");
       setInvName("");
+      toast.success(`${res.email} invited as ${res.role}.`);
       invalidate();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Invite failed");
@@ -223,7 +254,7 @@ export default function AdminAccess() {
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div className="flex flex-col gap-2">
             <span className="text-xs font-bold uppercase tracking-wider text-primary">Platform administration</span>
-            <h1 className="text-3xl font-extrabold tracking-tight text-foreground md:text-4xl">Access & users</h1>
+            <h1 className="text-3xl font-extrabold tracking-tight text-foreground md:text-4xl">Platform Access & Governance Console</h1>
             <p className="max-w-2xl text-muted-foreground">
               Member directory, invitations, role changes and account suspension — every action is
               written to the append-only security audit log. All demo data is fictional.
@@ -265,6 +296,7 @@ export default function AdminAccess() {
             ))}
             <option value="hr_partner">hr partner</option>
             <option value="it_security">it security</option>
+            <option value="candidate">candidate</option>
           </select>
           <select
             value={statusFilter}
@@ -321,8 +353,8 @@ export default function AdminAccess() {
                       <div className="flex justify-end">
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
-                            <Button size="sm" variant="secondary">
-                              <UserCog className="h-4 w-4" /> Manage
+                            <Button size="sm" variant="secondary" disabled={m.role === "candidate"}>
+                              <UserCog className="h-4 w-4" /> {m.role === "candidate" ? "Pipeline only" : "Manage"}
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end" className="w-56">
@@ -414,10 +446,26 @@ export default function AdminAccess() {
             <p className="text-xs text-muted-foreground">
               Invited members sign in with the demo password and can change their role later. Fictional demo account.
             </p>
-            <Button onClick={() => void doInvite()} disabled={busyInvite}>
-              {busyInvite ? <Loader2 className="h-4 w-4 animate-spin" /> : <MailPlus className="h-4 w-4" />}
-              Send invitation
-            </Button>
+            {inviteToken && invitedEmail && (
+              <div className="rounded-lg bg-muted p-4">
+                <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Invitation issued · {invitedEmail}</p>
+                <p className="mt-1 select-all font-mono text-sm font-bold text-primary">{inviteToken}</p>
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  Demo invitation token — share it with the invitee. The account is already created with the demo password.
+                </p>
+              </div>
+            )}
+            <div className="flex flex-wrap gap-2">
+              <Button onClick={() => void doInvite()} disabled={busyInvite}>
+                {busyInvite ? <Loader2 className="h-4 w-4 animate-spin" /> : <MailPlus className="h-4 w-4" />}
+                Issue invitation
+              </Button>
+              {inviteToken && (
+                <Button variant="outline" onClick={() => { setInviteOpen(false); setInviteToken(null); setInvitedEmail(null); }}>
+                  Close
+                </Button>
+              )}
+            </div>
           </div>
         </DialogContent>
       </Dialog>
@@ -507,7 +555,7 @@ export default function AdminAccess() {
           </DrawerHeader>
           <div className="flex max-h-[65vh] flex-col gap-2 overflow-y-auto px-6 pb-6">
             <p className="text-xs text-muted-foreground">
-              Append-only record of access-management actions, in reverse chronological order.
+              Security events across the organization — access management, candidate conversions and policy waivers — newest first.
             </p>
             {audit.isLoading && (
               <div className="flex items-center gap-2 rounded-lg bg-muted p-4 text-sm text-muted-foreground">
@@ -515,22 +563,19 @@ export default function AdminAccess() {
               </div>
             )}
             {audit.data && audit.data.length === 0 && (
-              <p className="rounded-lg bg-muted p-4 text-sm text-muted-foreground">No access-management actions recorded yet.</p>
+              <p className="rounded-lg bg-muted p-4 text-sm text-muted-foreground">No security events recorded yet.</p>
             )}
-            {(audit.data ?? []).map((a) => (
-              <div key={a.id} className="rounded-lg bg-muted p-4">
+            {(audit.data ?? []).map((ev) => (
+              <div key={ev.id} className="rounded-lg bg-muted p-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-sm font-bold text-foreground">
-                    {ACTION_LABEL[a.action] ?? a.action} · {a.target_email ?? "member"}
-                  </p>
-                  <span className="text-xs text-muted-foreground">{new Date(a.created_at).toLocaleString()}</span>
+                  <span className="rounded bg-foreground px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">
+                    {ev.kind}
+                  </span>
+                  <span className="text-xs text-muted-foreground">{new Date(ev.at).toLocaleString()}</span>
                 </div>
-                {a.before_data && Object.keys(a.before_data).length > 0 && (
-                  <p className="mt-1 font-mono text-xs text-muted-foreground">
-                    {JSON.stringify(a.before_data)} → {JSON.stringify(a.after_data)}
-                  </p>
-                )}
-                {a.reason && <p className="mt-1 text-xs text-foreground">{a.reason}</p>}
+                <p className="mt-1.5 text-sm font-bold text-foreground">{ev.label}</p>
+                <p className="text-xs text-muted-foreground">{ev.detail}</p>
+                {ev.reason && <p className="mt-1 text-xs text-foreground">{ev.reason}</p>}
               </div>
             ))}
           </div>

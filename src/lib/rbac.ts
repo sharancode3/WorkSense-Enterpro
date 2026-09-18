@@ -67,7 +67,7 @@ export const ROLE_BADGE_CLASS: Record<Role, string> = {
  * (RLS policies + backend functions); this map only drives client routing.
  */
 export const ROLE_LANDING: Record<Role, string> = {
-  hr_executive: "/app",
+  hr_executive: "/admin/access",
   hr_partner: "/app",
   manager: "/app",
   recruiter: "/app",
