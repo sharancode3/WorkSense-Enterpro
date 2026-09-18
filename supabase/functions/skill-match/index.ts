@@ -411,6 +411,48 @@ export function fitKey(record: { target_type: string; target_id: string; scenari
   return `${record.target_type}|${record.target_id}|${record.scenario}`;
 }
 
+/**
+ * Skill-match authorization — a pure, role-scoped decision shared by the
+ * backend function (server enforcement) and unit tests. Deliberately does not
+ * decide ownership on the client.
+ *
+ * Scopes:
+ *   org        — administrator (any twin) / HR partner (workforce twins only)
+ *   candidates — recruiter (candidate twins only)
+ *   team       — manager (direct/recursive reports, self handled separately)
+ *   self       — manager self / employee self
+ *   denied     — everything else (IT, candidate callers, cross-org, out of scope)
+ */
+export type SkillMatchScope = "org" | "candidates" | "team" | "self" | "denied";
+
+export interface AuthorizeSkillMatchArgs {
+  callerRole: string;
+  callerOrgId: string;
+  callerTwinId: string;
+  targetOrgId: string;
+  targetTwinId: string;
+  targetRole: string;
+  /** Pre-resolved subtree check (manager only); a failed lookup must be false. */
+  targetIsInCallerTeam: boolean;
+}
+
+export function authorizeSkillMatch(args: AuthorizeSkillMatchArgs): SkillMatchScope {
+  const { callerRole, callerOrgId, callerTwinId, targetOrgId, targetTwinId, targetRole, targetIsInCallerTeam } = args;
+  if (!callerOrgId || targetOrgId !== callerOrgId) return "denied";
+
+  if (callerRole === "hr_executive") return "org";
+  if (callerRole === "hr_partner") return targetRole === "candidate" ? "denied" : "org";
+  if (callerRole === "recruiter") return targetRole === "candidate" ? "candidates" : "denied";
+  if (callerRole === "manager") {
+    if (targetTwinId === callerTwinId) return "self";
+    return targetIsInCallerTeam ? "team" : "denied";
+  }
+  if (callerRole === "employee") {
+    return targetTwinId === callerTwinId ? "self" : "denied";
+  }
+  return "denied";
+}
+
 
 // ---------------------------------------------------------------------------
 // WorkSense evidence model — normalized source of truth for skills.
@@ -665,9 +707,14 @@ function jsonResponse(body: unknown, status = 200) {
   });
 }
 
-/** Team membership check (own row + reports subtree) via service-role reads. */
-async function isTeamMember(supabase, rootTwinId: string, checkTwinId: string): Promise<boolean> {
-  const { data } = await supabase.from("digital_twins").select("id, manager_id");
+/** Team membership check (own row + reports subtree) via service-role reads,
+ *  restricted to the caller's own organization. A failed lookup yields an
+ *  empty tree, so it can never be mistaken for permission. */
+async function isTeamMember(supabase, rootTwinId: string, rootOrgId: string, checkTwinId: string): Promise<boolean> {
+  const { data } = await supabase
+    .from("digital_twins")
+    .select("id, org_id, manager_id")
+    .eq("org_id", rootOrgId);
   const children = new Map<string, string[]>();
   for (const t of data ?? []) {
     if (t.manager_id) {
@@ -729,24 +776,24 @@ Deno.serve(async (req) => {
     return jsonResponse({ error: "NOT_FOUND", message: "DigitalTwin not found." }, 404);
   }
 
-  // Visibility: HR (same org) sees anyone; recruiter sees candidates (their
-  // core workflow — the Fit card in the Recruitment Studio); manager sees own
-  // team; employee self.
-  let allowed = false;
-  let scope: "org" | "candidates" | "team" | "self";
-  if (caller.role === "hr_executive" && caller.org_id === targetTwin.org_id) {
-    allowed = true;
-    scope = "org";
-  } else if (caller.role === "recruiter" && caller.org_id === targetTwin.org_id && targetTwin.role === "candidate") {
-    allowed = true;
-    scope = "candidates";
-  } else if (caller.role === "manager" || caller.role === "employee") {
-    allowed = targetTwin.id === caller.id || (await isTeamMember(supabase, caller.id, targetTwin.id));
-    scope = targetTwin.id === caller.id ? "self" : "team";
-  } else {
-    scope = "org";
-  }
-  if (!allowed) {
+  // Visibility (server-side; never decided on the client):
+  //   hr_executive  — authorized organization scope.
+  //   hr_partner    — authorized organization workforce scope (no candidates).
+  //   recruiter     — authorized candidates only.
+  //   manager       — self or permitted team member (same org).
+  //   employee      — self (same org).
+  //   everything else (IT, candidate callers, cross-org) — denied.
+  const scope = authorizeSkillMatch({
+    callerRole: caller.role,
+    callerOrgId: caller.org_id,
+    callerTwinId: caller.id,
+    targetOrgId: targetTwin.org_id,
+    targetTwinId: targetTwin.id,
+    targetRole: targetTwin.role,
+    targetIsInCallerTeam:
+      caller.role === "manager" ? await isTeamMember(supabase, caller.id, caller.org_id, targetTwin.id) : false,
+  });
+  if (scope === "denied") {
     return jsonResponse({ error: "FORBIDDEN", message: "You may only view matches for yourself, your team, or authorized candidates." }, 403);
   }
 

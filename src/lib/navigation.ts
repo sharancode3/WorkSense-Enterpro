@@ -42,7 +42,9 @@ export interface NavSection {
 }
 
 const ITEMS: NavItem[] = [
-  { label: "Overview", to: "/app", icon: Gauge, show: () => true },
+  // Overview is the landing for every staff role; candidates have their own
+  // status workspace and never render this app shell.
+  { label: "Overview", to: "/app", icon: Gauge, show: (r) => r !== "candidate" },
   { label: "Onboarding", to: "/onboarding", icon: ListChecks, show: (r) => can(r, "view_onboarding") },
   { label: "Recommendation hub", to: "/hub", icon: Layers, show: (r) => can(r, "approve_recommendations") },
   { label: "Workforce review", to: "/workforce", icon: Users, show: (r) => can(r, "view_all_workforce") || can(r, "view_team") || r === "employee" },
@@ -102,9 +104,21 @@ export const NAV_SECTIONS: NavSection[] = [
   },
 ];
 
-/** Sections with at least one visible item for the role. */
+/**
+ * Sections filtered to the items this role may actually open. Each item's
+ * permission is evaluated individually (a section is not revealed by one
+ * visible sibling), empty sections are dropped, and the original navigation
+ * configuration is never mutated. The same model drives the expanded sidebar,
+ * the minimized rail and the mobile drawer.
+ */
 export function visibleSections(role: Role): NavSection[] {
-  return NAV_SECTIONS.filter((s) => s.items.some((i) => i.show(role)));
+  const out: NavSection[] = [];
+  for (const s of NAV_SECTIONS) {
+    const items = s.items.filter((i) => i.show(role));
+    if (items.length === 0) continue;
+    out.push({ ...s, items });
+  }
+  return out;
 }
 
 /**

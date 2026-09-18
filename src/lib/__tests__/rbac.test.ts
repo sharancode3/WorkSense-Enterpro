@@ -15,11 +15,12 @@ describe("rbac", () => {
     expect(can("hr_executive", "reset_demo")).toBe(true);
   });
 
-  it("hr_partner (HR Business Partner) sees the workforce but cannot reset or explore the graph", () => {
+  it("hr_partner (HR Business Partner) sees the workforce and skill development but cannot reset or recruit", () => {
     expect(can("hr_partner", "view_all_workforce")).toBe(true);
     expect(can("hr_partner", "approve_recommendations")).toBe(true);
+    // Batch 1.2: HR partner skill-development access for org workforce.
+    expect(can("hr_partner", "explore_skill_graph")).toBe(true);
     expect(can("hr_partner", "reset_demo")).toBe(false);
-    expect(can("hr_partner", "explore_skill_graph")).toBe(false);
     expect(can("hr_partner", "manage_recruitment")).toBe(false);
   });
 
@@ -87,6 +88,8 @@ describe("Phase 8 — skill development access", () => {
     expect(can("recruiter", "explore_skill_graph")).toBe(true);
     expect(can("employee", "explore_skill_graph")).toBe(true);
     expect(can("hr_executive", "explore_skill_graph")).toBe(true);
+    // Batch 1.2: HR Business Partner also has org-workforce skill development.
+    expect(can("hr_partner", "explore_skill_graph")).toBe(true);
     expect(can("it_security", "explore_skill_graph")).toBe(false);
   });
 });

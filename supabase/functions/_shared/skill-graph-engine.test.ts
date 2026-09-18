@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  authorizeSkillMatch,
   claimHash,
   computeFit,
   DEFAULT_EVIDENCE_THRESHOLD,
@@ -395,5 +396,63 @@ describe("skill-graph-engine (Phase 8 — evidence-based development)", () => {
     expect(claimHash([claim("Go", 4, "high")])).not.toBe(claimHash([claim("Go", 3, "high")]));
     expect(requisitionContentHash([req("Go", 4)], [], 3)).toBe(requisitionContentHash([req("Go", 4)], [], 3));
     expect(requisitionContentHash([req("Go", 4)], [], 3)).not.toBe(requisitionContentHash([req("Go", 5)], [], 3));
+  });
+});
+
+describe("authorizeSkillMatch (Batch 1.3)", () => {
+  const org = "org-1";
+  const other = "org-2";
+  const me = "twin-me";
+  const teammate = "twin-team";
+  const stranger = "twin-stranger";
+
+  const args = (over: Partial<Parameters<typeof authorizeSkillMatch>[0]>) =>
+    ({
+      callerRole: "employee",
+      callerOrgId: org,
+      callerTwinId: me,
+      targetOrgId: org,
+      targetTwinId: stranger,
+      targetRole: "employee",
+      targetIsInCallerTeam: false,
+      ...over,
+    });
+
+  it("hr_partner: same-org workforce allowed, candidates and cross-org denied", () => {
+    expect(authorizeSkillMatch(args({ callerRole: "hr_partner", targetRole: "employee" }))).toBe("org");
+    expect(authorizeSkillMatch(args({ callerRole: "hr_partner", targetRole: "manager" }))).toBe("org");
+    expect(authorizeSkillMatch(args({ callerRole: "hr_partner", targetRole: "candidate" }))).toBe("denied");
+    expect(authorizeSkillMatch(args({ callerRole: "hr_partner", targetOrgId: other }))).toBe("denied");
+  });
+
+  it("hr_executive: same-org scope regardless of target role", () => {
+    expect(authorizeSkillMatch(args({ callerRole: "hr_executive", targetRole: "candidate" }))).toBe("org");
+    expect(authorizeSkillMatch(args({ callerRole: "hr_executive", targetOrgId: other }))).toBe("denied");
+  });
+
+  it("employee: only self, same org", () => {
+    expect(authorizeSkillMatch(args({ callerRole: "employee", targetTwinId: me }))).toBe("self");
+    expect(authorizeSkillMatch(args({ callerRole: "employee", targetTwinId: teammate, targetIsInCallerTeam: true }))).toBe("denied");
+    expect(authorizeSkillMatch(args({ callerRole: "employee", targetTwinId: me, targetOrgId: other }))).toBe("denied");
+  });
+
+  it("manager: self or permitted team member, never outside the team", () => {
+    expect(authorizeSkillMatch(args({ callerRole: "manager", targetTwinId: me }))).toBe("self");
+    expect(authorizeSkillMatch(args({ callerRole: "manager", targetTwinId: teammate, targetIsInCallerTeam: true }))).toBe("team");
+    expect(authorizeSkillMatch(args({ callerRole: "manager", targetTwinId: stranger, targetIsInCallerTeam: false }))).toBe("denied");
+    // Cross-org team membership is not honored.
+    expect(authorizeSkillMatch(args({ callerRole: "manager", targetTwinId: teammate, targetOrgId: other, targetIsInCallerTeam: true }))).toBe("denied");
+  });
+
+  it("recruiter: candidates only, employees and cross-org denied", () => {
+    expect(authorizeSkillMatch(args({ callerRole: "recruiter", targetRole: "candidate" }))).toBe("candidates");
+    expect(authorizeSkillMatch(args({ callerRole: "recruiter", targetRole: "employee" }))).toBe("denied");
+    expect(authorizeSkillMatch(args({ callerRole: "recruiter", targetRole: "candidate", targetOrgId: other }))).toBe("denied");
+  });
+
+  it("it_security and candidate callers are denied", () => {
+    expect(authorizeSkillMatch(args({ callerRole: "it_security", targetRole: "employee" }))).toBe("denied");
+    expect(authorizeSkillMatch(args({ callerRole: "it_security", targetTwinId: me }))).toBe("denied");
+    expect(authorizeSkillMatch(args({ callerRole: "candidate", targetTwinId: me, targetRole: "candidate" }))).toBe("denied");
   });
 });

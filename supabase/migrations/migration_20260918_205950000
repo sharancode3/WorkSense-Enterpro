@@ -1,0 +1,12 @@
+-- Batch 1.2: additive RLS read scope so HR partners can reach authorized organization
+-- workforce twins from the Skill Graph page. The existing twin_select policy
+-- (self / team / hr_executive) is preserved untouched; policies are OR'd.
+create policy twin_select_hr_partner_org on public.digital_twins
+for select using (
+  exists (
+    select 1 from public.current_twin() ct
+    where ct.role = 'hr_partner'
+      and ct.org_id = public.digital_twins.org_id
+  )
+  and public.digital_twins.role <> 'candidate'
+);

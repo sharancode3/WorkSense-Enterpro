@@ -4512,6 +4512,48 @@ export function fitKey(record: { target_type: string; target_id: string; scenari
   return `${record.target_type}|${record.target_id}|${record.scenario}`;
 }
 
+/**
+ * Skill-match authorization — a pure, role-scoped decision shared by the
+ * backend function (server enforcement) and unit tests. Deliberately does not
+ * decide ownership on the client.
+ *
+ * Scopes:
+ *   org        — administrator (any twin) / HR partner (workforce twins only)
+ *   candidates — recruiter (candidate twins only)
+ *   team       — manager (direct/recursive reports, self handled separately)
+ *   self       — manager self / employee self
+ *   denied     — everything else (IT, candidate callers, cross-org, out of scope)
+ */
+export type SkillMatchScope = "org" | "candidates" | "team" | "self" | "denied";
+
+export interface AuthorizeSkillMatchArgs {
+  callerRole: string;
+  callerOrgId: string;
+  callerTwinId: string;
+  targetOrgId: string;
+  targetTwinId: string;
+  targetRole: string;
+  /** Pre-resolved subtree check (manager only); a failed lookup must be false. */
+  targetIsInCallerTeam: boolean;
+}
+
+export function authorizeSkillMatch(args: AuthorizeSkillMatchArgs): SkillMatchScope {
+  const { callerRole, callerOrgId, callerTwinId, targetOrgId, targetTwinId, targetRole, targetIsInCallerTeam } = args;
+  if (!callerOrgId || targetOrgId !== callerOrgId) return "denied";
+
+  if (callerRole === "hr_executive") return "org";
+  if (callerRole === "hr_partner") return targetRole === "candidate" ? "denied" : "org";
+  if (callerRole === "recruiter") return targetRole === "candidate" ? "candidates" : "denied";
+  if (callerRole === "manager") {
+    if (targetTwinId === callerTwinId) return "self";
+    return targetIsInCallerTeam ? "team" : "denied";
+  }
+  if (callerRole === "employee") {
+    return targetTwinId === callerTwinId ? "self" : "denied";
+  }
+  return "denied";
+}
+
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
 

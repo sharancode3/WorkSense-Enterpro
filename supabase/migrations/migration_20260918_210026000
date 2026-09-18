@@ -1,0 +1,1 @@
+drop policy if exists twin_select_hr_partner_org on public.digital_twins;
