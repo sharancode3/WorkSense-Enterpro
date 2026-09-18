@@ -1,0 +1,5 @@
+alter table public.policy_escalations
+  add column response_text text,
+  add column responded_by uuid references public.digital_twins(id),
+  add column responded_at timestamptz,
+  add column history jsonb not null default '[]'::jsonb;

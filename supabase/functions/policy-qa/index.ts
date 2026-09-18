@@ -527,6 +527,90 @@ export function exclusiveQuestionTokens(question: string, candidateTexts: string
   return [...q].filter((t) => cand.has(t) && !others.has(t));
 }
 
+// ---------------------------------------------------------------------------
+// Phase 9: precedence + conflict handling.
+// ---------------------------------------------------------------------------
+
+/** A policy that is in contention for a question (one best chunk per doc). */
+export interface PolicyConflictCandidate {
+  doc_code: string;
+  title: string;
+  version: number | undefined;
+  section_code: string;
+  heading: string;
+  score: number;
+  effective_from: string | null;
+  effective_to: string | null;
+}
+
+/**
+ * Phase 9 (items 4-5): detect when TWO or more CURRENT, applicable policies are
+ * NEARLY TIED for the question — i.e. the second-best family is within a tight
+ * ratio of the best. When two different policies match almost equally well,
+ * choosing one would be arbitrary, so the caller surfaces the conflict instead
+ * of silently picking. A clearly-dominant policy (e.g. the leave doc for an
+ * annual-leave question) is not a conflict. Location/worker-type variants
+ * (POL-LVE vs POL-LVE-EU) share one family and are resolved by applicability.
+ */
+export function policyFamily(docCode: string): string {
+  return String(docCode ?? "").replace(/-(EU|US|UK|CA|DE|FR|IN|APAC)$/i, "");
+}
+
+/** Near-tie ratio: a second family within this fraction of the best is in
+ *  contention for the same answer. */
+export const CONFLICT_NEAR_TIE_RATIO = 0.9;
+
+export function detectPolicyConflict(
+  applicable: PolicyDoc[],
+  question: string,
+  minScore: number,
+  topN = 8
+): PolicyConflictCandidate[] {
+  const chunks = retrieveChunks(applicable, question, topN);
+  const bestByFamily = new Map<string, RetrievedChunk>();
+  for (const c of chunks) {
+    const family = policyFamily(c.doc_code);
+    const cur = bestByFamily.get(family);
+    if (!cur || c.score > cur.score) bestByFamily.set(family, c);
+  }
+  const sorted = [...bestByFamily.values()].sort((a, b) => b.score - a.score);
+  const best = sorted[0];
+  if (!best || best.score < minScore) return [];
+  const contenders = sorted.filter(
+    (c) => c.score >= CONFLICT_NEAR_TIE_RATIO * best.score && c.score >= 0.5
+  );
+  return contenders.map((c) => ({
+    doc_code: c.doc_code,
+    title: c.doc_title,
+    version: c.version,
+    section_code: c.section_code,
+    heading: c.heading,
+    score: +c.score.toFixed(3),
+    effective_from: c.effective_from ?? null,
+    effective_to: c.effective_to ?? null,
+  }));
+}
+
+/**
+ * Phase 9 (item 4): deterministic precedence when multiple current policies
+ * could apply — more specific applicability first, then newer effective date,
+ * then doc_code as a stable tiebreaker.
+ */
+export function resolvePrecedence(policies: PolicyDoc[]): PolicyDoc[] {
+  const specificity = (d: PolicyDoc): number => {
+    const locs = (d.applicable_locations ?? []).filter((l) => l.toLowerCase() !== "all").length;
+    const types = (d.applicable_worker_types ?? []).filter((t) => t.toLowerCase() !== "all").length;
+    return locs + types;
+  };
+  return [...(policies ?? [])].sort((a, b) => {
+    const s = specificity(b) - specificity(a);
+    if (s !== 0) return s;
+    const d = new Date(b.effective_from ?? b.effective_date ?? 0).getTime() - new Date(a.effective_from ?? a.effective_date ?? 0).getTime();
+    if (d !== 0) return d;
+    return String(a.doc_code).localeCompare(String(b.doc_code));
+  });
+}
+
 
 // ---------------------------------------------------------------------------
 // Per-task runtime schema + semantic validation for Qwen outputs.
@@ -806,6 +890,7 @@ export interface EmployeeView {
   manager_id: string | null;
   work_location?: string | null;
   worker_type?: string | null;
+  role?: string | null;
 }
 
 /** Employees can see themselves; HR roles see everyone in the org; managers
@@ -816,6 +901,15 @@ export function canViewEmployee(caller: CallerView, target: EmployeeView): boole
   if (["hr_executive", "hr_partner", "recruiter"].includes(caller.role)) return true;
   if (caller.role === "manager" && target.manager_id === caller.id) return true;
   return false;
+}
+
+/** Phase 9 (item 18): the "Employee" selector only offers people the caller may
+ *  view AND who are actual employees/managers — candidates and service users
+ *  (e.g. IT security personas) are never selectable as employees. */
+export function employeeSelectorOptions(employees: EmployeeView[], caller: CallerView): EmployeeView[] {
+  return (employees ?? []).filter(
+    (e) => canViewEmployee(caller, e) && (e.role === "employee" || e.role === "manager" || e.id === caller.id)
+  );
 }
 
 function escapeRegExp(s: string): string {
@@ -1111,6 +1205,9 @@ interface EmployeeContext {
   worker_type?: string;
   tenure_months?: number;
   join_date?: string;
+  /** Phase 9 (item 16): which fields came from saved employee records vs the
+   *  hypothetical context supplied in the request. */
+  context_source?: { location?: "saved" | "hypothetical"; worker_type?: "saved" | "hypothetical" };
 }
 
 /** Enrich citations with the source document metadata they were validated against. */
@@ -1160,6 +1257,7 @@ Deno.serve(async (req) => {
       action?: string;
       question?: string;
       employee_id?: string;
+      as_of?: string;
       context?: { location?: string; worker_type?: string; taken_days?: number; request_from?: string; request_to?: string };
     } = {};
     try {
@@ -1172,13 +1270,15 @@ Deno.serve(async (req) => {
     if (body.action === "context") {
       const { data: twins } = await supabase
         .from("digital_twins")
-        .select("id, name, org_id, manager_id, work_location, worker_type, tenure_months")
+        .select("id, name, org_id, manager_id, role, work_location, worker_type, tenure_months")
         .eq("org_id", caller.org_id);
       const employees: EmployeeView[] = (twins ?? []).map((t) => ({
-        id: t.id, org_id: t.org_id, name: t.name, manager_id: t.manager_id,
+        id: t.id, org_id: t.org_id, name: t.name, manager_id: t.manager_id, role: t.role,
         work_location: t.work_location, worker_type: t.worker_type,
       }));
-      const visible = employees.filter((e) => canViewEmployee({ id: caller.id, role: caller.role, org_id: caller.org_id }, e));
+      // Phase 9 (item 18): the Employee selector only lists employees/managers
+      // the caller may view — never candidates or service users.
+      const visible = employeeSelectorOptions(employees, { id: caller.id, role: caller.role, org_id: caller.org_id });
 
       const { data: docRows } = await supabase
         .from("policy_documents")
@@ -1200,7 +1300,10 @@ Deno.serve(async (req) => {
     const raw = String(body.question ?? "").trim();
     if (raw.length < 5) return json({ error: "VALIDATION_ERROR", message: "Ask a real question (min 5 characters)." }, 400);
     const question = sanitizeUntrusted(raw);
-    const asOf = new Date().toISOString().slice(0, 10);
+    // Phase 9 (item 3): historical-date questions use the applicable policy
+    // version as of the requested date (default: today).
+    const requestedAsOf = String(body.as_of ?? "").trim();
+    const asOf = /^\d{4}-\d{2}-\d{2}$/.test(requestedAsOf) ? requestedAsOf : new Date().toISOString().slice(0, 10);
 
     // 1) Load the policy corpus (org-scoped: the actor only ever sees their org).
     const { data: docRows } = await supabase
@@ -1233,6 +1336,7 @@ Deno.serve(async (req) => {
     const callerView: CallerView = { id: caller.id, role: caller.role, org_id: caller.org_id };
 
     let employeeCtx: EmployeeContext = {};
+    const contextSource: EmployeeContext["context_source"] = {};
     const explicitId = (body.employee_id ?? "").trim();
     if (explicitId) {
       const target = employees.find((e) => e.id === explicitId);
@@ -1244,7 +1348,10 @@ Deno.serve(async (req) => {
         work_location: target.work_location ?? undefined,
         worker_type: target.worker_type ?? undefined,
         tenure_months: (twins ?? []).find((t) => t.id === target.id)?.tenure_months ?? undefined,
+        context_source: {},
       };
+      if (target.work_location) contextSource.location = "saved";
+      if (target.worker_type) contextSource.worker_type = "saved";
     } else {
       const mention = findEmployeeMention(question, employees, callerView);
       if (mention) {
@@ -1253,14 +1360,21 @@ Deno.serve(async (req) => {
           work_location: mention.work_location ?? undefined,
           worker_type: mention.worker_type ?? undefined,
           tenure_months: (twins ?? []).find((t) => t.id === mention.id)?.tenure_months ?? undefined,
+          context_source: {},
         };
+        if (mention.work_location) contextSource.location = "saved";
+        if (mention.worker_type) contextSource.worker_type = "saved";
       } else if (caller.role === "employee") {
-        employeeCtx = { id: caller.id, name: caller.name, work_location: caller.work_location ?? undefined, worker_type: caller.worker_type ?? undefined, tenure_months: caller.tenure_months ?? undefined };
+        employeeCtx = { id: caller.id, name: caller.name, work_location: caller.work_location ?? undefined, worker_type: caller.worker_type ?? undefined, tenure_months: caller.tenure_months ?? undefined, context_source: {} };
+        if (caller.work_location) contextSource.location = "saved";
+        if (caller.worker_type) contextSource.worker_type = "saved";
       }
     }
-    // Hypothetical context supplied explicitly overrides the resolved one.
-    if (body.context?.location) employeeCtx.work_location = body.context.location;
-    if (body.context?.worker_type) employeeCtx.worker_type = body.context.worker_type;
+    // Hypothetical context supplied explicitly overrides the resolved one and
+    // is clearly labeled as hypothetical (item 16).
+    if (body.context?.location) { employeeCtx.work_location = body.context.location; contextSource.location = "hypothetical"; }
+    if (body.context?.worker_type) { employeeCtx.worker_type = body.context.worker_type; contextSource.worker_type = "hypothetical"; }
+    employeeCtx.context_source = contextSource;
     if (employeeCtx.tenure_months !== undefined) employeeCtx.join_date = subMonths(asOf, employeeCtx.tenure_months);
 
     const ctx = { location: employeeCtx.work_location, worker_type: employeeCtx.worker_type };
@@ -1301,6 +1415,27 @@ Deno.serve(async (req) => {
     // 5) Applicability filter (only when the field is known), then lexical retrieval.
     const applicable = currentAll.filter((d) => applicabilityOk(d, ctx));
     const retrieval = retrieveChunks(applicable, question, 5);
+
+    // Phase 9 (items 4-5): two or more CURRENT applicable policies both rank
+    // strongly => surface the conflict instead of silently choosing one.
+    const conflicting = detectPolicyConflict(applicable, question, ABSTENTION_THRESHOLD);
+    if (conflicting.length >= 2) {
+      return json({
+        status: "conflicting_policies",
+        abstained: true,
+        best_score: retrieval[0]?.score ?? 0,
+        threshold: ABSTENTION_THRESHOLD,
+        answer: "",
+        citations: [],
+        retrieval,
+        conflict: {
+          candidates: conflicting,
+          reason: "Two current, applicable policies both cover this question and I will not silently pick one. Review both sources and reconcile, or escalate to HR for a decision.",
+        },
+        employee_context: employeeCtx,
+        certainty_note: "Retrieval score is a ranking signal, not answer certainty.",
+      });
+    }
 
     // 6) Honest context notes: retired policies and applicability-excluded docs.
     const outOfWindow = filterOutOfWindow(policies, asOf);
@@ -1365,6 +1500,7 @@ Deno.serve(async (req) => {
         citations: [],
         retrieval,
         employee_context: employeeCtx,
+        certainty_note: "Retrieval score is a ranking signal, not answer certainty — no answer was attempted.",
       });
     }
 
@@ -1515,6 +1651,7 @@ Deno.serve(async (req) => {
       retrieval: fullRetrieval,
       computed,
       employee_context: employeeCtx,
+      certainty_note: "Retrieval score is a ranking signal, not answer certainty — every claim is grounded in a verbatim quote.",
       note: status === "partially_supported"
         ? `Some claims were removed: ${repaired.invalidReasons.slice(0, 2).join(" ")}`
         : undefined,

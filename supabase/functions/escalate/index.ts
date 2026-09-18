@@ -10,6 +10,9 @@ const corsHeaders = {
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
+const STATUSES = ["open", "in_progress", "resolved", "closed"] as const;
+const HR_ROLES = ["hr_executive", "hr_partner"];
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
@@ -31,16 +34,92 @@ Deno.serve(async (req) => {
   if (!caller) return json({ error: "UNAUTHENTICATED" }, 401);
 
   let body: {
+    action?: string;
     question?: string;
     context?: Record<string, unknown>;
     sources?: unknown[];
     reason?: string;
+    escalation_id?: string;
+    status?: string;
+    response_text?: string;
   } = {};
   try {
     body = await req.json();
   } catch {
     /* empty */
   }
+  const action = body.action ?? "create";
+
+  // ---- Phase 9: list escalations (org for HR; own for employees/managers) ----
+  if (action === "list") {
+    let query = supabase
+      .from("policy_escalations")
+      .select("id, question, selected_context, relevant_sources, reason, status, owner_twin_id, created_by, created_at, updated_at, resolved_at, response_text, responded_by, responded_at, history")
+      .eq("org_id", caller.org_id)
+      .order("created_at", { ascending: false });
+    if (!HR_ROLES.includes(caller.role)) {
+      query = query.or(`created_by.eq.${caller.id},owner_twin_id.eq.${caller.id}`);
+    }
+    const { data, error } = await query;
+    if (error) return json({ error: "INTERNAL", message: error.message }, 500);
+    return json({ ok: true, escalations: data ?? [] });
+  }
+
+  // ---- Phase 9: respond to an escalation (HR or the owner) -------------------
+  if (action === "respond") {
+    const escalationId = (body.escalation_id ?? "").trim();
+    const status = body.status ?? "";
+    if (!escalationId) return json({ error: "VALIDATION_ERROR", message: "escalation_id is required." }, 400);
+    if (!STATUSES.includes(status as (typeof STATUSES)[number])) {
+      return json({ error: "VALIDATION_ERROR", message: `status must be one of ${STATUSES.join(", ")}.` }, 400);
+    }
+    if ((status === "resolved" || status === "closed") && !(body.response_text ?? "").trim()) {
+      return json({ error: "VALIDATION_ERROR", message: "A response is required when resolving or closing an escalation." }, 400);
+    }
+    const { data: row } = await supabase
+      .from("policy_escalations")
+      .select("*")
+      .eq("org_id", caller.org_id)
+      .eq("id", escalationId)
+      .maybeSingle();
+    if (!row) return json({ error: "NOT_FOUND" }, 404);
+    const isHr = HR_ROLES.includes(caller.role);
+    const isOwner = row.owner_twin_id === caller.id || row.created_by === caller.id;
+    if (!isHr && !isOwner) {
+      return json({ error: "FORBIDDEN", message: "Only HR or the assigned owner may respond to this escalation." }, 403);
+    }
+
+    const now = new Date().toISOString();
+    const history = [
+      ...(row.history ?? []),
+      {
+        at: now,
+        by: caller.email ?? uid,
+        action: "status_changed",
+        from: row.status,
+        to: status,
+        response: (body.response_text ?? "").trim() || null,
+      },
+    ];
+    const { data: updated, error: upErr } = await supabase
+      .from("policy_escalations")
+      .update({
+        status,
+        response_text: (body.response_text ?? "").trim() || null,
+        responded_by: caller.id,
+        responded_at: now,
+        history,
+        updated_at: now,
+        resolved_at: status === "resolved" || status === "closed" ? now : null,
+      })
+      .eq("id", escalationId)
+      .select("*")
+      .single();
+    if (upErr) return json({ error: "INTERNAL", message: upErr.message }, 500);
+    return json({ ok: true, escalation: updated });
+  }
+
+  // ---- create (default) -------------------------------------------------------
   const question = String(body.question ?? "").trim();
   if (!question) return json({ error: "VALIDATION_ERROR", message: "question is required." }, 400);
 
@@ -66,8 +145,11 @@ Deno.serve(async (req) => {
       owner_twin_id: owner?.id ?? caller.id,
       status: "open",
       created_by: caller.id,
+      history: [
+        { at: now, by: caller.email ?? uid, action: "created", from: null, to: "open", response: null },
+      ],
     })
-    .select("id, status, created_at")
+    .select("id, status, created_at, owner_twin_id")
     .single();
   if (error) return json({ error: "INTERNAL", message: error.message }, 500);
 
@@ -76,7 +158,7 @@ Deno.serve(async (req) => {
     escalation_id: data.id,
     status: data.status,
     created_at: data.created_at,
-    owner: owner?.id ?? caller.id,
+    owner: data.owner_twin_id ?? caller.id,
     message: "Escalation created — an HR workflow is now open for this question.",
   });
 });

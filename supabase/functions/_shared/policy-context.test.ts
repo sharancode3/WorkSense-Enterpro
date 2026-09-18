@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canViewEmployee, findEmployeeMention, type CallerView, type EmployeeView } from "./policy-context.ts";
+import { canViewEmployee, employeeSelectorOptions, findEmployeeMention, type CallerView, type EmployeeView } from "./policy-context.ts";
 
 const ORG = "org-1";
 const employees: EmployeeView[] = [
@@ -47,5 +47,24 @@ describe("findEmployeeMention", () => {
   it("never resolves an employee the caller cannot see", () => {
     const emp: CallerView = { id: "u1", role: "employee", org_id: ORG };
     expect(findEmployeeMention("What is Alex's leave balance?", employees, emp)).toBeNull();
+  });
+});
+
+describe("employeeSelectorOptions (Phase 9 item 18)", () => {
+  it("excludes candidates and service users from the Employee selector", () => {
+    const withRoles: EmployeeView[] = [
+      { id: "e1", org_id: ORG, name: "Samira Patel", manager_id: "m1", role: "employee" },
+      { id: "e2", org_id: ORG, name: "Alex Chen", manager_id: "m1", role: "manager" },
+      { id: "c1", org_id: ORG, name: "Priya Rana", manager_id: null, role: "candidate" },
+      { id: "s1", org_id: ORG, name: "Elena Voss", manager_id: "m1", role: "it_security" },
+      { id: "self", org_id: ORG, name: "Dana Reyes", manager_id: null, role: "hr_executive" },
+    ];
+    const hr: CallerView = { id: "self", role: "hr_executive", org_id: ORG };
+    const options = employeeSelectorOptions(withRoles, hr).map((e) => e.id);
+    expect(options).toContain("e1");
+    expect(options).toContain("e2");
+    expect(options).not.toContain("c1"); // candidates never selectable
+    expect(options).not.toContain("s1"); // service users never selectable
+    expect(options).toContain("self"); // the caller themselves is allowed
   });
 });

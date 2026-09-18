@@ -4727,6 +4727,7 @@ export type Database = {
         Row: {
           created_at: string
           created_by: string | null
+          history: Json
           id: string
           org_id: string
           owner_twin_id: string | null
@@ -4734,6 +4735,9 @@ export type Database = {
           reason: string | null
           relevant_sources: Json
           resolved_at: string | null
+          responded_at: string | null
+          responded_by: string | null
+          response_text: string | null
           selected_context: Json
           status: string
           updated_at: string
@@ -4741,6 +4745,7 @@ export type Database = {
         Insert: {
           created_at?: string
           created_by?: string | null
+          history?: Json
           id?: string
           org_id: string
           owner_twin_id?: string | null
@@ -4748,6 +4753,9 @@ export type Database = {
           reason?: string | null
           relevant_sources?: Json
           resolved_at?: string | null
+          responded_at?: string | null
+          responded_by?: string | null
+          response_text?: string | null
           selected_context?: Json
           status?: string
           updated_at?: string
@@ -4755,6 +4763,7 @@ export type Database = {
         Update: {
           created_at?: string
           created_by?: string | null
+          history?: Json
           id?: string
           org_id?: string
           owner_twin_id?: string | null
@@ -4762,6 +4771,9 @@ export type Database = {
           reason?: string | null
           relevant_sources?: Json
           resolved_at?: string | null
+          responded_at?: string | null
+          responded_by?: string | null
+          response_text?: string | null
           selected_context?: Json
           status?: string
           updated_at?: string
@@ -4782,6 +4794,12 @@ export type Database = {
           {
             foreignKeyName: "policy_escalations_owner_twin_id_fkey"
             columns: ["owner_twin_id"]
+            referencedRelation: "digital_twins"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "policy_escalations_responded_by_fkey"
+            columns: ["responded_by"]
             referencedRelation: "digital_twins"
             referencedColumns: ["id"]
           },

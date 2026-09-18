@@ -286,3 +286,87 @@ export function exclusiveQuestionTokens(question: string, candidateTexts: string
   const others = new Set(otherTexts.flatMap((t) => tokenize(t)));
   return [...q].filter((t) => cand.has(t) && !others.has(t));
 }
+
+// ---------------------------------------------------------------------------
+// Phase 9: precedence + conflict handling.
+// ---------------------------------------------------------------------------
+
+/** A policy that is in contention for a question (one best chunk per doc). */
+export interface PolicyConflictCandidate {
+  doc_code: string;
+  title: string;
+  version: number | undefined;
+  section_code: string;
+  heading: string;
+  score: number;
+  effective_from: string | null;
+  effective_to: string | null;
+}
+
+/**
+ * Phase 9 (items 4-5): detect when TWO or more CURRENT, applicable policies are
+ * NEARLY TIED for the question — i.e. the second-best family is within a tight
+ * ratio of the best. When two different policies match almost equally well,
+ * choosing one would be arbitrary, so the caller surfaces the conflict instead
+ * of silently picking. A clearly-dominant policy (e.g. the leave doc for an
+ * annual-leave question) is not a conflict. Location/worker-type variants
+ * (POL-LVE vs POL-LVE-EU) share one family and are resolved by applicability.
+ */
+export function policyFamily(docCode: string): string {
+  return String(docCode ?? "").replace(/-(EU|US|UK|CA|DE|FR|IN|APAC)$/i, "");
+}
+
+/** Near-tie ratio: a second family within this fraction of the best is in
+ *  contention for the same answer. */
+export const CONFLICT_NEAR_TIE_RATIO = 0.9;
+
+export function detectPolicyConflict(
+  applicable: PolicyDoc[],
+  question: string,
+  minScore: number,
+  topN = 8
+): PolicyConflictCandidate[] {
+  const chunks = retrieveChunks(applicable, question, topN);
+  const bestByFamily = new Map<string, RetrievedChunk>();
+  for (const c of chunks) {
+    const family = policyFamily(c.doc_code);
+    const cur = bestByFamily.get(family);
+    if (!cur || c.score > cur.score) bestByFamily.set(family, c);
+  }
+  const sorted = [...bestByFamily.values()].sort((a, b) => b.score - a.score);
+  const best = sorted[0];
+  if (!best || best.score < minScore) return [];
+  const contenders = sorted.filter(
+    (c) => c.score >= CONFLICT_NEAR_TIE_RATIO * best.score && c.score >= 0.5
+  );
+  return contenders.map((c) => ({
+    doc_code: c.doc_code,
+    title: c.doc_title,
+    version: c.version,
+    section_code: c.section_code,
+    heading: c.heading,
+    score: +c.score.toFixed(3),
+    effective_from: c.effective_from ?? null,
+    effective_to: c.effective_to ?? null,
+  }));
+}
+
+/**
+ * Phase 9 (item 4): deterministic precedence when multiple current policies
+ * could apply — more specific applicability first, then newer effective date,
+ * then doc_code as a stable tiebreaker.
+ */
+export function resolvePrecedence(policies: PolicyDoc[]): PolicyDoc[] {
+  const specificity = (d: PolicyDoc): number => {
+    const locs = (d.applicable_locations ?? []).filter((l) => l.toLowerCase() !== "all").length;
+    const types = (d.applicable_worker_types ?? []).filter((t) => t.toLowerCase() !== "all").length;
+    return locs + types;
+  };
+  return [...(policies ?? [])].sort((a, b) => {
+    const s = specificity(b) - specificity(a);
+    if (s !== 0) return s;
+    const d = new Date(b.effective_from ?? b.effective_date ?? 0).getTime() - new Date(a.effective_from ?? a.effective_date ?? 0).getTime();
+    if (d !== 0) return d;
+    return String(a.doc_code).localeCompare(String(b.doc_code));
+  });
+}

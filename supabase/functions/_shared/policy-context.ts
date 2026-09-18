@@ -17,6 +17,7 @@ export interface EmployeeView {
   manager_id: string | null;
   work_location?: string | null;
   worker_type?: string | null;
+  role?: string | null;
 }
 
 /** Employees can see themselves; HR roles see everyone in the org; managers
@@ -27,6 +28,15 @@ export function canViewEmployee(caller: CallerView, target: EmployeeView): boole
   if (["hr_executive", "hr_partner", "recruiter"].includes(caller.role)) return true;
   if (caller.role === "manager" && target.manager_id === caller.id) return true;
   return false;
+}
+
+/** Phase 9 (item 18): the "Employee" selector only offers people the caller may
+ *  view AND who are actual employees/managers — candidates and service users
+ *  (e.g. IT security personas) are never selectable as employees. */
+export function employeeSelectorOptions(employees: EmployeeView[], caller: CallerView): EmployeeView[] {
+  return (employees ?? []).filter(
+    (e) => canViewEmployee(caller, e) && (e.role === "employee" || e.role === "manager" || e.id === caller.id)
+  );
 }
 
 function escapeRegExp(s: string): string {

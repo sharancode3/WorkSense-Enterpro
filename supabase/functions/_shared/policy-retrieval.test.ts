@@ -4,11 +4,13 @@ import {
   applicabilityOk,
   bestExpiredHit,
   currentVersionSet,
+  detectPolicyConflict,
   exclusiveQuestionTokens,
   filterByWindow,
   flattenPolicies,
   missingApplicability,
   normalizeForMatch,
+  resolvePrecedence,
   retrieveChunks,
   validateCitations,
   type PolicyDoc,
@@ -208,5 +210,71 @@ describe("Phase 7 — strict per-section citation validation", () => {
       chunks
     );
     expect(droppedCount).toBe(1);
+  });
+});
+
+describe("policy-retrieval (Phase 9 — precedence, conflict, curated evaluation)", () => {
+  const conflictDoc = (code: string, extra: string): PolicyDoc => ({
+    id: `${code}-id`,
+    doc_code: code,
+    version: 1,
+    title: `${code} title`,
+    category: "General",
+    effective_from: "2026-01-01",
+    effective_to: null,
+    applicable_locations: ["All"],
+    applicable_worker_types: ["All"],
+    sections: [{ code: "s1", heading: "Reimbursement", text: extra }],
+  });
+
+  it("detects a conflict when two current policies both rank strongly", () => {
+    const a = conflictDoc("POL-AAA", "Course reimbursement is paid up to $1000 per calendar year for all employees.");
+    const b = conflictDoc("POL-BBB", "Course reimbursement is paid up to $300 per calendar year for all employees.");
+    const res = detectPolicyConflict([a, b], "What is the course reimbursement limit for employees?", 0.3);
+    expect(res.length).toBeGreaterThanOrEqual(2);
+    expect(new Set(res.map((c) => c.doc_code)).size).toBe(2);
+  });
+
+  it("does not report a conflict when only one policy covers the topic", () => {
+    const a = conflictDoc("POL-AAA", "Course reimbursement is paid up to $1000 per calendar year.");
+    const b = conflictDoc("POL-REM", "Remote work policy requires written approval.");
+    const res = detectPolicyConflict([a, b], "What is the course reimbursement limit?", 0.3);
+    expect(res.length).toBe(1);
+    expect(res[0].doc_code).toBe("POL-AAA");
+  });
+
+  it("resolvePrecedence ranks more-specific applicability first, then newer effective date", () => {
+    const generic = { ...conflictDoc("POL-GEN", "leave"), applicable_locations: ["All"], effective_from: "2025-01-01" };
+    const specific = { ...conflictDoc("POL-SPC", "leave"), applicable_locations: ["EU"], effective_from: "2025-06-01" };
+    const newer = { ...conflictDoc("POL-NEW", "leave"), applicable_locations: ["All"], effective_from: "2026-01-01" };
+    const ordered = resolvePrecedence([newer, specific, generic]);
+    expect(ordered[0].doc_code).toBe("POL-SPC"); // most specific wins
+    expect(ordered[1].doc_code).toBe("POL-NEW"); // then newer date
+    expect(ordered[2].doc_code).toBe("POL-GEN");
+  });
+
+  it("treats location variants of one policy as a single family, not a conflict", () => {
+    const us = conflictDoc("POL-LVE", "Full-time employees accrue 25 annual leave days per year.");
+    const eu = conflictDoc("POL-LVE-EU", "EU employees accrue 30 annual leave days per year.");
+    const sab = conflictDoc("POL-SAB", "Employees with five years of service may take a sabbatical.");
+    const res = detectPolicyConflict([us, eu, sab], "How many annual leave days do I get?", 0.2);
+    // One family for the leave variants + sabbatical family only if it ranks high.
+    const families = new Set(res.map((c) => c.doc_code.replace(/-EU$/, "")));
+    expect(families.has("POL-LVE")).toBe(true);
+    expect(res.length).toBeLessThanOrEqual(2);
+    expect(res.filter((c) => /POL-LVE/.test(c.doc_code)).length).toBe(1);
+  });
+
+  it("curated retrieval evaluation: annual-leave questions hit the leave doc, remote hits remote", () => {
+    const set = [
+      { q: "How many days of annual leave do I get per year?", expected: "POL-LVE" },
+      { q: "Is full-time remote work allowed with written approval?", expected: "POL-RMT" },
+      { q: "How much leave can I carry over into next year?", expected: "POL-LVE" },
+    ];
+    for (const s of set) {
+      const res = retrieveChunks(docs, s.q, 1);
+      expect(res[0].doc_code, s.q).toBe(s.expected);
+      expect(res[0].score, s.q).toBeGreaterThanOrEqual(0.2);
+    }
   });
 });

@@ -384,7 +384,7 @@ export interface PolicyComputedFacts {
   request_span?: { calendar_days: number; holiday_days: number; leave_days_consumed: number } | null;
 }
 
-export type PolicyAnswerStatus = "grounded" | "partially_supported" | "insufficient_evidence" | "clarification_needed";
+export type PolicyAnswerStatus = "grounded" | "partially_supported" | "insufficient_evidence" | "clarification_needed" | "conflicting_policies";
 
 export interface PolicyAnswer {
   status: PolicyAnswerStatus;
@@ -397,9 +397,16 @@ export interface PolicyAnswer {
   note?: string;
   clarification?: { fields: string[]; reason: string; doc_code: string; doc_title: string };
   computed?: PolicyComputedFacts;
-  employee_context?: { name?: string; work_location?: string; worker_type?: string };
+  employee_context?: {
+    name?: string;
+    work_location?: string;
+    worker_type?: string;
+    context_source?: { location?: "saved" | "hypothetical"; worker_type?: "saved" | "hypothetical" };
+  };
   expired_policy?: { doc_code: string; title: string; effective_to: string | null; score: number };
   excluded_policy?: { doc_code: string; title: string; context: Record<string, unknown> };
+  conflict?: { candidates: { doc_code: string; title: string; version?: number; section_code: string; heading: string; score: number; effective_from: string | null; effective_to: string | null }[]; reason: string };
+  certainty_note?: string;
 }
 
 export interface PolicyContextResult {
@@ -408,8 +415,8 @@ export interface PolicyContextResult {
   policies: { id: string; doc_code: string; version: number; title: string; category: string; effective_from: string | null; effective_to: string | null; applicable_locations: string[]; applicable_worker_types: string[] }[];
 }
 
-export const policyAsk = (question: string, employeeId?: string, context?: { location?: string; worker_type?: string; taken_days?: number; request_from?: string; request_to?: string }) =>
-  invoke<PolicyAnswer>("policy-qa", { question, employee_id: employeeId, context });
+export const policyAsk = (question: string, employeeId?: string, context?: { location?: string; worker_type?: string; taken_days?: number; request_from?: string; request_to?: string; as_of?: string }) =>
+  invoke<PolicyAnswer>("policy-qa", { question, employee_id: employeeId, as_of: context?.as_of, context });
 
 export const policyContext = () => invoke<PolicyContextResult>("policy-qa", { action: "context" });
 
@@ -418,6 +425,26 @@ export const escalatePolicy = (question: string, context?: Record<string, unknow
     "escalate",
     { question, context, sources, reason }
   );
+
+export interface PolicyEscalationRow {
+  id: string;
+  question: string;
+  reason: string | null;
+  status: "open" | "in_progress" | "resolved" | "closed";
+  owner_twin_id: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+  response_text: string | null;
+  responded_by: string | null;
+  responded_at: string | null;
+  history: { at: string; by: string; action: string; from: string | null; to: string | null; response: string | null }[];
+}
+
+export const listEscalations = () => invoke<{ ok: true; escalations: PolicyEscalationRow[] }>("escalate", { action: "list" });
+
+export const respondEscalation = (escalation_id: string, status: string, response_text: string) =>
+  invoke<{ ok: true; escalation: PolicyEscalationRow }>("escalate", { action: "respond", escalation_id, status, response_text });
 
 // ---- Recommendation & Action Hub (Phase 11 transactional lifecycle) ----
 

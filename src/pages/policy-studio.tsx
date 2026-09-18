@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import {
   AlertTriangle,
@@ -13,6 +13,7 @@ import {
   Lock,
   MessageSquareText,
   Send,
+  ShieldAlert,
   ShieldCheck,
   UserRound,
   XCircle,
@@ -23,7 +24,16 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { can } from "@/lib/rbac";
-import { escalatePolicy, policyAsk, policyContext, type PolicyAnswer, type PolicyContextResult } from "@/lib/api";
+import {
+  escalatePolicy,
+  listEscalations,
+  policyAsk,
+  policyContext,
+  respondEscalation,
+  type PolicyAnswer,
+  type PolicyContextResult,
+  type PolicyEscalationRow,
+} from "@/lib/api";
 
 const EXAMPLES = [
   "How many days of annual leave do I get and how much can I carry over?",
@@ -40,6 +50,7 @@ interface ContextForm {
   taken_days: string;
   request_from: string;
   request_to: string;
+  as_of: string;
 }
 
 const EMPTY_CONTEXT: ContextForm = {
@@ -49,7 +60,25 @@ const EMPTY_CONTEXT: ContextForm = {
   taken_days: "",
   request_from: "",
   request_to: "",
+  as_of: "",
 };
+
+const STORAGE_KEY = "worksense:policy-studio";
+
+function restoreState(): { question: string; form: ContextForm; result: PolicyAnswer | null } {
+  try {
+    const raw = sessionStorage.getItem(STORAGE_KEY);
+    if (!raw) return { question: "", form: EMPTY_CONTEXT, result: null };
+    const parsed = JSON.parse(raw) as { question?: string; form?: Partial<ContextForm>; result?: PolicyAnswer | null };
+    return {
+      question: parsed.question ?? "",
+      form: { ...EMPTY_CONTEXT, ...(parsed.form ?? {}) },
+      result: parsed.result ?? null,
+    };
+  } catch {
+    return { question: "", form: EMPTY_CONTEXT, result: null };
+  }
+}
 
 function SourceInspection({ retrieval }: { retrieval: PolicyAnswer["retrieval"] }) {
   const [open, setOpen] = useState(false);
@@ -89,16 +118,34 @@ function SourceInspection({ retrieval }: { retrieval: PolicyAnswer["retrieval"] 
 }
 
 export default function PolicyStudio() {
-  const { role, user } = useAuth();
-  const [question, setQuestion] = useState("");
-  const [result, setResult] = useState<PolicyAnswer | null>(null);
+  const { role, user, twin: me } = useAuth();
+  const restored = restoreState();
+  const [question, setQuestion] = useState(restored.question);
+  const [result, setResult] = useState<PolicyAnswer | null>(restored.result);
   const [busy, setBusy] = useState(false);
   const [ctxOpen, setCtxOpen] = useState(false);
-  const [form, setForm] = useState<ContextForm>(EMPTY_CONTEXT);
+  const [form, setForm] = useState<ContextForm>(restored.form);
   const [ctx, setCtx] = useState<PolicyContextResult | null>(null);
   const [confirmEscalate, setConfirmEscalate] = useState(false);
   const [escalating, setEscalating] = useState(false);
   const [escalated, setEscalated] = useState(false);
+  const [escalationId, setEscalationId] = useState<string | null>(null);
+  const [escalationsOpen, setEscalationsOpen] = useState(false);
+  const [escalations, setEscalations] = useState<PolicyEscalationRow[]>([]);
+  const [respondingId, setRespondingId] = useState<string | null>(null);
+  const [responseText, setResponseText] = useState("");
+  const [responseStatus, setResponseStatus] = useState<"open" | "in_progress" | "resolved" | "closed">("in_progress");
+  const [responseBusy, setResponseBusy] = useState(false);
+
+  // Phase 9 (item 21): preserve the draft + context across ordinary token
+  // refreshes / remounts via sessionStorage.
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ question, form, result }));
+    } catch {
+      /* storage unavailable — fine */
+    }
+  }, [question, form, result]);
 
   useEffect(() => {
     if (!user || !ctxOpen) return;
@@ -106,6 +153,19 @@ export default function PolicyStudio() {
       .then(setCtx)
       .catch(() => setCtx(null));
   }, [ctxOpen, user]);
+
+  // Employees: default the selector to the logged-in user (item 17).
+  const isEmployee = role === "employee";
+  const effectiveEmployeeId = form.employee_id || (isEmployee ? me?.id ?? "" : "");
+
+  const loadEscalations = useCallback(async () => {
+    try {
+      const res = await listEscalations();
+      setEscalations(res.escalations);
+    } catch {
+      toast.error("Could not load escalations.");
+    }
+  }, []);
 
   if (role && !can(role, "use_policy_studio")) {
     return (
@@ -132,16 +192,18 @@ export default function PolicyStudio() {
     setResult(null);
     setEscalated(false);
     setConfirmEscalate(false);
+    setEscalationId(null);
     try {
       const res = await policyAsk(
         q,
-        form.employee_id || undefined,
+        effectiveEmployeeId || undefined,
         {
           location: form.location || undefined,
           worker_type: form.worker_type || undefined,
           taken_days: form.taken_days ? Number(form.taken_days) : undefined,
           request_from: form.request_from || undefined,
           request_to: form.request_to || undefined,
+          as_of: form.as_of || undefined,
         }
       );
       setResult(res);
@@ -181,14 +243,32 @@ export default function PolicyStudio() {
         section: c.section_code,
         heading: c.heading,
       }));
-      await escalatePolicy(question, ctxPayload, sources, result.note ?? undefined);
+      const res = await escalatePolicy(question, ctxPayload, sources, result.note ?? undefined);
+      // Phase 9 (item 23): the success confirmation only fires after the
+      // backend row was actually created.
       setEscalated(true);
+      setEscalationId(res.escalation_id);
       setConfirmEscalate(false);
-      toast.success("Escalated — an HR workflow is now open for this question.");
+      toast.success("Escalation submitted — an HR workflow is now open for this question.");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Escalation failed — nothing was escalated.");
+      toast.error(err instanceof Error ? err.message : "Escalation failed — nothing was submitted.");
     } finally {
       setEscalating(false);
+    }
+  };
+
+  const submitResponse = async (row: PolicyEscalationRow) => {
+    setResponseBusy(true);
+    try {
+      await respondEscalation(row.id, responseStatus, responseText);
+      toast.success(`Escalation ${responseStatus}. Response recorded in its history.`);
+      setResponseText("");
+      setRespondingId(null);
+      await loadEscalations();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not save the response.");
+    } finally {
+      setResponseBusy(false);
     }
   };
 
@@ -247,6 +327,12 @@ export default function PolicyStudio() {
             {ctxOpen ? "Hide" : "Add"} employee / applicability context
             {ctxOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
           </button>
+
+          {isEmployee && !form.employee_id && (
+            <p className="flex items-center gap-1.5 self-start text-xs font-semibold text-muted-foreground">
+              <ShieldCheck className="h-3.5 w-3.5 text-primary" /> Answering with your own saved context (you) — pick another employee above only if you have access.
+            </p>
+          )}
 
           {ctxOpen && (
             <div className="grid gap-3 rounded-lg bg-white p-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -317,6 +403,16 @@ export default function PolicyStudio() {
                 <span className="font-semibold text-muted-foreground">Request to</span>
                 <Input type="date" value={form.request_to} onChange={(e) => setForm((f) => ({ ...f, request_to: e.target.value }))} />
               </label>
+              <label className="flex flex-col gap-1 text-sm">
+                <span className="font-semibold text-muted-foreground">As of (historical date)</span>
+                <Input
+                  type="date"
+                  value={form.as_of}
+                  onChange={(e) => setForm((f) => ({ ...f, as_of: e.target.value }))}
+                  title="Ask against the policy version effective on this date (leave blank for today)."
+                />
+                <span className="text-[11px] text-muted-foreground">Uses the policy version effective that day.</span>
+              </label>
             </div>
           )}
         </div>
@@ -347,6 +443,12 @@ export default function PolicyStudio() {
                   Best retrieval score {result.best_score.toFixed(2)} / threshold {result.threshold} — every claim quotes
                   the cited section verbatim.
                 </p>
+                {result.certainty_note && <p className="mt-1 text-[11px] italic text-white/60">{result.certainty_note}</p>}
+                {result.employee_context?.context_source && (
+                  <p className="mt-1 text-[11px] text-white/70">
+                    Context source: {Object.entries(result.employee_context.context_source).map(([k, v]) => `${k}=${v}`).join(" · ") || "none"} — hypothetical fields are explicitly marked.
+                  </p>
+                )}
               </div>
             )}
 
@@ -359,6 +461,32 @@ export default function PolicyStudio() {
                 <p className="mt-2 text-sm text-muted-foreground">
                   Fill in {result.clarification?.fields.map((f) => f.replace(/_/g, " ")).join(" and ")} in the context
                   panel above, then ask again — the answer changes depending on it.
+                </p>
+              </div>
+            )}
+
+            {result.status === "conflicting_policies" && (
+              <div className="rounded-lg bg-amber-100 p-6 text-amber-900" role="alert">
+                <p className="flex items-center gap-2 text-sm font-bold uppercase tracking-wider">
+                  <ShieldAlert className="h-5 w-5" /> Conflicting policies — nothing was silently chosen
+                </p>
+                <p className="mt-3 text-base font-semibold leading-relaxed">{result.conflict?.reason}</p>
+                <div className="mt-3 flex flex-col gap-2">
+                  {(result.conflict?.candidates ?? []).map((c) => (
+                    <div key={c.doc_code} className="rounded-md bg-white p-3 text-sm">
+                      <span className="rounded bg-foreground px-2 py-0.5 font-mono text-[11px] font-bold text-white">
+                        {c.doc_code} v{c.version ?? "?"}
+                      </span>
+                      <span className="ml-2 font-bold">{c.title}</span>
+                      <span className="ml-2 text-xs text-muted-foreground">
+                        {c.section_code} · score {c.score.toFixed(2)} · effective {c.effective_from ?? "—"}
+                      </span>
+                      <p className="mt-1 text-xs italic text-amber-800">{c.heading}</p>
+                    </div>
+                  ))}
+                </div>
+                <p className="mt-3 text-sm text-amber-800">
+                  Review both sources below and reconcile the conflict, or escalate to HR for a decision.
                 </p>
               </div>
             )}
@@ -459,17 +587,22 @@ export default function PolicyStudio() {
             <div className="flex items-center justify-between gap-4 rounded-lg bg-muted p-4">
               <p className="text-sm text-muted-foreground">
                 {escalated
-                  ? "This question has been escalated — an HR workflow is now open for follow-up."
+                  ? `This question has been escalated (id ${escalationId ?? ""}) — an HR workflow is open for follow-up.`
                   : "Need a human decision? Escalate to HR. It opens a separate workflow with the question, the sources inspected, and your context."}
               </p>
-              <Button
-                variant="outline"
-                onClick={() => void beginEscalate()}
-                disabled={escalating || escalated || result.status === "clarification_needed"}
-              >
-                {escalating ? <Loader2 className="h-4 w-4 animate-spin" /> : escalated ? <CheckCircle2 className="h-4 w-4" /> : <MessageSquareText className="h-4 w-4" />}
-                {escalated ? "Escalated to HR" : "Escalate to HR"}
-              </Button>
+              <div className="flex shrink-0 gap-2">
+                <Button variant="ghost" size="sm" onClick={() => { setEscalationsOpen((o) => !o); if (!escalationsOpen) void loadEscalations(); }}>
+                  {escalationsOpen ? "Hide escalations" : "Escalations"}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => void beginEscalate()}
+                  disabled={escalating || escalated || result.status === "clarification_needed" || result.status === "conflicting_policies"}
+                >
+                  {escalating ? <Loader2 className="h-4 w-4 animate-spin" /> : escalated ? <CheckCircle2 className="h-4 w-4" /> : <MessageSquareText className="h-4 w-4" />}
+                  {escalated ? "Escalation submitted" : "Escalate to HR"}
+                </Button>
+              </div>
             </div>
           </div>
         )}
@@ -496,15 +629,95 @@ export default function PolicyStudio() {
           </div>
         )}
 
-        <div className="mt-12 rounded-lg bg-foreground p-6 text-white">
-          <BookOpen className="h-6 w-6 text-secondary" strokeWidth={2.5} />
-          <h2 className="mt-3 text-base font-bold">How grounding works</h2>
-          <p className="mt-2 text-sm leading-relaxed text-white/80">
-            Every question is scored with deterministic BM25 retrieval against the <b>current</b> policy versions
-            (date window + supersession applied first). Location/worker-type applicability is checked before answering —
-            missing fields trigger a clarification, never a guess. Every claim must quote the cited section verbatim, or
-            the answer is repaired once and then discarded rather than labeled grounded. Expired and excluded policies are
-            surfaced honestly, never silently ignored.
+        {/* Phase 9 (item 22): escalation workflow — owner, status, response, history */}
+        {escalationsOpen && (
+          <div className="mt-8 flex flex-col gap-3">
+            <h2 className="flex items-center gap-2 text-lg font-extrabold tracking-tight text-foreground">
+              <MessageSquareText className="h-5 w-5 text-primary" strokeWidth={2.5} /> Escalations
+            </h2>
+            {escalations.length === 0 && (
+              <p className="rounded-lg bg-muted p-4 text-sm text-muted-foreground">
+                No escalations in your scope yet. Questions escalated here get an owner, a status, a response and a
+                full history.
+              </p>
+            )}
+            {escalations.map((row) => (
+              <div key={row.id} className="rounded-lg bg-white p-5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-sm font-bold text-foreground">{row.question}</p>
+                  <span className={`rounded-md px-2.5 py-1 text-xs font-bold uppercase tracking-wider ${row.status === "resolved" ? "bg-secondary text-white" : row.status === "closed" ? "bg-muted text-foreground" : row.status === "in_progress" ? "bg-accent text-foreground" : "bg-destructive/20 text-destructive"}`}>
+                    {row.status}
+                  </span>
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Created {new Date(row.created_at).toLocaleString()} · owner {row.owner_twin_id ? "assigned" : "unassigned"}
+                  {row.responded_at ? ` · responded ${new Date(row.responded_at).toLocaleString()}` : ""}
+                </p>
+                {row.response_text && (
+                  <p className="mt-2 rounded-md bg-muted p-3 text-sm text-foreground">Response: {row.response_text}</p>
+                )}
+                {(row.history ?? []).length > 0 && (
+                  <details className="mt-2">
+                    <summary className="cursor-pointer text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                      History ({row.history.length})
+                    </summary>
+                    <ul className="mt-2 flex flex-col gap-1">
+                      {(row.history ?? []).map((h, i) => (
+                        <li key={i} className="rounded-md bg-muted px-3 py-1.5 text-xs text-foreground">
+                          <b>{h.by}</b> · {new Date(h.at).toLocaleString()} · {h.from ?? "—"} → {h.to}
+                          {h.response ? ` — "${h.response}"` : ""}
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                )}
+                {can(role, "view_all_workforce") && row.status !== "resolved" && row.status !== "closed" && (
+                  <div className="mt-3 flex flex-wrap items-end gap-2">
+                    {respondingId === row.id ? (
+                      <>
+                        <select
+                          value={responseStatus}
+                          onChange={(e) => setResponseStatus(e.target.value as typeof responseStatus)}
+                          className="h-10 rounded-md bg-muted px-2 text-sm font-medium text-foreground focus:outline-none"
+                          aria-label="Response status"
+                        >
+                          <option value="in_progress">In progress</option>
+                          <option value="resolved">Resolved</option>
+                          <option value="closed">Closed</option>
+                        </select>
+                        <Input
+                          value={responseText}
+                          onChange={(e) => setResponseText(e.target.value)}
+                          placeholder="Response text (required to resolve/close)…"
+                          className="h-10 min-w-[200px] flex-1"
+                        />
+                        <Button size="sm" onClick={() => void submitResponse(row)} disabled={responseBusy}>
+                          {responseBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                          Save response
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => setRespondingId(null)}>Cancel</Button>
+                      </>
+                    ) : (
+                      <Button size="sm" variant="outline" onClick={() => setRespondingId(row.id)}>
+                        Respond / update status
+                      </Button>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="mt-12 rounded-lg bg-foreground p-5 text-white">
+          <p className="text-sm font-bold">
+            How this works — grounded, or an honest abstention.
+          </p>
+          <p className="mt-1.5 text-sm leading-relaxed text-white/80">
+            Deterministic BM25 retrieval runs against the policy version effective on your "as of" date, filtered by
+            organization, location, worker type and applicability — then the model may only answer with verbatim quotes
+            from the cited section. Missing context triggers a clarification, conflicting current policies are surfaced
+            (never silently chosen), and every retrieval score is labeled a ranking signal, not answer certainty.
           </p>
         </div>
       </div>
