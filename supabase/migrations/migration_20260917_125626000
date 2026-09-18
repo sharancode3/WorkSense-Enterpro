@@ -1,0 +1,5 @@
+-- Phase 5: workforce review signal + performance synthesis storage
+alter table public.digital_twins add column promotion_lag_months integer not null default 0;
+alter table public.digital_twins add column attendance jsonb not null default '{}'::jsonb;
+alter table public.digital_twins add column delivery jsonb not null default '{}'::jsonb;
+alter table public.digital_twins add column performance_synthesis jsonb not null default '{}'::jsonb;

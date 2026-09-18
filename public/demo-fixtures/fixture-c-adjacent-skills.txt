@@ -1,0 +1,21 @@
+Mei Tanaka
+mei.tanaka@example.com
+Data Analyst
+
+Experience
+
+Demo Analytics Co - Data Analyst
+March 2023 - Present
+Wrote SQL and Python for reporting pipelines.
+Modeled data for a warehouse used by the finance team.
+Built dashboards in Tableau.
+
+Skills
+SQL - strong
+Python - working proficiency
+Data Modeling - working proficiency
+Tableau - strong
+
+Note
+No production backend service ownership. Interested in growing toward
+backend engineering but has not written Go or managed deployments.

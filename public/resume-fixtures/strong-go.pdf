@@ -1,0 +1,78 @@
+%PDF-1.4
+%‚„œ”
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R 5 0 R 7 0 R] /Count 3 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 6 0 R >> >> /Contents 4 0 R >>
+endobj
+4 0 obj
+<< /Length 504 >> stream
+BT /F1 10 Tf 50 740 Td 16 TL
+(Arjun Mehta) Tj T*
+(Senior Backend Engineer) Tj T*
+(arjun.mehta@example.com | +1 \(555\) 010-1234 | San Francisco, CA) Tj T*
+() Tj T*
+(SUMMARY) Tj T*
+(Go backend engineer with 8 years building distributed services.) Tj T*
+(Primary language: Go. Deep PostgreSQL schema and performance work.) Tj T*
+(Production Docker deployments and Kubernetes-orchestrated services.) Tj T*
+() Tj T*
+(SKILLS) Tj T*
+(Go, PostgreSQL, Docker, Kubernetes, REST APIs, Distributed Systems) Tj T*
+ET
+endstream
+endobj
+5 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 6 0 R >> >> /Contents 6 0 R >>
+endobj
+6 0 obj
+<< /Length 494 >> stream
+BT /F1 10 Tf 50 740 Td 16 TL
+(EXPERIENCE) Tj T*
+(Senior Backend Engineer, Meridian Systems \(2020-01 - present\)) Tj T*
+(Lead a payments platform in Go serving 40M requests/day.) Tj T*
+(Redesigned PostgreSQL schemas cutting p99 latency by 38%.) Tj T*
+(Migrated 30 services to Docker and Kubernetes.) Tj T*
+(Backend Engineer, Coral Health \(2017-03 - 2019-12\)) Tj T*
+(Built Go microservices for a patient-messaging platform.) Tj T*
+(Owned PostgreSQL migrations and REST API contracts.) Tj T*
+ET
+endstream
+endobj
+7 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 6 0 R >> >> /Contents 8 0 R >>
+endobj
+8 0 obj
+<< /Length 224 >> stream
+BT /F1 10 Tf 50 740 Td 16 TL
+(EDUCATION & CERTS) Tj T*
+(BSc Computer Science, University of Washington \(2013-2016\)) Tj T*
+(Certified Kubernetes Administrator \(CKA, 2022\)) Tj T*
+(REFERENCES available on request.) Tj T*
+ET
+endstream
+endobj
+9 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+xref
+0 10
+0000000000 65535 f 
+0000000015 00000 n 
+0000000040 00000 n 
+0000000091 00000 n 
+0000000115 00000 n 
+0000000140 00000 n 
+0000000211 00000 n 
+0000000235 00000 n 
+0000000260 00000 n 
+0000000388 00000 n 
+trailer
+<< /Size 10 /Root 1 0 R >>
+startxref
+1956
+%%EOF

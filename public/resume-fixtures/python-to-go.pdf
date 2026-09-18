@@ -1,0 +1,75 @@
+%PDF-1.4
+%‚„œ”
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R 5 0 R 7 0 R] /Count 3 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 6 0 R >> >> /Contents 4 0 R >>
+endobj
+4 0 obj
+<< /Length 431 >> stream
+BT /F1 10 Tf 50 740 Td 16 TL
+(Nina Kowalski) Tj T*
+(Backend Engineer) Tj T*
+(nina.kowalski@example.com | Berlin, DE) Tj T*
+() Tj T*
+(SUMMARY) Tj T*
+(Python engineer \(7 years\) moving toward Go services.) Tj T*
+(Strong async systems, event pipelines and REST API design.) Tj T*
+() Tj T*
+(SKILLS) Tj T*
+(Python, FastAPI, SQL, PostgreSQL, Docker, REST APIs, Kafka) Tj T*
+(Learning: Go \(6 months, small production service\)) Tj T*
+ET
+endstream
+endobj
+5 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 6 0 R >> >> /Contents 6 0 R >>
+endobj
+6 0 obj
+<< /Length 403 >> stream
+BT /F1 10 Tf 50 740 Td 16 TL
+(EXPERIENCE) Tj T*
+(Senior Data Engineer, Quantex \(2021-02 - present\)) Tj T*
+(Built Python data pipelines moving 2TB/day.) Tj T*
+(Designed REST APIs consumed by 12 internal teams.) Tj T*
+(Containerized services with Docker; deployed on AWS EKS.) Tj T*
+(Data Engineer, Brite Labs \(2018-04 - 2021-01\)) Tj T*
+(Python ETL jobs and SQL analytics for product growth.) Tj T*
+ET
+endstream
+endobj
+7 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 6 0 R >> >> /Contents 8 0 R >>
+endobj
+8 0 obj
+<< /Length 99 >> stream
+BT /F1 10 Tf 50 740 Td 16 TL
+(EDUCATION) Tj T*
+(MSc Data Science, TU Munich \(2016-2018\)) Tj T*
+ET
+endstream
+endobj
+9 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+xref
+0 10
+0000000000 65535 f 
+0000000015 00000 n 
+0000000040 00000 n 
+0000000091 00000 n 
+0000000115 00000 n 
+0000000140 00000 n 
+0000000211 00000 n 
+0000000235 00000 n 
+0000000260 00000 n 
+0000000388 00000 n 
+trailer
+<< /Size 10 /Root 1 0 R >>
+startxref
+1666
+%%EOF

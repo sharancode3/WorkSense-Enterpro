@@ -1,0 +1,103 @@
+{
+  "low_text": false,
+  "extracted_text": "Lena Ortiz\nJunior Developer\nlena.ortiz@example.com | Austin, TX\nSUMMARY\nRecent CS graduate with small but complete projects.\nPROJECTS\nbudget-cli: Python command-line budget tracker (300+ tests).\nportfolio-site: React static site with TypeScript and accessible markup.\nnote-api: Node.js + PostgreSQL REST API with JWT auth and unit tests.",
+  "warnings": {
+    "conflicts": [],
+    "overlaps": []
+  },
+  "review": {
+    "full_name": "Lena Ortiz",
+    "contact": {
+      "email": "lena.ortiz@example.com",
+      "location": "Austin, TX"
+    },
+    "roles": [],
+    "education": [
+      {
+        "institution": "UT Austin",
+        "degree": "BS Computer Science",
+        "year": "2026",
+        "quote": "BS Computer Science, UT Austin (2022-2026)"
+      }
+    ],
+    "certifications": [],
+    "projects": [
+      {
+        "name": "budget-cli",
+        "role": "Solo author",
+        "tech_stack": [
+          "Python"
+        ],
+        "impact_metric": "300+ tests passing",
+        "quote": "a Python command-line budget tracker (300+ tests passing)"
+      },
+      {
+        "name": "portfolio-site",
+        "role": "Solo author",
+        "tech_stack": [
+          "React",
+          "TypeScript"
+        ],
+        "impact_metric": "accessible static site",
+        "quote": "a React static site with TypeScript and accessible markup."
+      },
+      {
+        "name": "note-api",
+        "role": "Solo author",
+        "tech_stack": [
+          "Node.js",
+          "PostgreSQL"
+        ],
+        "impact_metric": "JWT auth + unit tests",
+        "quote": "a Node.js + PostgreSQL REST API with JWT auth and unit tests."
+      }
+    ],
+    "skill_claims": [
+      {
+        "skill": "Python",
+        "years": 2,
+        "proficiency_tier": "INTERMEDIATE",
+        "association": "explicit",
+        "quote": "budget-cli: a Python command-line budget tracker"
+      },
+      {
+        "skill": "React",
+        "years": 1,
+        "proficiency_tier": "INTERMEDIATE",
+        "association": "explicit",
+        "quote": "a React static site with TypeScript and accessible markup."
+      },
+      {
+        "skill": "TypeScript",
+        "years": 1,
+        "proficiency_tier": "INTERMEDIATE",
+        "association": "explicit",
+        "quote": "portfolio-site: a React static site with TypeScript"
+      },
+      {
+        "skill": "Node.js",
+        "years": 1,
+        "proficiency_tier": "INTERMEDIATE",
+        "association": "explicit",
+        "quote": "note-api: a Node.js + PostgreSQL REST API"
+      },
+      {
+        "skill": "PostgreSQL",
+        "years": 1,
+        "proficiency_tier": "INTERMEDIATE",
+        "association": "explicit",
+        "quote": "note-api: a Node.js + PostgreSQL REST API with JWT auth"
+      }
+    ],
+    "ambiguities": [
+      "No employment history \u2014 total years of experience cannot be estimated."
+    ],
+    "conflicts": [],
+    "computed": {
+      "total_years_deduped": 0,
+      "roles_merged": 0,
+      "overlap_warnings": [],
+      "claims_unsupported": 0
+    }
+  }
+}

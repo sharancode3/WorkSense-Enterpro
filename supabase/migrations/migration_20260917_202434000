@@ -1,0 +1,13 @@
+drop policy if exists rec_write on public.recommendations;
+create policy rec_write on public.recommendations for all using (
+  (select role from public.current_twin()) = 'hr_executive' and org_id = (select org_id from public.current_twin())
+) with check (
+  (select role from public.current_twin()) = 'hr_executive' and org_id = (select org_id from public.current_twin())
+);
+
+drop policy if exists onboarding_write on public.onboarding_journeys;
+create policy onboarding_write on public.onboarding_journeys for all using (
+  (select role from public.current_twin()) = 'hr_executive' and org_id = (select org_id from public.current_twin())
+) with check (
+  (select role from public.current_twin()) = 'hr_executive' and org_id = (select org_id from public.current_twin())
+);

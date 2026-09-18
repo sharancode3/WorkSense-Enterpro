@@ -1,0 +1,1 @@
+alter table public.organizations add column if not exists staffing_projects jsonb not null default '[]'::jsonb, add column if not exists learning_options jsonb not null default '[]'::jsonb;

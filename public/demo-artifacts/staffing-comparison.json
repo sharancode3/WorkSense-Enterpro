@@ -1,0 +1,102 @@
+{
+  "_provenance": "previously-generated-demo-artifact",
+  "_label": "Previously generated demo artifact. Not live inference.",
+  "_generated_at": "2026-09-17T21:30:03.699Z",
+  "_model": "qwen3:4b-instruct-2507-q4_K_M",
+  "label": "Staffing planner demo (Hire/Move/Upskill/Hybrid)",
+  "scenario": {
+    "req_id": "33333333-3333-3333-3333-333333333301",
+    "req_title": "Senior Backend Engineer",
+    "department": "Platform",
+    "deadline_days": 42,
+    "target_date_note": "Target: a ready team in 42 days (six weeks).",
+    "demand": [
+      {
+        "skill": "Go",
+        "target_proficiency": 4
+      },
+      {
+        "skill": "PostgreSQL",
+        "target_proficiency": 3
+      },
+      {
+        "skill": "Docker",
+        "target_proficiency": 3
+      },
+      {
+        "skill": "REST APIs",
+        "target_proficiency": 3
+      }
+    ],
+    "future_skills": [
+      {
+        "skill": "Kubernetes",
+        "target_proficiency": 2
+      },
+      {
+        "skill": "Event-driven architecture",
+        "target_proficiency": 2
+      }
+    ],
+    "allocation_note": "Open requisition \"Senior Backend Engineer\" (Platform) with 2 scored applicant(s) in the pipeline."
+  },
+  "options": [
+    {
+      "id": "hire",
+      "label": "Hire externally",
+      "coverage_pct": 66,
+      "time_to_ready_days": 56,
+      "cost_usd": 45000,
+      "source": "Best applicant match in the current pipeline (66% engine score)",
+      "constraints": [
+        "56 days to ready — exceeds the 42-day window",
+        "Resume skills are claims until verified — a work sample and references are the evidence path",
+        "Cost/time are demo assumptions, not a quote"
+      ],
+      "note": "External search, notice period and onboarding take longer than the 42-day window — flagged as a constraint."
+    },
+    {
+      "id": "move",
+      "label": "Move internally",
+      "coverage_pct": 54,
+      "time_to_ready_days": 21,
+      "cost_usd": 6000,
+      "source": "Ingrid Ito (Platform) — 54% engine fit today",
+      "constraints": [
+        "Requires internal-mobility policy approval and the current manager's sign-off",
+        "The vacated role needs a backfill decision",
+        "Coverage is today's verified skills — any gap needs training"
+      ],
+      "note": "Internal move: manager approval, handover and focused retraining. Requires a backfill decision."
+    },
+    {
+      "id": "upskill",
+      "label": "Upskill internally",
+      "coverage_pct": 98,
+      "time_to_ready_days": 42,
+      "cost_usd": 2400,
+      "source": "Ingrid Ito (Platform) — 54% today → 98% after training Go + REST APIs",
+      "constraints": [
+        "Trained skills are claims (verification_rigor: low) until a work sample or review confirms them",
+        "42-day window fits one focused training track, not a senior ramp",
+        "Cost/time are demo assumptions"
+      ],
+      "note": "Focused training plus evidence verification. Trained skills are claims until verified — the planner says so, not the trainer."
+    },
+    {
+      "id": "hybrid",
+      "label": "Hybrid (hire + upskill)",
+      "coverage_pct": 99,
+      "time_to_ready_days": 42,
+      "cost_usd": 47400,
+      "source": "Best applicant match in the current pipeline (66% engine score) · Ingrid Ito (Platform) — 54% today → 98% after training Go + REST APIs",
+      "constraints": [
+        "Depends on both tracks executing — hiring AND the training track",
+        "External lead time still risks the window; internal track derisks it"
+      ],
+      "note": "Combined coverage assumes both tracks succeed. Planning estimate under demo assumptions."
+    }
+  ],
+  "planning_note": "Coverage is computed deterministically from verified skills via the Skill Intelligence Graph. Cost/time are EXPLICIT demo assumptions — planning estimates, not guarantees, quotes, or promises of hiring quality.",
+  "live_ms": 100
+}

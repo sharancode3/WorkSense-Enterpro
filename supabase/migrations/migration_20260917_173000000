@@ -1,0 +1,48 @@
+-- Phase 7: contextual policy reasoning with validated citations.
+--
+-- 1) policy_documents gains the metadata retrieval needs to be honest:
+--    effective_to (date window), applicable locations / worker types
+--    (applicability filters), and supersession (which doc supersedes which).
+-- 2) policy_escalations: a SEPARATE, authorized escalation workflow
+--    (question, selected context, relevant sources, reason, owner, status,
+--    timestamps) — independent of the recommendations hub.
+-- 3) digital_twins gains optional work_location / worker_type so employee
+--    context can be resolved for policy applicability (nullable, additive).
+--
+-- RLS: reads-only, org-scoped; all writes via backend functions.
+
+-- 1) Policy document metadata.
+alter table public.policy_documents
+  add column effective_to date,
+  add column applicable_locations jsonb not null default '["All"]'::jsonb,
+  add column applicable_worker_types jsonb not null default '["All"]'::jsonb,
+  add column supersedes_doc_id uuid references public.policy_documents(id) on delete set null;
+
+create index policy_docs_window_idx on public.policy_documents (org_id, doc_code, effective_from, effective_to);
+
+-- 2) Dedicated escalation workflow.
+create table public.policy_escalations (
+  id uuid primary key default gen_random_uuid(),
+  org_id uuid not null references public.organizations(id) on delete cascade,
+  question text not null,
+  selected_context jsonb not null default '{}'::jsonb,
+  relevant_sources jsonb not null default '[]'::jsonb,
+  reason text,
+  owner_twin_id uuid references public.digital_twins(id),
+  status text not null default 'open' check (status in ('open','in_progress','resolved','closed')),
+  created_by uuid references public.digital_twins(id),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  resolved_at timestamptz
+);
+create index policy_escalations_org_idx on public.policy_escalations (org_id, status, created_at);
+
+-- 3) Employee context for applicability (nullable, additive).
+alter table public.digital_twins
+  add column work_location text,
+  add column worker_type text;
+
+alter table public.policy_escalations enable row level security;
+create policy policy_escalations_read on public.policy_escalations for select using (
+  exists (select 1 from public.current_twin() ct where ct.org_id = public.policy_escalations.org_id)
+);

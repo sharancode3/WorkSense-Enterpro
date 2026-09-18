@@ -1,0 +1,1 @@
+update model_jobs set status='failed', error_code='MODEL_UNAVAILABLE', error_message='interrupted invocation (test artifact)', finished_at=now() where id='56bccfa9-f878-4c42-9d1e-ee572abbd36d' and status in ('queued','running');

@@ -1,0 +1,38 @@
+%PDF-1.4
+% WorkSense fictional demo fixture
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+5 0 obj
+<< /Length 971 >>
+stream
+BT /F1 10 Tf 20 772 Td (Sofia Larsen) Tj ET
+BT /F1 10 Tf 20 759 Td (sofia.larsen@example.com) Tj ET
+BT /F1 10 Tf 20 746 Td (Senior Backend Engineer) Tj ET
+BT /F1 10 Tf 20 720 Td (Summary) Tj ET
+BT /F1 10 Tf 20 707 Td (Five years of production Go experience.) Tj ET
+BT /F1 10 Tf 20 681 Td (Experience) Tj ET
+BT /F1 10 Tf 20 655 Td (Quick Projects LLC - Contractor) Tj ET
+BT /F1 10 Tf 20 642 Td (March 2024 - June 2024) Tj ET
+BT /F1 10 Tf 20 629 Td (Wrote a small Go script to reformat CSV exports. Three months total.) Tj ET
+BT /F1 10 Tf 20 603 Td (Skills) Tj ET
+BT /F1 10 Tf 20 590 Td (Go - expert) Tj ET
+BT /F1 10 Tf 20 577 Td (Kubernetes - expert) Tj ET
+BT /F1 10 Tf 20 551 Td (Note) Tj ET
+BT /F1 10 Tf 20 538 Td (The summary claims five years and expert-level skills, while the only) Tj ET
+BT /F1 10 Tf 20 525 Td (listed engagement is a three-month Go script. Extraction must not) Tj ET
+BT /F1 10 Tf 20 512 Td (treat the summary keywords as verified capability.) Tj ET
+endstream
+endobj
+trailer
+<< /Size 6 /Root 1 0 R >>
+%%EOF

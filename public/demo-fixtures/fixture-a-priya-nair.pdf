@@ -1,0 +1,49 @@
+%PDF-1.4
+% WorkSense fictional demo fixture
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+5 0 obj
+<< /Length 1870 >>
+stream
+BT /F1 10 Tf 20 772 Td (Priya Nair) Tj ET
+BT /F1 10 Tf 20 759 Td (priya.nair@example.com) Tj ET
+BT /F1 10 Tf 20 746 Td (Backend Engineer) Tj ET
+BT /F1 10 Tf 20 720 Td (Experience) Tj ET
+BT /F1 10 Tf 20 694 Td (Northstar Demo Systems - Backend Engineer) Tj ET
+BT /F1 10 Tf 20 681 Td (January 2022 - December 2025) Tj ET
+BT /F1 10 Tf 20 668 Td (Built Go services for an internal order-processing platform.) Tj ET
+BT /F1 10 Tf 20 655 Td (Implemented PostgreSQL transactions and an idempotency-key table) Tj ET
+BT /F1 10 Tf 20 642 Td (to prevent duplicate order creation during client retries.) Tj ET
+BT /F1 10 Tf 20 629 Td (Containerized services using Docker and maintained local development) Tj ET
+BT /F1 10 Tf 20 616 Td (and staging configurations.) Tj ET
+BT /F1 10 Tf 20 603 Td (Investigated slow reporting queries using EXPLAIN ANALYZE and added) Tj ET
+BT /F1 10 Tf 20 590 Td (indexes after reviewing query plans.) Tj ET
+BT /F1 10 Tf 20 564 Td (Projects) Tj ET
+BT /F1 10 Tf 20 538 Td (Reliable Order API) Tj ET
+BT /F1 10 Tf 20 525 Td (Implemented request validation, idempotency, integration tests,) Tj ET
+BT /F1 10 Tf 20 512 Td (and structured error responses in Go and PostgreSQL.) Tj ET
+BT /F1 10 Tf 20 486 Td (Deployment Practice Lab) Tj ET
+BT /F1 10 Tf 20 473 Td (Completed a personal three-month Kubernetes learning project.) Tj ET
+BT /F1 10 Tf 20 460 Td (Used Deployments, Services, and basic health probes.) Tj ET
+BT /F1 10 Tf 20 447 Td (No production Kubernetes ownership claimed.) Tj ET
+BT /F1 10 Tf 20 421 Td (Skills Claimed) Tj ET
+BT /F1 10 Tf 20 408 Td (Go - approximately four years) Tj ET
+BT /F1 10 Tf 20 395 Td (PostgreSQL - approximately three years) Tj ET
+BT /F1 10 Tf 20 382 Td (Docker - approximately two years) Tj ET
+BT /F1 10 Tf 20 369 Td (Kubernetes - beginner project exposure) Tj ET
+BT /F1 10 Tf 20 343 Td (Certifications: None claimed.) Tj ET
+endstream
+endobj
+trailer
+<< /Size 6 /Root 1 0 R >>
+%%EOF

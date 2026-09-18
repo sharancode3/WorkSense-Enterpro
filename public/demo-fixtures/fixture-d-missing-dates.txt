@@ -1,0 +1,15 @@
+Omar Haddad
+omar.haddad@example.com
+Software Engineer
+
+Experience
+Worked as a software engineer on several teams.
+Built web services and maintained legacy applications.
+Some experience with databases and container tools.
+
+Skills
+Java, PostgreSQL, Docker, REST APIs.
+
+Note
+This resume contains no job dates or duration. Any inferred tenure
+would be an assumption, not an extracted fact.

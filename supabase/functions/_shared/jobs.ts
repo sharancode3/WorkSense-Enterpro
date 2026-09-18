@@ -1,0 +1,117 @@
+// ---------------------------------------------------------------------------
+// Durable model-job records — honest constrained alternative to a background
+// worker: the serverless runtime has no worker/queue, so jobs execute inline
+// but persist their full lifecycle. Refresh recovers status; a job stuck in
+// 'running' indicates an interrupted invocation and is re-runnable. Input
+// content is never stored — only a hash.
+// ---------------------------------------------------------------------------
+
+export const JOB_SCHEMA_VERSION = "v1";
+
+export interface JobRow {
+  id: string;
+  org_id: string;
+  actor_id: string;
+  task: string;
+  input_hash: string;
+  schema_version: string;
+  prompt_version: string;
+  model: string;
+  status: "queued" | "running" | "succeeded" | "failed";
+  retry_count: number;
+  latency_ms: number | null;
+  tokens_in: number | null;
+  tokens_out: number | null;
+  error_code: string | null;
+  error_message: string | null;
+  output: unknown;
+}
+
+/** Open duplicate for the same actor+task+input while still queued/running.
+ *  A queued/running job older than 5 minutes is treated as stale (an
+ *  interrupted serverless invocation) so a retry can proceed. */
+export async function findOpenJob(supabase, orgId: string, actorId: string, task: string, inputHash: string) {
+  const { data, error } = await supabase
+    .from("model_jobs")
+    .select("id, status, created_at, started_at")
+    .eq("org_id", orgId)
+    .eq("actor_id", actorId)
+    .eq("task", task)
+    .eq("input_hash", inputHash)
+    .in("status", ["queued", "running"])
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  const ageMs = Date.now() - new Date(data.created_at).getTime();
+  if (ageMs >= 5 * 60 * 1000) return null; // stale -> allow a fresh attempt
+  return { id: data.id };
+}
+
+export async function createJob(supabase, params: {
+  orgId: string;
+  actorId: string;
+  task: string;
+  inputHash: string;
+  promptVersion: string;
+  model: string;
+}) {
+  const { data, error } = await supabase
+    .from("model_jobs")
+    .insert({
+      org_id: params.orgId,
+      actor_id: params.actorId,
+      task: params.task,
+      input_hash: params.inputHash,
+      schema_version: JOB_SCHEMA_VERSION,
+      prompt_version: params.promptVersion,
+      model: params.model,
+      status: "queued",
+      retry_count: 0,
+    })
+    .select("id, created_at")
+    .single();
+  if (error) throw error;
+  return data as { id: string; created_at: string };
+}
+
+export async function markJobRunning(supabase, id: string) {
+  await supabase.from("model_jobs").update({ status: "running", started_at: new Date().toISOString() }).eq("id", id);
+}
+
+export async function finishJob(supabase, id: string, params: {
+  status: "succeeded" | "failed";
+  output?: unknown;
+  latencyMs?: number;
+  tokensIn?: number;
+  tokensOut?: number;
+  errorCode?: string;
+  errorMessage?: string;
+}) {
+  await supabase
+    .from("model_jobs")
+    .update({
+      status: params.status,
+      output: params.output ?? null,
+      latency_ms: params.latencyMs ?? null,
+      tokens_in: params.tokensIn ?? null,
+      tokens_out: params.tokensOut ?? null,
+      error_code: params.errorCode ?? null,
+      error_message: params.errorMessage ?? null,
+      finished_at: new Date().toISOString(),
+    })
+    .eq("id", id);
+}
+
+export async function getJob(supabase, id: string): Promise<JobRow | null> {
+  const { data, error } = await supabase.from("model_jobs").select("*").eq("id", id).maybeSingle();
+  if (error) throw error;
+  return (data as JobRow | null) ?? null;
+}
+
+/** Non-cryptographic input hash (deterministic, used only for dedup). */
+export function hashInput(text: string): string {
+  let h = 0;
+  const s = String(text ?? "");
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+  return (h >>> 0).toString(16);
+}

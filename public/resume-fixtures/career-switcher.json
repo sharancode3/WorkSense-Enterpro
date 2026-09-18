@@ -1,0 +1,93 @@
+{
+  "low_text": false,
+  "extracted_text": "Sam Rivera\nProduct Operations Manager\nsam.rivera@example.com | Seattle, WA\nSUMMARY\n8 years in operations and program management.\nTargeting a Product Analyst role. Transferable: stakeholder communication,\ndata-driven process design, spreadsheet modeling, SQL (self-taught, 2 years).",
+  "warnings": {
+    "conflicts": [],
+    "overlaps": []
+  },
+  "review": {
+    "full_name": "Sam Rivera",
+    "contact": {
+      "email": "sam.rivera@example.com",
+      "location": "Seattle, WA"
+    },
+    "roles": [
+      {
+        "title": "Operations Manager",
+        "company": "Northwind Logistics",
+        "start": "2018-03",
+        "years_claimed": 8,
+        "quote": "Led cross-functional projects with measurable cost reductions."
+      }
+    ],
+    "education": [
+      {
+        "institution": "Gonzaga University",
+        "degree": "BA Business",
+        "year": "2014",
+        "quote": "BA Business, Gonzaga University (2010-2014)"
+      }
+    ],
+    "certifications": [],
+    "projects": [
+      {
+        "name": "Executive reporting",
+        "role": "Owner",
+        "tech_stack": [
+          "Excel",
+          "SQL"
+        ],
+        "impact_metric": "monthly leadership reporting",
+        "quote": "Built Excel and SQL reporting that leadership relies on monthly."
+      }
+    ],
+    "skill_claims": [
+      {
+        "skill": "Stakeholder Communication",
+        "years": 8,
+        "proficiency_tier": "ADVANCED",
+        "association": "explicit",
+        "quote": "Transferable: stakeholder communication, data-driven process design"
+      },
+      {
+        "skill": "Excel",
+        "years": 8,
+        "proficiency_tier": "ADVANCED",
+        "association": "explicit",
+        "quote": "Built Excel and SQL reporting that leadership relies on monthly."
+      },
+      {
+        "skill": "SQL",
+        "years": 2,
+        "proficiency_tier": "FOUNDATIONAL",
+        "association": "explicit",
+        "quote": "SQL (self-taught, 2 years)"
+      },
+      {
+        "skill": "Funnel Analytics",
+        "years": 1,
+        "proficiency_tier": "FOUNDATIONAL",
+        "association": "inferred",
+        "quote": "Targeting a Product Analyst / analytics role."
+      },
+      {
+        "skill": "Roadmapping",
+        "years": 2,
+        "proficiency_tier": "INTERMEDIATE",
+        "association": "inferred",
+        "quote": "Transferable: stakeholder communication, data-driven process design"
+      }
+    ],
+    "ambiguities": [
+      "SQL is self-taught \u2014 needs targeted verification, not assumption.",
+      "Target role (Product Analyst) has no prior analytics title."
+    ],
+    "conflicts": [],
+    "computed": {
+      "total_years_deduped": 8,
+      "roles_merged": 0,
+      "overlap_warnings": [],
+      "claims_unsupported": 0
+    }
+  }
+}

@@ -1,0 +1,79 @@
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+};
+const json = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+
+  const supabase = createClient(
+    Deno.env.get("SUPABASE_URL")!,
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+  );
+
+  const authHeader = req.headers.get("Authorization") ?? "";
+  const { data: userData } = await supabase.auth.getUser(authHeader.replace("Bearer ", ""));
+  const uid = userData?.user?.id;
+  if (!uid) return json({ error: "UNAUTHENTICATED" }, 401);
+
+  const { data: caller } = await supabase
+    .from("digital_twins")
+    .select("id, role, email, org_id, name")
+    .eq("auth_user_id", uid)
+    .maybeSingle();
+  if (!caller) return json({ error: "UNAUTHENTICATED" }, 401);
+
+  let body: {
+    question?: string;
+    context?: Record<string, unknown>;
+    sources?: unknown[];
+    reason?: string;
+  } = {};
+  try {
+    body = await req.json();
+  } catch {
+    /* empty */
+  }
+  const question = String(body.question ?? "").trim();
+  if (!question) return json({ error: "VALIDATION_ERROR", message: "question is required." }, 400);
+
+  const now = new Date().toISOString();
+
+  // Owner: an HR Executive in this org (fall back to the caller when none).
+  const { data: owner } = await supabase
+    .from("digital_twins")
+    .select("id")
+    .eq("org_id", caller.org_id)
+    .eq("role", "hr_executive")
+    .limit(1)
+    .maybeSingle();
+
+  const { data, error } = await supabase
+    .from("policy_escalations")
+    .insert({
+      org_id: caller.org_id,
+      question,
+      selected_context: body.context ?? {},
+      relevant_sources: body.sources ?? [],
+      reason: (body.reason ?? "").trim() || "HR review requested.",
+      owner_twin_id: owner?.id ?? caller.id,
+      status: "open",
+      created_by: caller.id,
+    })
+    .select("id, status, created_at")
+    .single();
+  if (error) return json({ error: "INTERNAL", message: error.message }, 500);
+
+  return json({
+    ok: true,
+    escalation_id: data.id,
+    status: data.status,
+    created_at: data.created_at,
+    owner: owner?.id ?? caller.id,
+    message: "Escalation created — an HR workflow is now open for this question.",
+  });
+});

@@ -1,0 +1,20 @@
+{
+  "_provenance": "previously-generated-demo-artifact",
+  "_label": "Previously generated demo artifact. Not live inference.",
+  "_generated_at": "2026-09-17T21:27:37.864Z",
+  "_model": "qwen3:4b-instruct-2507-q4_K_M",
+  "label": "Policy demo: policy-grounded",
+  "question": "How many paid sick days do employees get per year?",
+  "status": "grounded",
+  "abstained": false,
+  "answer": "Employees receive 10 paid sick days per year.",
+  "citations": [
+    {
+      "doc_code": "POL-SICK",
+      "section": "s1",
+      "exact_quote": "Employees receive 10 paid sick days per year, with certification required for absences longer than three consecutive days."
+    }
+  ],
+  "note": null,
+  "live_ms": 6557
+}

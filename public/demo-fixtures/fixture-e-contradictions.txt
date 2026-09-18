@@ -1,0 +1,21 @@
+Sofia Larsen
+sofia.larsen@example.com
+Senior Backend Engineer
+
+Summary
+Five years of production Go experience.
+
+Experience
+
+Quick Projects LLC - Contractor
+March 2024 - June 2024
+Wrote a small Go script to reformat CSV exports. Three months total.
+
+Skills
+Go - expert
+Kubernetes - expert
+
+Note
+The summary claims five years and expert-level skills, while the only
+listed engagement is a three-month Go script. Extraction must not
+treat the summary keywords as verified capability.

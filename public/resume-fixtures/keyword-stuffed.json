@@ -1,0 +1,86 @@
+{
+  "low_text": false,
+  "extracted_text": "Derek Fontaine\nFull-Stack Developer\nderek.fontaine@example.com | Remote\nSUMMARY\nExpert in EVERYTHING: Kubernetes, Machine Learning, React, Go, Rust,\nTerraform, Kafka, Airflow, dbt, Spark, Figma, Excel, and Blockchain.\n10 years of experience in all of them. 100% proficiency in each.",
+  "warnings": {
+    "conflicts": [
+      "Summary claims expert-level proficiency in 13 technologies with only two generic consulting roles as evidence."
+    ],
+    "overlaps": []
+  },
+  "review": {
+    "full_name": "Derek Fontaine",
+    "contact": {
+      "email": "derek.fontaine@example.com",
+      "location": "Remote"
+    },
+    "roles": [
+      {
+        "title": "Software Consultant",
+        "company": "Self-employed",
+        "start": "2019",
+        "years_claimed": 7,
+        "quote": "Handled dozens of projects touching every technology listed above."
+      },
+      {
+        "title": "Freelance Developer",
+        "company": "Self-employed",
+        "start": "2016",
+        "end": "2018",
+        "years_claimed": 3,
+        "quote": "Built websites and small scripts in many languages."
+      }
+    ],
+    "education": [],
+    "certifications": [],
+    "projects": [],
+    "skill_claims": [
+      {
+        "skill": "Go",
+        "years": 10,
+        "proficiency_tier": "EXPERT",
+        "association": "unsupported",
+        "quote": "10 years of experience in all of them. 100% proficiency in each."
+      },
+      {
+        "skill": "Kubernetes",
+        "years": 10,
+        "proficiency_tier": "EXPERT",
+        "association": "unsupported",
+        "quote": "SKILLS (all EXPERT) Kubernetes, Machine Learning, React, Go, Rust..."
+      },
+      {
+        "skill": "Machine Learning fundamentals",
+        "years": 10,
+        "proficiency_tier": "EXPERT",
+        "association": "unsupported",
+        "quote": "Expert in EVERYTHING: Kubernetes, Machine Learning, React..."
+      },
+      {
+        "skill": "React",
+        "years": 10,
+        "proficiency_tier": "EXPERT",
+        "association": "unsupported",
+        "quote": "100% proficiency in each."
+      },
+      {
+        "skill": "PostgreSQL",
+        "years": 10,
+        "proficiency_tier": "EXPERT",
+        "association": "unsupported",
+        "quote": "Kafka, Airflow, dbt, Spark, Figma, Excel, and Blockchain."
+      }
+    ],
+    "ambiguities": [
+      "No project or role evidence ties any listed technology to real work."
+    ],
+    "conflicts": [
+      "Summary claims expert-level proficiency in 13 technologies with only two generic consulting roles as evidence."
+    ],
+    "computed": {
+      "total_years_deduped": 10,
+      "roles_merged": 1,
+      "overlap_warnings": [],
+      "claims_unsupported": 5
+    }
+  }
+}

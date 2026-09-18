@@ -1,0 +1,10 @@
+-- Phase 1 authz: remove direct client WRITE paths for protected records.
+-- All mutations must go through backend functions (service role bypasses RLS).
+-- Read policies remain (org-scoped).
+
+drop policy if exists twin_write on public.digital_twins;
+drop policy if exists req_write on public.job_requisitions;
+drop policy if exists skill_write on public.skill_graph;
+drop policy if exists onboarding_write on public.onboarding_journeys;
+drop policy if exists rec_write on public.recommendations;
+drop policy if exists org_write on public.organizations;

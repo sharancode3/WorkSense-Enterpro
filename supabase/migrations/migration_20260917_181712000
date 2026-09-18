@@ -1,0 +1,110 @@
+-- Phase 8: adaptive onboarding with ownership, dependencies, versioned approvals,
+-- genuine completion evidence.
+--
+-- 1) digital_twins.role gains 'it_security' — the IT service owner persona.
+--    Service owners provision access and resolve access blockers; they get NO
+--    broad HR powers (enforced in the task authorization matrix, not here).
+-- 2) onboarding_plans: versioned plan definition bound to a plan_hash. Dual
+--    approval (Manager + HR Executive) is stored ON the plan row, so approval is
+--    bound to the exact version/hash; regeneration creates a new version and old
+--    approvals never carry over (no retained approved state).
+-- 3) onboarding_tasks: one row per (plan, task_code) — task DEFINITION columns
+--    (type, owner_role, deps, duration, why_evidence, evidence_requirements)
+--    and EXECUTION state columns (state, blockers, waiver, completion_record,
+--    adaptation) kept separate on the same row.
+-- 4) onboarding_task_events: audit log of every execution action, deduped by
+--    (plan, task_code, action, attempt_hash) — a double submission with the same
+--    payload is rejected, and every rejection is recorded.
+--
+-- RLS: reads-only, org-scoped; all writes via backend functions.
+
+-- 1) Extend the role enum for the IT service owner persona.
+alter table public.digital_twins drop constraint digital_twins_role_check;
+alter table public.digital_twins add constraint digital_twins_role_check check (
+  role in ('hr_executive','hr_partner','manager','recruiter','employee','candidate','it_security')
+);
+
+-- 2) Versioned plan definition + hash-bound approval record.
+create table public.onboarding_plans (
+  id uuid primary key default gen_random_uuid(),
+  org_id uuid not null references public.organizations(id) on delete cascade,
+  twin_id uuid not null references public.digital_twins(id) on delete cascade,
+  application_id uuid references public.applications(id) on delete set null,
+  version integer not null default 1,
+  plan_hash text not null,
+  status text not null default 'pending_approval' check (status in ('draft','pending_approval','approved','completed','superseded')),
+  manager_approval jsonb,
+  hr_approval jsonb,
+  start_date timestamptz not null,
+  generated_at timestamptz not null default now(),
+  readiness jsonb not null default '{}'::jsonb,
+  carryover jsonb not null default '[]'::jsonb,
+  audit_events jsonb not null default '[]'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index onboarding_plans_twin_idx on public.onboarding_plans (org_id, twin_id, version desc);
+
+-- 3) Task definition + execution state (separate column groups, one row).
+create table public.onboarding_tasks (
+  id uuid primary key default gen_random_uuid(),
+  org_id uuid not null references public.organizations(id) on delete cascade,
+  plan_id uuid not null references public.onboarding_plans(id) on delete cascade,
+  version integer not null default 1,
+  task_code text not null,
+  title text not null,
+  task_type text not null check (task_type in ('learning','verification','provisioning','policy','access','onboarding_admin')),
+  owner_role text not null check (owner_role in ('employee','manager','hr','it_security')),
+  required boolean not null default true,
+  non_waivable boolean not null default false,
+  depends_on jsonb not null default '[]'::jsonb,
+  duration_days numeric not null default 1,
+  due_date timestamptz,
+  topological_level integer not null default 0,
+  why_evidence jsonb not null default '{}'::jsonb,
+  evidence_requirements jsonb not null default '[]'::jsonb,
+  state text not null default 'pending' check (state in ('pending','blocked','ready','in_progress','done','waived','failed')),
+  completion_record jsonb,
+  blockers jsonb not null default '[]'::jsonb,
+  waiver jsonb,
+  adaptation jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (plan_id, task_code)
+);
+create index onboarding_tasks_plan_idx on public.onboarding_tasks (org_id, plan_id);
+
+-- 4) Execution audit log with attempt-hash dedup.
+create table public.onboarding_task_events (
+  id uuid primary key default gen_random_uuid(),
+  org_id uuid not null references public.organizations(id) on delete cascade,
+  plan_id uuid not null references public.onboarding_plans(id) on delete cascade,
+  task_code text not null,
+  actor_twin_id uuid references public.digital_twins(id),
+  action text not null check (action in ('complete','block','resolve','waive','adapt','fail')),
+  attempt_hash text not null,
+  result text not null check (result in ('applied','rejected')),
+  note text,
+  evidence jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  unique (plan_id, task_code, action, attempt_hash)
+);
+create index onboarding_events_plan_idx on public.onboarding_task_events (org_id, plan_id);
+
+-- RLS: reads-only, org-scoped, in the SAME migration.
+alter table public.onboarding_plans enable row level security;
+alter table public.onboarding_tasks enable row level security;
+alter table public.onboarding_task_events enable row level security;
+
+create policy onboarding_plans_read on public.onboarding_plans for select using (
+  exists (select 1 from public.current_twin() ct where ct.org_id = public.onboarding_plans.org_id)
+);
+create policy onboarding_tasks_read on public.onboarding_tasks for select using (
+  exists (select 1 from public.current_twin() ct where ct.org_id = public.onboarding_tasks.org_id)
+);
+create policy onboarding_events_read on public.onboarding_task_events for select using (
+  exists (select 1 from public.current_twin() ct where ct.org_id = public.onboarding_task_events.org_id)
+);
+
+create trigger onboarding_plans_set_updated_at before update on public.onboarding_plans for each row execute function public.set_updated_at();
+create trigger onboarding_tasks_set_updated_at before update on public.onboarding_tasks for each row execute function public.set_updated_at();

@@ -1,0 +1,2 @@
+-- Phase 6: hub — executive summary on recommendations
+alter table public.recommendations add column executive_summary text not null default '';

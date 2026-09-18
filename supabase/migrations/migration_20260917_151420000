@@ -1,0 +1,2 @@
+delete from public.digital_twins where id='99999999-9999-9999-9999-999999999998';
+delete from public.organizations where id='99999999-9999-9999-9999-999999999999';

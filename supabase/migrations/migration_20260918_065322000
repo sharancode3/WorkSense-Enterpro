@@ -1,0 +1,1 @@
+delete from public.llm_cache where task = 'resume_extraction' and input_hash = 'd9e271c1';
