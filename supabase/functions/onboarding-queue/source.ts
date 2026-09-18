@@ -52,9 +52,9 @@ Deno.serve(async (req) => {
 
   const twinIds = [...byTwin.keys()];
   const { data: twinRows } = twinIds.length > 0
-    ? await supabase.from("digital_twins").select("id, name, job_title, manager_id, role, org_id").in("id", twinIds)
+    ? await supabase.from("digital_twins").select("id, name, job_title, department, manager_id, role, org_id").in("id", twinIds)
     : { data: [] as never[] };
-  const twins = (twinRows ?? []) as { id: string; name: string; job_title: string | null; manager_id: string | null; role: string; org_id: string }[];
+  const twins = (twinRows ?? []) as { id: string; name: string; job_title: string | null; department: string | null; manager_id: string | null; role: string; org_id: string }[];
 
   const employees = twins.filter((t) => t.role === "employee" && t.org_id === caller.org_id);
 

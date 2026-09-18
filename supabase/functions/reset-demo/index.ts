@@ -4699,8 +4699,244 @@ const ELENA_TWIN_ID = "22222222-2222-2222-2222-222222222210";
 const DISPOSABLE_TWIN_ID = "22222222-2222-2222-2222-222222222299";
 export const SEED_FIXTURE_CLOCK = "2026-09-15T09:00:00Z";
 
-async function seedPhase8Plan(supabase, orgId: string, clock: string) {
-  const { data: alex } = await supabase
+// ---------------------------------------------------------------------------
+// Batch D (D2): multiple coherent onboarding journeys at different lifecycle
+// stages for the demo org — pending approval, waiting on IT (Alex, above),
+// progressing normally, nearly complete, completed. Plans are built from real
+// approved applications against existing requisitions via the deterministic
+// engine; done tasks carry matching demo evidence references so "done" is
+// evidenced, never a bare status.
+// ---------------------------------------------------------------------------
+const SAMIRA_TWIN_ID = "22222222-2222-2222-2222-222222222204"; // Samira Patel (Data Analyst)
+const DIEGO_TWIN_ID = "6786033d-78a9-41ab-af1f-2f1982e02f1d"; // Diego Mensah (Designer -> Product Designer)
+const WEI_TWIN_ID = "e42c2e94-e7bb-44d0-aa03-97639ecbe77b"; // Wei Fernandez (Analyst -> Data Analyst)
+const FATIMA_K_TWIN_ID = "e52c3027-6da7-4177-a588-8b275252d347"; // Fatima Kowalski (Engineer -> Backend)
+const WEI_MANAGER_TWIN_ID = "f0e2fc7c-ebec-4f78-ae1b-0e0bf2dccff4"; // Nadia Kim (Data Manager)
+const DIEGO_MANAGER_TWIN_ID = "5e4dc5de-c698-45da-ac98-d5987224e623"; // Wei Kim (Design Manager)
+const DATA_ANALYST_REQ_ID = "33333333-3333-3333-3333-333333333302";
+const PRODUCT_DESIGNER_REQ_ID = "434fd459-02fd-4c4f-ab41-b210a2464d99";
+const BACKEND_REQ_ID = "33333333-3333-3333-3333-333333333301";
+
+interface JourneyPlanSpec {
+  twinId: string;
+  requisitionId: string;
+  applicationCode: string;
+  appliedAt: string;
+  startDate: string;
+  status: "pending_approval" | "approved" | "completed";
+  /** Task codes to mark done. "__ALL_EXCEPT_SURVEY__" marks everything but the survey. */
+  done: string[];
+  blocked?: Record<string, { id: string; note: string; reported_by: string; at: string; status: "open" }[]>;
+  approvals?: { manager?: { by: string; by_twin_id: string }; hr?: { by: string; by_twin_id: string } };
+}
+
+async function seedJourneyPlan(supabase, orgId: string, clock: string, spec: JourneyPlanSpec) {
+  const { data: twin } = await supabase
+    .from("digital_twins")
+    .select("id, verified_skills")
+    .eq("id", spec.twinId)
+    .maybeSingle();
+  if (!twin) throw new Error(`journey seed: twin ${spec.twinId} missing`);
+
+  const { data: req } = await supabase
+    .from("job_requisitions")
+    .select("id, title, required_skills, future_skills, seniority_level")
+    .eq("id", spec.requisitionId)
+    .maybeSingle();
+  if (!req) throw new Error(`journey seed: requisition ${spec.requisitionId} missing`);
+
+  const { data: polRows } = await supabase.from("policy_documents").select("doc_code, title").eq("org_id", orgId);
+  const policyDocs = (polRows ?? []) as { doc_code: string; title: string }[];
+
+  // Approved role relationship — same discipline as seedPhase8Plan.
+  const { data: existingApp } = await supabase
+    .from("applications")
+    .select("id")
+    .eq("org_id", orgId)
+    .eq("candidate_twin_id", spec.twinId)
+    .eq("requisition_id", spec.requisitionId)
+    .maybeSingle();
+  let appId = existingApp?.id ?? null;
+  if (!appId) {
+    const { data: app, error: appErr } = await supabase
+      .from("applications")
+      .insert({
+        org_id: orgId,
+        candidate_twin_id: spec.twinId,
+        requisition_id: spec.requisitionId,
+        stage: "selected",
+        application_code: spec.applicationCode,
+        applied_at: spec.appliedAt,
+      })
+      .select("id")
+      .single();
+    if (appErr) throw new Error(`journey seed: application insert ${appErr.message}`);
+    appId = app.id;
+  }
+
+  const defs = buildPlanDefs({
+    role: req,
+    verified_skills: (twin.verified_skills ?? []) as { name: string; proficiency: number }[],
+    policy_docs: policyDocs,
+  });
+  const hash = planHash(defs);
+
+  const allCodes = defs.map((d) => d.task_code);
+  const doneList =
+    spec.status === "completed"
+      ? allCodes
+      : spec.done.includes("__ALL_EXCEPT_SURVEY__")
+        ? allCodes.filter((c) => c !== "survey")
+        : spec.done;
+  const doneSet = new Set(doneList);
+  const blocked = spec.blocked ?? {};
+
+  // Completion records with matching evidence so "done" is evidenced, never bare.
+  const completion: Record<string, CompletionRecord> = {};
+  for (const code of allCodes) {
+    if (!doneSet.has(code)) continue;
+    const def = defs.find((d) => d.task_code === code);
+    const evidence = (def?.evidence_requirements ?? []).map((r) => ({
+      kind: r.kind,
+      label: r.label,
+      value: r.kind === "assessment_id" ? `ASMT-DEMO-${code.toUpperCase()}` : `REF-DEMO-${code.toUpperCase()}`,
+    }));
+    completion[code] = {
+      actor_twin_id: spec.twinId,
+      actor_name: "System (demo seed)",
+      at: clock,
+      evidence,
+      attempt_hash: `seed-${code}`,
+      note: "Seeded demo evidence reference (synthetic, matched to this plan's requirements).",
+    };
+  }
+
+  const tasks = materialize(
+    deriveStates(defs, {
+      approved: spec.status !== "pending_approval",
+      startDate: spec.startDate,
+      done: doneList,
+      blockers: blocked,
+    }),
+    { completion, blockers: blocked }
+  );
+  const readiness = estimateReadiness(defs, tasks, spec.startDate, clock);
+
+  const approvals = spec.approvals ?? {};
+  const auditEvents = [
+    { actor: "system", action: "plan_generated", note: `Plan v1 built from approved role "${req.title}" (deterministic seed).`, timestamp: clock },
+    ...(spec.status !== "pending_approval"
+      ? [{ actor: "system", action: "plan_activated", note: "Seeded with Manager + HR approvals (demo).", timestamp: clock }]
+      : []),
+    ...(spec.status === "completed"
+      ? [{ actor: "system", action: "plan_completed", note: "All owned tasks completed with evidence references (demo).", timestamp: clock }]
+      : []),
+  ];
+
+  const { data: planRow, error: planErr } = await supabase
+    .from("onboarding_plans")
+    .insert({
+      org_id: orgId,
+      twin_id: spec.twinId,
+      application_id: appId,
+      version: 1,
+      plan_hash: hash,
+      status: spec.status,
+      manager_approval: approvals.manager ?? null,
+      hr_approval: approvals.hr ?? null,
+      start_date: spec.startDate,
+      generated_at: clock,
+      readiness,
+      carryover: [],
+      audit_events: auditEvents,
+    })
+    .select("id")
+    .single();
+  if (planErr || !planRow) throw new Error(`journey seed: plan insert ${planErr?.message}`);
+
+  const { error: taskErr } = await supabase.from("onboarding_tasks").insert(
+    tasks.map((t) => ({
+      org_id: orgId,
+      plan_id: planRow.id,
+      version: 1,
+      task_code: t.task_code,
+      title: t.title,
+      task_type: t.task_type,
+      owner_role: t.owner_role,
+      required: t.required,
+      non_waivable: t.non_waivable,
+      depends_on: t.depends_on,
+      duration_days: t.duration_days,
+      due_date: t.due_date,
+      topological_level: t.topological_level,
+      why_evidence: t.why_evidence,
+      evidence_requirements: t.evidence_requirements,
+      state: t.state,
+      completion_record: t.completion_record,
+      blockers: t.blockers,
+      waiver: t.waiver,
+      adaptation: t.adaptation,
+    }))
+  );
+  if (taskErr) throw new Error(`journey seed: tasks insert ${taskErr.message}`);
+}
+
+async function seedJourneyPlans(supabase, orgId: string, clock: string) {
+  // Pending approval — Samira Patel (Data Analyst).
+  await seedJourneyPlan(supabase, orgId, clock, {
+    twinId: SAMIRA_TWIN_ID,
+    requisitionId: DATA_ANALYST_REQ_ID,
+    applicationCode: "WS-SAMIRA-2026",
+    appliedAt: "2026-09-01T09:00:00Z",
+    startDate: "2026-09-16T09:00:00Z",
+    status: "pending_approval",
+    done: [],
+  });
+  // Progressing normally — Diego Mensah (Product Designer).
+  await seedJourneyPlan(supabase, orgId, clock, {
+    twinId: DIEGO_TWIN_ID,
+    requisitionId: PRODUCT_DESIGNER_REQ_ID,
+    applicationCode: "WS-DIEGO-2026",
+    appliedAt: "2026-08-20T09:00:00Z",
+    startDate: "2026-09-02T09:00:00Z",
+    status: "approved",
+    done: ["it_provisioning", "security_training", "payroll", "access_sso"],
+    approvals: {
+      manager: { by: "design.lead.worksense@example.com", by_twin_id: DIEGO_MANAGER_TWIN_ID },
+      hr: { by: "dana@worksense.demo", by_twin_id: DANA_TWIN_ID },
+    },
+  });
+  // Nearly complete — Wei Fernandez (Analyst -> Data Analyst).
+  await seedJourneyPlan(supabase, orgId, clock, {
+    twinId: WEI_TWIN_ID,
+    requisitionId: DATA_ANALYST_REQ_ID,
+    applicationCode: "WS-WEI-2026",
+    appliedAt: "2026-08-10T09:00:00Z",
+    startDate: "2026-08-18T09:00:00Z",
+    status: "approved",
+    done: ["__ALL_EXCEPT_SURVEY__"],
+    approvals: {
+      manager: { by: "nadia@worksense.demo", by_twin_id: WEI_MANAGER_TWIN_ID },
+      hr: { by: "dana@worksense.demo", by_twin_id: DANA_TWIN_ID },
+    },
+  });
+  // Completed — Fatima Kowalski (Engineer -> Senior Backend Engineer).
+  await seedJourneyPlan(supabase, orgId, clock, {
+    twinId: FATIMA_K_TWIN_ID,
+    requisitionId: BACKEND_REQ_ID,
+    applicationCode: "WS-FATIMA-2026",
+    appliedAt: "2026-07-01T09:00:00Z",
+    startDate: "2026-07-21T09:00:00Z",
+    status: "completed",
+    done: [],
+    approvals: {
+      manager: { by: "jordan@worksense.demo", by_twin_id: JORDAN_TWIN_ID },
+      hr: { by: "dana@worksense.demo", by_twin_id: DANA_TWIN_ID },
+    },
+  });
+}
+
+async function seedPhase8Plan(supabase, orgId: string, clock: string) {  const { data: alex } = await supabase
     .from("digital_twins")
     .select("id, verified_skills, audit_events")
     .eq("id", ALEX_TWIN_ID)
@@ -5189,6 +5425,10 @@ async function reseed(supabase, authIds: Record<string, string>) {
   // 9a) Phase 8: Alex's approved role application + adaptive onboarding plan
   // (access blocker reported by IT, provisioning/learning/verification tasks).
   await seedPhase8Plan(supabase, DEMO_ORG_ID, fx.clock);
+
+  // 9aa) Batch D (D2): the rest of the multi-stage journey set (pending
+  // approval, progressing normally, nearly complete, completed).
+  await seedJourneyPlans(supabase, DEMO_ORG_ID, fx.clock);
 
   // 9b) Candidate sessions (Phase 6 + Phase 5): Priya gets one session per
   // format — work_sample (payments service design), interview (production
@@ -5796,6 +6036,7 @@ Deno.serve(async (req) => {
         job_requisitions: fx.requisitions.length + 2,
         policy_documents: fx.policies.length + POLICY_ADDITIONS.length,
         onboarding_journeys: 1 + fx.journeys.length,
+        onboarding_plans: 5,
         recommendations: RECOMMENDATIONS.length,
         assessment_blueprints: ASSESSMENT_SEEDS.length,
         assessment_rubrics: ASSESSMENT_SEEDS.reduce((n, s) => n + s.rubrics.length, 0),

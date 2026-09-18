@@ -24,9 +24,11 @@ import {
   Network,
   RefreshCw,
   Scale,
+  Search,
   ShieldCheck,
   UserCheck,
   Users,
+  X,
   XCircle,
   ArrowRightLeft,
 } from "lucide-react";
@@ -542,20 +544,51 @@ function JourneysQueue({
   filter,
   setFilter,
   onSelect,
+  onSummary,
+  people,
+  compared,
+  toggleCompare,
 }: {
   journeys: QueueJourney[];
   filters: { all: number; pending_approval: number; overdue: number; stalled: number };
   filter: "all" | "pending_approval" | "overdue" | "stalled";
   setFilter: (f: "all" | "pending_approval" | "overdue" | "stalled") => void;
   onSelect: (twinId: string) => void;
+  onSummary: (twinId: string) => void;
+  people: Map<string, string>;
+  compared: Set<string>;
+  toggleCompare: (twinId: string) => void;
 }) {
+  // Batch D (D1): search + department + plan-status filters on the overview.
+  const [search, setSearch] = useState("");
+  const [departmentFilter, setDepartmentFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | "pending_approval" | "approved" | "completed">("all");
+
+  const departments = [...new Set(journeys.map((j) => j.department).filter(Boolean) as string[])].sort();
+  const q = search.trim().toLowerCase();
+  const visible = journeys.filter((j) => {
+    if (filter === "stalled" && !j.stalled) return false;
+    if (filter === "overdue" && !j.overdue) return false;
+    if (filter === "pending_approval" && !(j.pending_manager_approval || j.pending_hr_approval)) return false;
+    if (statusFilter !== "all" && j.status !== statusFilter) return false;
+    if (departmentFilter !== "all" && j.department !== departmentFilter) return false;
+    if (
+      q &&
+      ![j.employee_name, j.job_title ?? "", j.department ?? "", people.get(j.manager_id ?? "") ?? ""].some((s) =>
+        s.toLowerCase().includes(q)
+      )
+    ) {
+      return false;
+    }
+    return true;
+  });
   const chips: { key: typeof filter; label: string; count: number }[] = [
     { key: "all", label: "All", count: filters.all },
     { key: "pending_approval", label: "Pending approval", count: filters.pending_approval },
     { key: "overdue", label: "Overdue", count: filters.overdue },
     { key: "stalled", label: "Stalled", count: filters.stalled },
   ];
-  const visible = journeys.filter((j) => (filter === "all" ? true : filter === "stalled" ? j.stalled : filter === "overdue" ? j.overdue : j.pending_manager_approval || j.pending_hr_approval));
+
   return (
     <div className="rounded-lg bg-white p-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -575,47 +608,125 @@ function JourneysQueue({
           ))}
         </div>
       </div>
-      {visible.length === 0 && <p className="mt-3 text-sm text-muted-foreground">No journeys match this filter.</p>}
+
+      {/* Search + department + plan-status filters (Batch D, D1) */}
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <div className="relative min-w-0 flex-1">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <input
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search by name, role, department or manager…"
+            aria-label="Search journeys"
+            className="h-9 w-full rounded-md border border-border bg-white pl-8 pr-8 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none"
+          />
+          {search && (
+            <button
+              type="button"
+              aria-label="Clear search"
+              onClick={() => setSearch("")}
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:text-foreground"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
+        </div>
+        <select
+          value={departmentFilter}
+          onChange={(e) => setDepartmentFilter(e.target.value)}
+          aria-label="Filter by department"
+          className="h-9 rounded-md border border-border bg-white px-2 text-sm font-medium text-foreground focus:border-primary focus:outline-none"
+        >
+          <option value="all">All departments</option>
+          {departments.map((d) => (
+            <option key={d} value={d}>{d}</option>
+          ))}
+        </select>
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
+          aria-label="Filter by plan status"
+          className="h-9 rounded-md border border-border bg-white px-2 text-sm font-medium text-foreground focus:border-primary focus:outline-none"
+        >
+          <option value="all">All plan statuses</option>
+          <option value="pending_approval">Pending approval</option>
+          <option value="approved">Active (approved)</option>
+          <option value="completed">Completed</option>
+        </select>
+        <span className="ml-auto text-xs font-bold uppercase tracking-wider text-muted-foreground">{visible.length} shown</span>
+      </div>
+
+      {visible.length === 0 && <p className="mt-3 text-sm text-muted-foreground">No journeys match the current filters.</p>}
       <div className="mt-3 flex flex-col gap-2">
-        {visible.map((j) => (
-          <button
-            key={j.twin_id}
-            type="button"
-            onClick={() => onSelect(j.twin_id)}
-            className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-muted p-3 text-left transition-all duration-200 hover:bg-border"
-          >
-            <div className="min-w-0">
-              <p className="truncate text-sm font-bold text-foreground">{j.employee_name}</p>
-              <p className="text-[11px] text-muted-foreground">{j.job_title ?? "Employee"} · plan v{j.version} · {j.readiness_pct}% complete</p>
-              {(j.pending_manager_approval || j.pending_hr_approval) && (
-                <p className="mt-1 flex flex-wrap gap-1">
-                  {j.pending_manager_approval && <span className="rounded bg-primary/15 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-primary">Manager approval needed</span>}
-                  {j.pending_hr_approval && <span className="rounded bg-primary/15 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-primary">HR approval needed</span>}
+        {visible.map((j) => {
+          const managerName = people.get(j.manager_id ?? "") ?? "—";
+          return (
+            <div key={j.twin_id} className="flex flex-wrap items-center gap-3 rounded-lg bg-muted p-3 transition-all duration-200 hover:bg-border">
+              <button
+                type="button"
+                onClick={() => onSummary(j.twin_id)}
+                className="min-w-0 flex-1 text-left"
+                title="Open journey summary"
+              >
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                  <p className="truncate text-sm font-bold text-foreground">{j.employee_name}</p>
+                  <span className="text-[11px] text-muted-foreground">
+                    {j.job_title ?? "Employee"}
+                    {j.department ? ` · ${j.department}` : ""} · mgr {managerName}
+                  </span>
+                </div>
+                <p className="mt-0.5 text-[11px] text-muted-foreground">
+                  started {fmt(j.start_date)} · {j.completed_tasks}/{j.total_tasks} tasks · plan v{j.version} · {j.readiness_pct}% complete
                 </p>
-              )}
-              {j.viewer_actions.length > 0 && (
-                <p className="mt-1 truncate text-[11px] text-muted-foreground">
-                  Your actions: {j.viewer_actions.slice(0, 2).map((a) => a.title).join(" · ")}
-                  {j.viewer_actions.length > 2 ? ` +${j.viewer_actions.length - 2} more` : ""}
-                </p>
-              )}
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {j.status === "pending_approval" && <span className="rounded bg-accent/20 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-accent">Pending approval</span>}
+                  {j.status === "approved" && <span className="rounded bg-secondary/15 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-secondary">Active</span>}
+                  {j.status === "completed" && <span className="rounded bg-primary/15 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-primary">Completed</span>}
+                  {(j.pending_manager_approval || j.pending_hr_approval) && (
+                    <span className="rounded bg-primary/15 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-primary">
+                      {j.pending_manager_approval ? "Manager" : ""}
+                      {j.pending_manager_approval && j.pending_hr_approval ? " + " : ""}
+                      {j.pending_hr_approval ? "HR" : ""} sign-off needed
+                    </span>
+                  )}
+                  {j.blocked_count > 0 && (
+                    <span className="rounded bg-destructive/10 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-destructive">{j.blocked_count} blocked</span>
+                  )}
+                  {j.overdue && (
+                    <span className="flex items-center gap-1 rounded bg-accent/20 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-accent">
+                      <Hourglass className="h-3 w-3" /> {j.overdue_count} overdue
+                    </span>
+                  )}
+                  {j.stalled && (
+                    <span className="flex items-center gap-1 rounded bg-destructive/10 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-destructive">
+                      <AlertOctagon className="h-3 w-3" /> Stalled
+                    </span>
+                  )}
+                  {j.viewer_actions.length > 0 && (
+                    <span className="rounded bg-foreground/10 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-foreground">
+                      {j.viewer_actions.length} action{j.viewer_actions.length > 1 ? "s" : ""} for you
+                    </span>
+                  )}
+                </div>
+              </button>
+              <div className="flex shrink-0 flex-col items-end gap-1.5">
+                <Button size="sm" variant="outline" className="h-7" onClick={() => onSelect(j.twin_id)}>
+                  Open plan <ArrowUpRight className="h-3.5 w-3.5" />
+                </Button>
+                <label className="flex cursor-pointer items-center gap-1.5 text-[11px] font-semibold text-muted-foreground">
+                  <input
+                    type="checkbox"
+                    checked={compared.has(j.twin_id)}
+                    onChange={() => toggleCompare(j.twin_id)}
+                    className="h-3.5 w-3.5 accent-primary"
+                  />
+                  Compare
+                </label>
+              </div>
             </div>
-            <div className="flex shrink-0 flex-wrap items-center gap-1.5">
-              {j.status === "pending_approval" && <span className="rounded-md bg-accent px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-foreground">Pending</span>}
-              {j.status === "approved" && <span className="rounded-md bg-secondary px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">Active</span>}
-              {j.overdue && (
-                <span className="flex items-center gap-1 rounded-md bg-accent/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-accent">
-                  <Hourglass className="h-3 w-3" /> Overdue
-                </span>
-              )}
-              {j.stalled && (
-                <span className="flex items-center gap-1 rounded-md bg-destructive/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-destructive">
-                  <AlertOctagon className="h-3 w-3" /> Stalled
-                </span>
-              )}
-            </div>
-          </button>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
@@ -656,8 +767,290 @@ function ProvisioningQueue({ items, names, onOpen }: { items: QueueTaskRef[]; na
   );
 }
 
-export default function Onboarding() {
-  const { role, twin, user } = useAuth();
+function JourneySummaryDialog({
+  journey,
+  people,
+  onClose,
+  onOpenPlan,
+}: {
+  journey: QueueJourney;
+  people: Map<string, string>;
+  onClose: () => void;
+  onOpenPlan: (twinId: string) => void;
+}) {
+  const managerName = people.get(journey.manager_id ?? "") ?? "—";
+  const gates = journey.gates ?? [];
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-h-[85dvh] max-w-lg overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Users className="h-5 w-5 text-primary" /> {journey.employee_name} — onboarding
+          </DialogTitle>
+        </DialogHeader>
+        <div className="flex flex-col gap-4">
+          {/* Who this is about */}
+          <section className="rounded-lg bg-muted p-4">
+            <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Who</p>
+            <p className="mt-1 text-sm text-foreground">
+              <b>{journey.employee_name}</b> · {journey.job_title ?? "Employee"}
+              {journey.department ? ` · ${journey.department}` : ""}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Manager: {managerName} · Started {fmt(journey.start_date)} · Plan v{journey.version}
+            </p>
+          </section>
+
+          {/* Plan state — plan approval is NOT readiness */}
+          <section className="rounded-lg bg-muted p-4">
+            <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Plan status & approvals</p>
+            <p className="mt-1 text-sm text-foreground">
+              <b>
+                {journey.status === "approved"
+                  ? "Active"
+                  : journey.status === "pending_approval"
+                    ? "Pending approval"
+                    : journey.status === "completed"
+                      ? "Completed"
+                      : journey.status}
+              </b>
+              {journey.pending_manager_approval || journey.pending_hr_approval ? (
+                <span className="ml-2 text-xs text-accent">
+                  awaiting {[journey.pending_manager_approval ? "Manager" : "", journey.pending_hr_approval ? "HR" : ""].filter(Boolean).join(" + ")} sign-off
+                </span>
+              ) : (
+                <span className="ml-2 text-xs text-muted-foreground">manager + HR sign-off recorded</span>
+              )}
+            </p>
+            <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
+              Plan approval is a gate on the plan itself — separate from task completion and from role readiness.
+            </p>
+          </section>
+
+          {/* Progress: owned-task completion vs gates vs readiness */}
+          <section className="rounded-lg bg-muted p-4">
+            <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Progress</p>
+            <div className="mt-2 flex flex-wrap items-center gap-x-6 gap-y-1 text-sm">
+              <div>
+                <p className="text-[11px] text-muted-foreground">Owned tasks completed</p>
+                <p className="text-lg font-extrabold text-foreground">
+                  {journey.completed_tasks}/{journey.total_tasks}
+                </p>
+              </div>
+              <div>
+                <p className="text-[11px] text-muted-foreground">Readiness (estimate)</p>
+                <p className="text-lg font-extrabold text-foreground">
+                  {journey.readiness_pct}%
+                  {journey.provisional && <span className="ml-1 align-middle text-[10px] font-bold uppercase text-accent">provisional</span>}
+                </p>
+              </div>
+              <div>
+                <p className="text-[11px] text-muted-foreground">Projected ready</p>
+                <p className="text-lg font-extrabold text-foreground">{journey.projected_ready_date ? fmt(journey.projected_ready_date) : "unknown"}</p>
+              </div>
+            </div>
+            {gates.length > 0 && (
+              <div className="mt-3 flex flex-col gap-1.5">
+                {gates.map((g) => (
+                  <div key={g.key} className="flex items-center gap-2 text-xs">
+                    <span className="w-32 shrink-0 font-semibold text-foreground">{g.label}</span>
+                    <div className="h-2 w-full max-w-[160px] overflow-hidden rounded-full bg-white">
+                      <div className={`h-full ${g.key === "capability" ? "bg-secondary" : g.key === "compliance" ? "bg-accent" : "bg-primary"}`} style={{ width: `${g.pct}%` }} />
+                    </div>
+                    <span className="text-muted-foreground">{g.pct}%</span>
+                  </div>
+                ))}
+                <p className="text-[10px] text-muted-foreground">
+                  Mandatory readiness gates. A waived task never counts as capability.
+                </p>
+              </div>
+            )}
+          </section>
+
+          {/* Blockers / waiting on */}
+          <section className="rounded-lg bg-muted p-4">
+            <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Blockers & waiting</p>
+            {journey.blocked_count > 0 || journey.stalled ? (
+              <ul className="mt-1 flex flex-col gap-1 text-xs text-foreground">
+                {journey.stall_reasons.map((r) => (
+                  <li key={r} className="flex items-center gap-1.5">
+                    <AlertOctagon className="h-3.5 w-3.5 shrink-0 text-destructive" /> {r}
+                  </li>
+                ))}
+                {journey.blocked_count > 0 && (
+                  <li className="flex items-center gap-1.5">
+                    <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-destructive" /> {journey.blocked_count} blocked task(s)
+                  </li>
+                )}
+              </ul>
+            ) : (
+              <p className="mt-1 text-xs text-muted-foreground">No open blockers.</p>
+            )}
+            {journey.waiting_on.length > 0 && (
+              <div className="mt-2">
+                <p className="text-[11px] font-semibold text-muted-foreground">Waiting on others (gates the employee's next steps)</p>
+                <ul className="mt-1 flex flex-col gap-1">
+                  {journey.waiting_on.slice(0, 4).map((t) => (
+                    <li key={t.task_code} className="flex items-center justify-between gap-2 rounded bg-white px-2 py-1 text-xs">
+                      <span className="truncate font-medium text-foreground">{t.title}</span>
+                      <span className="shrink-0 text-muted-foreground">
+                        {OWNER_LABEL[t.owner_role as PlanTaskView["owner_role"]] ?? t.owner_role} · due {fmt(t.due_date)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </section>
+
+          {/* What the viewer can do now */}
+          {journey.viewer_actions.length > 0 && (
+            <section className="rounded-lg bg-primary/5 p-4">
+              <p className="text-xs font-bold uppercase tracking-wider text-primary">Actions available to you</p>
+              <ul className="mt-1 flex flex-col gap-1">
+                {journey.viewer_actions.map((t) => (
+                  <li key={t.task_code} className="flex items-center justify-between gap-2 text-xs">
+                    <span className="truncate font-medium text-foreground">{t.title}</span>
+                    <span className="shrink-0 text-muted-foreground">
+                      {OWNER_LABEL[t.owner_role as PlanTaskView["owner_role"]] ?? t.owner_role} · due {fmt(t.due_date)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-1 text-[11px] text-muted-foreground">Opening the full plan lets you act on these tasks.</p>
+            </section>
+          )}
+
+          <Button onClick={() => onOpenPlan(journey.twin_id)}>
+            Open full plan <ArrowRight className="h-4 w-4" />
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function CompareDialog({
+  journeys,
+  people,
+  onClose,
+  onOpenPlan,
+}: {
+  journeys: QueueJourney[];
+  people: Map<string, string>;
+  onClose: () => void;
+  onOpenPlan: (twinId: string) => void;
+}) {
+  const daysSinceStart = (startDate: string) => Math.max(0, Math.floor((Date.now() - new Date(startDate).getTime()) / 86400000));
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-h-[85dvh] max-w-3xl overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <ArrowRightLeft className="h-5 w-5 text-primary" /> Compare journeys ({journeys.length})
+          </DialogTitle>
+        </DialogHeader>
+        <p className="text-xs leading-snug text-muted-foreground">
+          These journeys may target different roles. Different role plans are <b>not directly equivalent</b> — compare
+          the process signals (approval, completion, gates, blockers), never a person against a person.
+        </p>
+        <div className="mt-3 overflow-x-auto">
+          <table className="w-full border-collapse text-sm">
+            <thead>
+              <tr>
+                <th className="rounded-tl-lg bg-muted p-2 text-left text-xs font-bold uppercase tracking-wider text-muted-foreground">Metric</th>
+                {journeys.map((j) => (
+                  <th key={j.twin_id} className="bg-muted p-2 text-left text-xs font-bold text-foreground">
+                    {j.employee_name}
+                    <span className="block text-[10px] font-normal text-muted-foreground">
+                      {j.job_title ?? "Employee"}
+                      {j.department ? ` · ${j.department}` : ""}
+                    </span>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              <tr>
+                <td className="p-2 text-xs font-semibold text-muted-foreground">Manager</td>
+                {journeys.map((j) => (
+                  <td key={j.twin_id} className="p-2 text-xs text-foreground">{people.get(j.manager_id ?? "") ?? "—"}</td>
+                ))}
+              </tr>
+              <tr>
+                <td className="p-2 text-xs font-semibold text-muted-foreground">Plan status</td>
+                {journeys.map((j) => (
+                  <td key={j.twin_id} className="p-2 text-xs text-foreground">
+                    {j.status === "approved" ? "Active" : j.status === "pending_approval" ? "Pending approval" : j.status === "completed" ? "Completed" : j.status}
+                    {j.pending_manager_approval || j.pending_hr_approval ? " · sign-off needed" : ""}
+                  </td>
+                ))}
+              </tr>
+              <tr>
+                <td className="p-2 text-xs font-semibold text-muted-foreground">Owned tasks completed</td>
+                {journeys.map((j) => (
+                  <td key={j.twin_id} className="p-2 text-xs text-foreground">
+                    {j.completed_tasks}/{j.total_tasks}
+                  </td>
+                ))}
+              </tr>
+              {(["access", "compliance", "capability"] as const).map((key) => (
+                <tr key={key}>
+                  <td className="p-2 text-xs font-semibold text-muted-foreground">Gate: {key}</td>
+                  {journeys.map((j) => {
+                    const gate = (j.gates ?? []).find((g) => g.key === key);
+                    return <td key={j.twin_id} className="p-2 text-xs text-foreground">{gate ? `${gate.pct}%` : "—"}</td>;
+                  })}
+                </tr>
+              ))}
+              <tr>
+                <td className="p-2 text-xs font-semibold text-muted-foreground">Blocked tasks</td>
+                {journeys.map((j) => (
+                  <td key={j.twin_id} className="p-2 text-xs text-foreground">{j.blocked_count}</td>
+                ))}
+              </tr>
+              <tr>
+                <td className="p-2 text-xs font-semibold text-muted-foreground">Overdue tasks</td>
+                {journeys.map((j) => (
+                  <td key={j.twin_id} className="p-2 text-xs text-foreground">{j.overdue_count}</td>
+                ))}
+              </tr>
+              <tr>
+                <td className="p-2 text-xs font-semibold text-muted-foreground">Time since start</td>
+                {journeys.map((j) => (
+                  <td key={j.twin_id} className="p-2 text-xs text-foreground">{daysSinceStart(j.start_date)}d</td>
+                ))}
+              </tr>
+              <tr>
+                <td className="p-2 text-xs font-semibold text-muted-foreground">Readiness (estimate)</td>
+                {journeys.map((j) => (
+                  <td key={j.twin_id} className="p-2 text-xs text-foreground">
+                    {j.readiness_pct}%{j.provisional ? " (provisional)" : ""}
+                  </td>
+                ))}
+              </tr>
+              <tr>
+                <td className="p-2 text-xs font-semibold text-muted-foreground">Projected ready</td>
+                {journeys.map((j) => (
+                  <td key={j.twin_id} className="p-2 text-xs text-foreground">{j.projected_ready_date ? fmt(j.projected_ready_date) : "unknown"}</td>
+                ))}
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div className="mt-2 flex flex-wrap gap-2">
+          {journeys.map((j) => (
+            <Button key={j.twin_id} size="sm" variant="outline" onClick={() => onOpenPlan(j.twin_id)}>
+              {j.employee_name} <ArrowUpRight className="h-3.5 w-3.5" />
+            </Button>
+          ))}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+export default function Onboarding() {  const { role, twin, user } = useAuth();
   const qc = useQueryClient();
   const [searchParams] = useSearchParams();
   const urlTwin = searchParams.get("twin");
@@ -778,6 +1171,18 @@ export default function Onboarding() {
     },
   });
 
+  // Name resolution for managers + journey summaries (Batch D, D1) — RLS
+  // scopes the rows to what this role may read (org for HR, team for managers).
+  const people = useQuery({
+    queryKey: ["ob-people", user?.id ?? "anon"],
+    enabled: canView,
+    queryFn: async () => {
+      const { data } = await supabase.from("digital_twins").select("id, name, role");
+      return (data ?? []) as { id: string; name: string; role: string }[];
+    },
+  });
+  const peopleById = useMemo(() => new Map((people.data ?? []).map((p) => [p.id, p.name])), [people.data]);
+
   // Phase 6: role-scoped operational queue (all journeys for HR/manager/IT,
   // own journey for employees) with stalled/overdue signals.
   const queue = useQuery({
@@ -788,6 +1193,28 @@ export default function Onboarding() {
   const [view, setView] = useState<"timeline" | "dag">("timeline");
   const [queueFilter, setQueueFilter] = useState<"all" | "pending_approval" | "overdue" | "stalled">("all");
   const [activeCode, setActiveCode] = useState<string | null>(null);
+  // Batch D (D1/D3): journey summary dialog + compare selection (max 3).
+  const [summaryTwin, setSummaryTwin] = useState<string | null>(null);
+  const [compareSet, setCompareSet] = useState<Set<string>>(new Set());
+  const [compareOpen, setCompareOpen] = useState(false);
+
+  const toggleCompare = (twinId: string) => {
+    setCompareSet((prev) => {
+      const next = new Set(prev);
+      if (next.has(twinId)) next.delete(twinId);
+      else if (next.size < 3) next.add(twinId);
+      else {
+        toast.info("Compare up to 3 journeys at a time.");
+        return prev;
+      }
+      return next;
+    });
+  };
+  const openJourneyPlan = (twinId: string) => {
+    setSummaryTwin(null);
+    userPickedRef.current = true;
+    setSelected(twinId);
+  };
 
   // Scroll to a specific task after its plan/tasks finish loading (queue deep link).
   useEffect(() => {
@@ -1005,16 +1432,43 @@ export default function Onboarding() {
           <div className="mt-8 flex flex-col gap-4">
             {role === "employee" && <EmployeeQueue journey={queue.data.journeys[0]} onOpen={(code) => setActiveCode(code)} />}
             {(role === "manager" || role === "hr_executive" || role === "hr_partner") && (
-              <JourneysQueue
-                journeys={queue.data.journeys}
-                filters={queue.data.filters}
-                filter={queueFilter}
-                setFilter={setQueueFilter}
-                onSelect={(twinId) => {
-                  userPickedRef.current = true;
-                  setSelected(twinId);
-                }}
-              />
+              <>
+                {compareSet.size > 0 && (
+                  <div className="flex items-center justify-between gap-3 rounded-lg bg-foreground p-4 text-white">
+                    <p className="flex items-center gap-2 text-sm text-white/80">
+                      <ArrowRightLeft className="h-4 w-4 text-secondary" />
+                      {compareSet.size} journey(s) selected for comparison.
+                    </p>
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => setCompareOpen(true)}
+                        disabled={compareSet.size < 2}
+                      >
+                        Compare ({compareSet.size})
+                      </Button>
+                      <Button size="sm" variant="ghost" className="text-white hover:bg-white/10 hover:text-white" onClick={() => setCompareSet(new Set())}>
+                        Clear
+                      </Button>
+                    </div>
+                  </div>
+                )}
+                <JourneysQueue
+                  journeys={queue.data.journeys}
+                  filters={queue.data.filters}
+                  filter={queueFilter}
+                  setFilter={setQueueFilter}
+                  people={peopleById}
+                  compared={compareSet}
+                  toggleCompare={toggleCompare}
+                  onSummary={setSummaryTwin}
+                  onSelect={(twinId) => {
+                    userPickedRef.current = true;
+                    setSelected(twinId);
+                  }}
+                />
+              </>
             )}
             {role === "it_security" && (
               <ProvisioningQueue
@@ -1400,6 +1854,32 @@ export default function Onboarding() {
           </div>
         )}
       </div>
+
+      {/* Batch D (D1): bounded journey summary (no forced dependency-graph dive). */}
+      {summaryTwin && queue.data && (() => {
+        const journey = queue.data.journeys.find((j) => j.twin_id === summaryTwin);
+        return journey ? (
+          <JourneySummaryDialog
+            journey={journey}
+            people={peopleById}
+            onClose={() => setSummaryTwin(null)}
+            onOpenPlan={openJourneyPlan}
+          />
+        ) : null;
+      })()}
+
+      {/* Batch D (D3): compare up to three journeys. */}
+      {compareOpen && queue.data && (() => {
+        const journeys = queue.data.journeys.filter((j) => compareSet.has(j.twin_id)).slice(0, 3);
+        return journeys.length >= 2 ? (
+          <CompareDialog
+            journeys={journeys}
+            people={peopleById}
+            onClose={() => setCompareOpen(false)}
+            onOpenPlan={openJourneyPlan}
+          />
+        ) : null;
+      })()}
     </AppShell>
   );
 }

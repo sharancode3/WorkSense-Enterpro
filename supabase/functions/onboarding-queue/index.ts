@@ -33,6 +33,7 @@ export interface QueueJourney {
   twin_id: string;
   employee_name: string;
   job_title: string | null;
+  department: string | null;
   manager_id: string | null;
   plan_id: string;
   version: number;
@@ -42,6 +43,11 @@ export interface QueueJourney {
   projected_ready_date: string | null;
   provisional: boolean;
   blocked_count: number;
+  /** Owned-task completion (done+waived), distinct from readiness. */
+  completed_tasks: number;
+  total_tasks: number;
+  /** Mandatory readiness gates (access / compliance / capability). */
+  gates: { key: string; label: string; pct: number }[];
   pending_manager_approval: boolean;
   pending_hr_approval: boolean;
   overdue: boolean;
@@ -70,11 +76,11 @@ interface JourneyInput {
     version: number;
     status: string;
     start_date: string;
-    readiness: { ready_pct?: number; projected_ready_date?: string | null; provisional?: boolean; blocked_count?: number };
+    readiness: { ready_pct?: number; projected_ready_date?: string | null; provisional?: boolean; blocked_count?: number; satisfied?: number; total?: number; dimensions?: { key: string; label: string; pct: number }[] };
     manager_approval: { at?: string } | null;
     hr_approval: { at?: string } | null;
   };
-  employee: { id: string; name: string; job_title: string | null; manager_id: string | null };
+  employee: { id: string; name: string; job_title: string | null; department: string | null; manager_id: string | null };
   tasks: {
     task_code: string;
     title: string;
@@ -119,6 +125,7 @@ export function buildOnboardingQueue(input: {
     }
 
     const doneCodes = new Set(j.tasks.filter((t) => t.state === "done" || t.state === "waived").map((t) => t.task_code));
+    const readiness = j.plan.readiness ?? {};
     // Waiting on: tasks owned by OTHERS that gate the employee's own remaining tasks.
     const employeeRemaining = j.tasks.filter((t) => t.owner_role === "employee" && t.state !== "done" && t.state !== "waived");
     const needed = new Set(employeeRemaining.flatMap((t) => t.depends_on ?? []));
@@ -145,15 +152,19 @@ export function buildOnboardingQueue(input: {
       twin_id: j.employee.id,
       employee_name: j.employee.name,
       job_title: j.employee.job_title,
+      department: j.employee.department ?? null,
       manager_id: j.employee.manager_id,
       plan_id: j.plan.id,
       version: j.plan.version,
       status: j.plan.status,
       start_date: j.plan.start_date,
-      readiness_pct: j.plan.readiness?.ready_pct ?? 0,
-      projected_ready_date: j.plan.readiness?.projected_ready_date ?? null,
-      provisional: j.plan.readiness?.provisional ?? false,
-      blocked_count: j.plan.readiness?.blocked_count ?? 0,
+      readiness_pct: readiness.ready_pct ?? 0,
+      projected_ready_date: readiness.projected_ready_date ?? null,
+      provisional: readiness.provisional ?? false,
+      blocked_count: readiness.blocked_count ?? 0,
+      completed_tasks: readiness.satisfied ?? j.tasks.filter((t) => t.state === "done" || t.state === "waived").length,
+      total_tasks: readiness.total ?? j.tasks.length,
+      gates: Array.isArray(readiness.dimensions) ? readiness.dimensions : [],
       pending_manager_approval: j.plan.status === "pending_approval" && !j.plan.manager_approval?.at,
       pending_hr_approval: j.plan.status === "pending_approval" && !j.plan.hr_approval?.at,
       overdue: overdueTasks.length > 0,
@@ -261,9 +272,9 @@ Deno.serve(async (req) => {
 
   const twinIds = [...byTwin.keys()];
   const { data: twinRows } = twinIds.length > 0
-    ? await supabase.from("digital_twins").select("id, name, job_title, manager_id, role, org_id").in("id", twinIds)
+    ? await supabase.from("digital_twins").select("id, name, job_title, department, manager_id, role, org_id").in("id", twinIds)
     : { data: [] as never[] };
-  const twins = (twinRows ?? []) as { id: string; name: string; job_title: string | null; manager_id: string | null; role: string; org_id: string }[];
+  const twins = (twinRows ?? []) as { id: string; name: string; job_title: string | null; department: string | null; manager_id: string | null; role: string; org_id: string }[];
 
   const employees = twins.filter((t) => t.role === "employee" && t.org_id === caller.org_id);
 

@@ -243,6 +243,7 @@ export const onboardingQueueSchema = z.object({
       twin_id: z.string(),
       employee_name: z.string(),
       job_title: z.string().nullable(),
+      department: z.string().nullable(),
       manager_id: z.string().nullable(),
       plan_id: z.string(),
       version: z.number(),
@@ -252,6 +253,9 @@ export const onboardingQueueSchema = z.object({
       projected_ready_date: z.string().nullable(),
       provisional: z.boolean(),
       blocked_count: z.number(),
+      completed_tasks: z.number(),
+      total_tasks: z.number(),
+      gates: z.array(z.object({ key: z.string(), label: z.string(), pct: z.number() })).default([]),
       pending_manager_approval: z.boolean(),
       pending_hr_approval: z.boolean(),
       overdue: z.boolean(),
@@ -287,6 +291,7 @@ export interface QueueJourney {
   twin_id: string;
   employee_name: string;
   job_title: string | null;
+  department: string | null;
   manager_id: string | null;
   plan_id: string;
   version: number;
@@ -296,6 +301,9 @@ export interface QueueJourney {
   projected_ready_date: string | null;
   provisional: boolean;
   blocked_count: number;
+  completed_tasks: number;
+  total_tasks: number;
+  gates: { key: string; label: string; pct: number }[];
   pending_manager_approval: boolean;
   pending_hr_approval: boolean;
   overdue: boolean;
