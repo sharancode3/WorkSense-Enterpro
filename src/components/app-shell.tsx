@@ -127,60 +127,75 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const renderLink = (l: NavLinkDef, mobile = false) => {
     const active = location.pathname === l.to;
     return (
-      <Link
-        key={l.to}
-        to={l.to}
-        className={
-          mobile
-            ? "flex items-center gap-2 rounded-md px-3 py-2 text-sm font-semibold text-foreground transition-colors hover:bg-muted"
-            : `flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-semibold transition-colors ${
-                active ? "bg-muted text-foreground" : "text-foreground/80 hover:bg-muted hover:text-foreground"
-              }`
-        }
-        aria-current={active ? "page" : undefined}
-      >
-        <l.icon className="h-4 w-4 text-primary" />
-        {l.label}
-      </Link>
-    );
-  };
-
-  return (
-    <div className="flex min-h-screen flex-col bg-background">
-      {/* Phase 14: unmistakable demo-mode indicator + live build/health */}
-      <div className="border-b border-border bg-foreground text-white">
-        <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-4 gap-y-1 px-4 py-1.5 text-[11px] font-semibold sm:px-6">
-          <span className="flex items-center gap-1.5">
-            <span className="rounded bg-destructive px-1.5 py-0.5 text-[9px] font-extrabold uppercase tracking-wider text-white">Demo mode</span>
-            All data is fictional · seeded for this demonstration
-          </span>
-          <span className="flex items-center gap-1.5 text-white/70">
-            <span className={`h-1.5 w-1.5 rounded-full ${health.data?.model_ready ? "bg-secondary" : health.isError ? "bg-destructive" : "bg-muted"}`} />
-            {aiState}
-          </span>
-          <span className="ml-auto hidden text-white/50 sm:inline">build {BUILD_INFO.commit.slice(0, 7)} · schema {BUILD_INFO.schemaVersion}</span>
+    <div className="flex min-h-screen bg-background">
+      {/* Fixed vertical left sidebar (desktop) */}
+      <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col border-r border-border bg-white md:flex">
+        <div className="flex items-center gap-2 px-5 py-5">
+          <Link to="/" className="flex items-center gap-2">
+            <span className="flex h-9 w-9 items-center justify-center rounded-md bg-primary text-lg font-extrabold text-white">W</span>
+            <span className="text-lg font-bold tracking-tight text-foreground">WorkSense</span>
+          </Link>
         </div>
-      </div>
+        {role && (
+          <div className="px-5 pb-3">
+            <span className={`rounded-md px-2.5 py-1 text-xs font-semibold uppercase tracking-wider ${ROLE_BADGE_CLASS[role]}`}>
+              {ROLE_LABEL[role]}
+            </span>
+          </div>
+        )}
+        <div className="flex-1 overflow-y-auto px-3 pb-4">
+          <nav aria-label="Primary" className="flex flex-col gap-1">
+            {mainLinks.map((l) => renderLink(l, "sidebar"))}
+          </nav>
+          {governanceLinks.length > 0 && (
+            <>
+              <p className="mt-5 px-3 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/70">Governance</p>
+              <nav aria-label="Governance" className="mt-1 flex flex-col gap-1">
+                {governanceLinks.map((l) => renderLink(l, "sidebar"))}
+              </nav>
+            </>
+          )}
+        </div>
+        <div className="flex flex-col gap-2 border-t border-border px-5 py-4">
+          <div className="flex items-center gap-2">
+            <span className={`h-2 w-2 shrink-0 rounded-full ${health.data?.model_ready ? "bg-secondary" : health.isError ? "bg-destructive" : "bg-muted"}`} />
+            <HealthChip
+              gateway={health.data?.gateway}
+              modelReady={health.data?.model_ready}
+              authOk={health.data?.gateway_authenticated}
+              checking={health.isLoading}
+            />
+          </div>
+          <p className="truncate text-xs font-semibold text-foreground">{twin?.email}</p>
+          <div className="flex flex-wrap gap-2">
+            {role && can(role, "reset_demo") && (
+              <Button size="sm" variant="secondary" onClick={() => void handleReset()} disabled={resetting}>
+                <RotateCcw className="h-3.5 w-3.5" /> Reset demo
+              </Button>
+            )}
+            <Button size="sm" variant="outline" onClick={() => void signOut()}>
+              <LogOut className="h-3.5 w-3.5" /> Sign out
+            </Button>
+          </div>
+        </div>
+      </aside>
 
-      <header className="border-b-2 border-border bg-background">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6">
-          <div className="flex h-16 items-center justify-between">
-            <Link to="/" className="flex items-center gap-2">
-              <span className="flex h-9 w-9 items-center justify-center rounded-md bg-primary text-lg font-extrabold text-white">
-                W
-              </span>
-              <span className="text-lg font-bold tracking-tight text-foreground">WorkSense</span>
-            </Link>
-
-            <div className="flex items-center gap-2">
-              {role && (
-                <span
-                  className={`hidden rounded-md px-2.5 py-1 text-xs font-semibold uppercase tracking-wider sm:inline-block ${ROLE_BADGE_CLASS[role]}`}
-                >
-                  {ROLE_LABEL[role]}
-                </span>
-              )}
-              {/* Mobile navigation */}
+      {/* Scrollable content panel */}
+      <div className="flex min-h-screen min-w-0 flex-1 flex-col">
+        {/* Phase 14: unmistakable demo-mode indicator + live build/health */}
+        <div className="border-b border-border bg-foreground text-white">
+          <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-4 gap-y-1 px-4 py-1.5 text-[11px] font-semibold sm:px-6">
+            <span className="flex items-center gap-1.5">
+              <span className="rounded bg-destructive px-1.5 py-0.5 text-[9px] font-extrabold uppercase tracking-wider text-white">Demo mode</span>
+              All data is fictional · seeded for this demonstration
+            </span>
+            <span className="hidden items-center gap-1.5 text-white/70 sm:flex">
+              <span className={`h-1.5 w-1.5 rounded-full ${health.data?.model_ready ? "bg-secondary" : health.isError ? "bg-destructive" : "bg-muted"}`} />
+              {aiState}
+            </span>
+            <span className="hidden text-white/50 lg:inline">build {BUILD_INFO.commit.slice(0, 7)} · schema {BUILD_INFO.schemaVersion}</span>
+            <div className="ml-auto flex items-center gap-2">
+              {/* Mobile navigation (sidebar is hidden below md) */}
               {links.length > 0 && (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -193,7 +208,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     <DropdownMenuLabel>Navigate</DropdownMenuLabel>
                     <DropdownMenuSeparator />
                     <div className="flex flex-col px-2 pb-2 pt-1">
-                      {links.map((l) => renderLink(l, true))}
+                      {links.map((l) => renderLink(l, "mobile"))}
                     </div>
                   </DropdownMenuContent>
                 </DropdownMenu>
@@ -239,42 +254,29 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </DropdownMenu>
             </div>
           </div>
+        </div>
 
-          {/* Role-scoped desktop nav — one flat row of icon-backed tabs */}
-          {links.length > 0 && (
-            <nav
-              aria-label="Primary"
-              className="hidden flex-wrap items-center gap-x-1 gap-y-1 overflow-x-auto border-t border-border py-2 md:flex"
-            >
-              {links.map((l) => renderLink(l))}
-            </nav>
-          )}
-        </div>
-      </header>
-      <main className="flex-1">{children}</main>
-      <footer className="bg-foreground text-white">
-        <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-6 text-sm sm:px-6">
-          <div className="flex flex-col gap-1">
-            <div className="flex items-center gap-2">
-              <ShieldCheck className="h-4 w-4 text-secondary" />
-              <span className="font-medium">Every recommendation is approved by a human before it moves.</span>
+        <main className="flex-1">{children}</main>
+
+        <footer className="bg-foreground text-white">
+          <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-6 text-sm sm:px-6">
+            <div className="flex flex-col gap-1">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="h-4 w-4 text-secondary" />
+                <span className="font-medium">Every recommendation is approved by a human before it moves.</span>
+              </div>
+              <p className="text-white/60">
+                Skill matching, onboarding scheduling, and risk scoring are deterministic — AI is used
+                only to extract, explain, and generate language, never to decide.
+              </p>
             </div>
-            <p className="text-white/60">
-              Skill matching, onboarding scheduling, and risk scoring are deterministic — AI is used
-              only to extract, explain, and generate language, never to decide.
-            </p>
+            <span className="text-xs text-white/40">
+              Demonstration data is fictional. build {BUILD_INFO.commit} · {new Date(BUILD_INFO.builtAt).toLocaleString()} · schema {BUILD_INFO.schemaVersion}
+            </span>
           </div>
-          <span className="text-xs text-white/40">
-            Demonstration data is fictional. build {BUILD_INFO.commit} · {new Date(BUILD_INFO.builtAt).toLocaleString()} · schema {BUILD_INFO.schemaVersion}
-          </span>
-          <HealthChip
-            gateway={health.data?.gateway}
-            modelReady={health.data?.model_ready}
-            authOk={health.data?.gateway_authenticated}
-            checking={health.isLoading}
-          />
-        </div>
-      </footer>
+        </footer>
+      </div>
     </div>
   );
+}
 }

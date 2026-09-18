@@ -375,3 +375,7 @@ Bounded repair loop: max 3 attempts per external blocker, then stop + report evi
 - **Task cards**: compact summary (title, status chip, owner/due, blocker tag, actions, resolve) with a "View details & evidence" toggle that hides prerequisites/completion/waiver/adaptation/WhyEvidence by default — blockers and actions stay visible for the demo.
 - **Regenerate** → "Generate new plan version" with subtext "the active plan is never modified in place"; bottom governance text → collapsible "Governance & safeguards" accordion.
 - No backend function/RPC/schema changes. `pnpm check` 223/223 · `pnpm build` green.
+
+## 29. Fixed left-sidebar navigation (all AppShell pages)
+
+`src/components/app-shell.tsx` converted from a top horizontal nav to a **fixed vertical left sidebar** that every `<AppShell>` page inherits automatically: brand + role pill up top, vertical icon+text links (role-gated), a "Governance" section for admins (Access & users, System health, Data quality), and a footer with the live AI-gateway chip, the active user email, Reset demo, and Sign out. The content panel keeps the demo-mode strip (fictional-data badge, AI state, build/schema) and the slim governance footer; on narrow screens the sidebar collapses to a hamburger menu in the top strip. No page routes or backend touched. `pnpm check` 223/223 · `pnpm build` green. (Visual click-through of the sidebar pending a logged-in preview session; prior items — AdminGovernancePanel restore, role isolation, onboarding redesign — already shipped.)
