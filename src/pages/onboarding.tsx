@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -156,7 +156,7 @@ function TaskCard({
   const [failNote, setFailNote] = useState("");
   const Icon = TYPE_ICON[task.task_type];
 
-  const openBlockers = task.blockers.filter((b) => b.status === "open");
+  const openBlockers = (task.blockers ?? []).filter((b) => b.status === "open");
 
   const doComplete = () => {
     const ev = (task.evidence_requirements ?? [])
@@ -206,14 +206,14 @@ function TaskCard({
         <span>{task.duration_days}d</span>
       </div>
 
-      {task.depends_on.length > 0 && (
+      {(task.depends_on ?? []).length > 0 && (
         <p className="text-[11px] text-muted-foreground">
           <GitBranch className="mr-1 inline h-3 w-3" />
           needs: {task.depends_on.join(", ")}
         </p>
       )}
 
-      {task.blocked_reasons.length > 0 && (
+      {(task.blocked_reasons ?? []).length > 0 && (
         <p className="rounded-md bg-destructive/10 px-2 py-1.5 text-[11px] leading-snug text-destructive">
           <AlertTriangle className="mr-1 inline h-3 w-3" />
           Waiting on: {task.blocked_reasons.join(", ")}
@@ -306,7 +306,7 @@ function TaskCard({
         </div>
       )}
 
-      {task.state === "blocked" && task.blocked_reasons.length === 0 && openBlockers.length === 0 && (
+      {task.state === "blocked" && (task.blocked_reasons ?? []).length === 0 && openBlockers.length === 0 && (
         <p className="rounded-md bg-muted px-2 py-1.5 text-[11px] text-muted-foreground">Blocked by a prerequisite upstream.</p>
       )}
 
@@ -431,6 +431,9 @@ export default function Onboarding() {
   const qc = useQueryClient();
   const [selected, setSelected] = useState<string>("");
   const [busy, setBusy] = useState<string | null>(null);
+  // Tracks whether the user explicitly picked an employee from the dropdown —
+  // the demo fallback never overrides an explicit choice.
+  const userPickedRef = useRef(false);
 
   const canView = role ? can(role, "view_onboarding") : false;
 
@@ -443,11 +446,54 @@ export default function Onboarding() {
     },
   });
 
-  // Employee + IT service view resolve to the actor's own twin by default;
-  // managers/HR pick an employee.
+  // Which employees currently have onboarding plans (used by the demo fallback
+  // so the dependency graph is always shown on page load for managers/HR).
+  const planOwners = useQuery({
+    queryKey: ["ob-plan-owners", user?.id ?? "anon"],
+    enabled: canView,
+    queryFn: async () => {
+      const { data } = await supabase.from("onboarding_plans").select("twin_id").order("version", { ascending: false });
+      const seen = new Set<string>();
+      const out: string[] = [];
+      for (const r of (data ?? []) as { twin_id: string }[]) {
+        if (!seen.has(r.twin_id)) {
+          seen.add(r.twin_id);
+          out.push(r.twin_id);
+        }
+      }
+      return out;
+    },
+  });
+
+  // Employee + IT service view resolve to the actor's own twin by default.
+  // Managers/HR land on a default demo employee WITH an active plan so the DAG
+  // is visible on page load; if a selection has no plan yet and the user has
+  // not explicitly picked someone, fall back to that default.
   useEffect(() => {
-    if ((role === "employee" || role === "it_security") && twin && !selected) setSelected(twin.id);
-  }, [role, twin, selected]);
+    if (!canView) return;
+    if (role === "employee" || role === "it_security") {
+      if (twin && !selected) setSelected(twin.id);
+      return;
+    }
+    if (!["manager", "hr_executive", "hr_partner"].includes(role ?? "")) return;
+    const fallback =
+      planOwners.data?.find((id) => (employees.data ?? []).some((e) => e.id === id)) ??
+      (employees.data ?? [])[0]?.id;
+    if (!fallback) return;
+    if (!selected) {
+      setSelected(fallback);
+      return;
+    }
+    if (
+      !userPickedRef.current &&
+      plan.data === null &&
+      planOwners.data &&
+      planOwners.data.length > 0 &&
+      !planOwners.data.includes(selected)
+    ) {
+      setSelected(fallback);
+    }
+  }, [role, twin, selected, canView, user, employees.data, planOwners.data, plan.data]);
 
   const plan = useQuery({
     queryKey: ["plan", user?.id ?? "anon", selected],
@@ -547,7 +593,7 @@ export default function Onboarding() {
     const doneSetLocal = new Set(list.filter((t) => t.state === "done" || t.state === "waived").map((t) => t.task_code));
     const byCode = new Map(list.map((t) => [t.task_code, t]));
     const adj = new Map<string, string[]>();
-    for (const t of list) for (const d of t.depends_on) adj.set(d, [...(adj.get(d) ?? []), t.task_code]);
+    for (const t of list) for (const d of t.depends_on ?? []) adj.set(d, [...(adj.get(d) ?? []), t.task_code]);
     const memo = new Map<string, string[]>();
     const chain = (id: string): string[] => {
       const known = memo.get(id);
@@ -619,7 +665,10 @@ export default function Onboarding() {
             <Users className="h-5 w-5 text-primary" strokeWidth={2.5} />
             <select
               value={selected}
-              onChange={(e) => setSelected(e.target.value)}
+              onChange={(e) => {
+                userPickedRef.current = true;
+                setSelected(e.target.value);
+              }}
               className="h-12 rounded-md bg-muted px-3 text-sm font-medium text-foreground focus:border-2 focus:border-primary focus:outline-none"
             >
               <option value="">Select an employee…</option>
@@ -722,9 +771,9 @@ export default function Onboarding() {
                 </div>
               )}
 
-              {planData.carryover.length > 0 && (
+              {(planData.carryover ?? []).length > 0 && (
                 <p className="mt-3 text-[11px] text-muted-foreground">
-                  Preserved from v{planData.carryover[0].from_version}: {planData.carryover.map((c) => c.task_code).join(", ")}
+                  Preserved from v{(planData.carryover ?? [])[0].from_version}: {(planData.carryover ?? []).map((c) => c.task_code).join(", ")}
                 </p>
               )}
             </div>
