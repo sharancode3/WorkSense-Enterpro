@@ -46,7 +46,7 @@ Deno.serve(async (req) => {
     .maybeSingle();
   if (!caller) return json({ error: "UNAUTHENTICATED" }, 401);
 
-  let body: { rec_id?: string; action?: string; rationale?: string; request_id?: string; reviewer_feedback?: string; evidence?: unknown } = {};
+  let body: { rec_id?: string; action?: string; rationale?: string; request_id?: string; reviewer_feedback?: string; evidence?: unknown; message?: string } = {};
   try {
     body = await req.json();
   } catch {
@@ -56,6 +56,10 @@ Deno.serve(async (req) => {
   const action = (body.action ?? "").trim();
   const rationale = String(body.rationale ?? "").trim();
   const requestId = (body.request_id ?? "").trim() || crypto.randomUUID();
+  // Batch C (C2): an optional human note attached to the decision. Stored on
+  // the workflow event payload (canonical audit) and mirrored into the comment
+  // thread for approvers.
+  const message = String(body.message ?? "").trim().slice(0, 2000);
   if (!recId || !["dispatch", "start", "complete", "verify", "fail", "cancel", "retry"].includes(action)) {
     return json({ error: "VALIDATION_ERROR", message: "rec_id and a valid execution action are required." }, 400);
   }
@@ -99,6 +103,8 @@ Deno.serve(async (req) => {
   const payload: Record<string, unknown> = {};
   // Phase 15 (Batch A4): persist accepted outcome evidence on verify.
   if (action === "verify" && evidence.length > 0) payload.evidence = evidence;
+  // Batch C (C2): optional human note on any execution decision.
+  if (message) payload.message = message;
 
   // Dispatch: build the reviewed tasks from the deterministic templates and
   // resolve owner twins from the org roster. The RPC inserts them in the same
@@ -166,6 +172,23 @@ Deno.serve(async (req) => {
   if (!result?.ok) {
     const code = result?.error === "CONFLICT" ? 409 : result?.error === "NOT_FOUND" ? 404 : 400;
     return json({ error: result?.error ?? "INTERNAL", message: result?.message ?? "Transition failed" }, code);
+  }
+
+  // Mirror the decision note into the comment thread (idempotent replays skip
+  // the mirror — the event payload above is the canonical audit record, so a
+  // failed mirror never blocks the transition itself).
+  if (message && result.idempotent !== true) {
+    const { error: mirrorErr } = await supabase
+      .from("recommendation_comments")
+      .insert({
+        org_id: caller.org_id,
+        recommendation_id: recId,
+        actor_twin_id: caller.id,
+        actor_role: caller.role,
+        body: message,
+        visibility: "approvers",
+      });
+    if (mirrorErr) console.error("comment mirror failed:", mirrorErr.message);
   }
 
   return json({

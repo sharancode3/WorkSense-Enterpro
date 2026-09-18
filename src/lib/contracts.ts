@@ -14,6 +14,7 @@ import type {
   MyWorkResult,
   PlanTaskView,
   PlanView,
+  RecommendationCommentRow,
   RecommendationRow,
   StaffingPlanResult,
 } from "./api";
@@ -369,6 +370,27 @@ export const recommendationRowSchema = z.object({
   ),
   approved_at: z.string().nullable(),
   created_at: z.string()}) as z.ZodType<RecommendationRow>;
+
+// Batch C (C2): recommendation comment rows returned by the backend function.
+export const recommendationCommentRowSchema = z.object({
+  id: z.string(),
+  recommendation_id: z.string(),
+  actor_twin_id: z.string(),
+  actor_role: z.string().nullable(),
+  body: z.string(),
+  visibility: z.enum(["all", "approvers"]),
+  created_at: z.string(),
+}) as z.ZodType<RecommendationCommentRow>;
+
+export const recommendationCommentResultSchema = z.object({
+  ok: z.literal(true),
+  comment: recommendationCommentRowSchema,
+}) as z.ZodType<{ ok: true; comment: RecommendationCommentRow }>;
+
+export const recommendationCommentListSchema = z.object({
+  ok: z.literal(true),
+  comments: z.array(recommendationCommentRowSchema),
+}) as z.ZodType<{ ok: true; comments: RecommendationCommentRow[] }>;
 
 // ---------------------------------------------------------------------------
 // Wire contracts (validated inside api.ts on the way into the app).

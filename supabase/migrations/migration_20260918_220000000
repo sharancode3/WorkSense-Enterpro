@@ -1,0 +1,29 @@
+-- Batch C (recommendations): C2 — optional human comments/messages with
+-- permissions. 'all' comments are visible to every member of the org;
+-- 'approvers' comments only to approver roles (the Recommendation Hub
+-- audience: hr_executive, hr_partner, manager). Writes are only performed by
+-- backend functions with the service role; normal users have no direct
+-- insert/update path, so a comment's authorship cannot be spoofed client-side.
+create table public.recommendation_comments (
+  id uuid primary key default gen_random_uuid(),
+  org_id uuid not null references public.organizations(id) on delete cascade,
+  recommendation_id uuid not null references public.recommendations(id) on delete cascade,
+  actor_twin_id uuid not null references public.digital_twins(id) on delete cascade,
+  actor_role text,
+  body text not null check (char_length(body) between 1 and 2000),
+  visibility text not null default 'all' check (visibility in ('all','approvers')),
+  created_at timestamptz not null default now()
+);
+create index recommendation_comments_rec_idx on public.recommendation_comments (org_id, recommendation_id, created_at asc);
+
+alter table public.recommendation_comments enable row level security;
+
+create policy rec_comments_select on public.recommendation_comments for select using (
+  exists (
+    select 1 from public.current_twin() ct
+    where ct.org_id = public.recommendation_comments.org_id
+      and (public.recommendation_comments.visibility = 'all' or ct.role in ('hr_executive','hr_partner','manager'))
+  )
+);
+-- No write/update/delete policy: backend functions (service role) are the only
+-- writers, mirroring the workflow_events/action_tasks write discipline.

@@ -338,7 +338,7 @@ Deno.serve(async (req) => {
     .maybeSingle();
   if (!caller) return json({ error: "UNAUTHENTICATED" }, 401);
 
-  let body: { rec_id?: string; action?: string; rationale?: string; request_id?: string; superseded_by?: string } = {};
+  let body: { rec_id?: string; action?: string; rationale?: string; request_id?: string; superseded_by?: string; message?: string } = {};
   try {
     body = await req.json();
   } catch {
@@ -348,6 +348,10 @@ Deno.serve(async (req) => {
   const action = (body.action ?? "").trim();
   const rationale = String(body.rationale ?? "").trim();
   const requestId = (body.request_id ?? "").trim() || crypto.randomUUID();
+  // Batch C (C2): an optional human note attached to the decision. Stored on
+  // the workflow event payload (canonical audit) and mirrored into the comment
+  // thread for approvers.
+  const message = String(body.message ?? "").trim().slice(0, 2000);
   if (!recId || !["submit", "approve", "reject", "re_review", "mark_stale"].includes(action)) {
     return json({ error: "VALIDATION_ERROR", message: "rec_id and a valid review action are required." }, 400);
   }
@@ -381,6 +385,7 @@ Deno.serve(async (req) => {
   const payload: Record<string, unknown> = {};
   if (action === "mark_stale" && body.superseded_by) payload.superseded_by = body.superseded_by;
   if (action === "re_review") payload.reviewer_feedback = rationale;
+  if (message) payload.message = message;
 
   const { data: result, error: rpcErr } = await supabase.rpc("workflow_recommendation_transition", {
     p_org_id: caller.org_id,
@@ -397,6 +402,23 @@ Deno.serve(async (req) => {
   if (!result?.ok) {
     const code = result?.error === "CONFLICT" ? 409 : result?.error === "NOT_FOUND" ? 404 : 400;
     return json({ error: result?.error ?? "INTERNAL", message: result?.message ?? "Transition failed" }, code);
+  }
+
+  // Mirror the decision note into the comment thread (idempotent replays skip
+  // the mirror — the event payload above is the canonical audit record, so a
+  // failed mirror never blocks the transition itself).
+  if (message && result.idempotent !== true) {
+    const { error: mirrorErr } = await supabase
+      .from("recommendation_comments")
+      .insert({
+        org_id: caller.org_id,
+        recommendation_id: recId,
+        actor_twin_id: caller.id,
+        actor_role: caller.role,
+        body: message,
+        visibility: "approvers",
+      });
+    if (mirrorErr) console.error("comment mirror failed:", mirrorErr.message);
   }
 
   return json({

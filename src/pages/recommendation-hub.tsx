@@ -1,9 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import {
-  Activity,
   AlertTriangle,
   ArrowRight,
   CheckCircle2,
@@ -26,7 +25,9 @@ import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { CommentsPanel } from "@/components/recommendation-comments";
 import { can } from "@/lib/rbac";
+import { mergeDecisionHistory } from "@/lib/decision-history";
 import {
   actionTaskUpdate,
   recommendationExecute,
@@ -137,6 +138,12 @@ const TASK_ACTIONS: Record<string, { action: string; label: string; variant?: "o
   cancelled: [],
 };
 
+interface RecResolvers {
+  subject: { name: string; role: string; jobTitle: string | null } | null;
+  target: { title: string; department: string | null } | null;
+  actorName: (twinId: string) => string | null;
+}
+
 function TasksPanel({ rec, onTaskAct }: { rec: RecommendationRow; onTaskAct: (task: ActionTaskRow, action: string) => void }) {
   const { user } = useAuth();
   const tasks = useQuery({
@@ -164,9 +171,14 @@ function TasksPanel({ rec, onTaskAct }: { rec: RecommendationRow; onTaskAct: (ta
     },
   });
 
-  if (["suggested", "needs_review", "approved", "rejected", "stale"].includes(rec.status)) {
-    return null;
-  }
+  // Batch C (C3): the canonical decision history is the workflow_events trail —
+  // pre-execution (submit/approve/reject/re-review) AND execution transitions.
+  // The legacy audit_events jsonb only contributes the scan-time creation
+  // record; transition-shaped legacy entries are deduplicated by the helper.
+  const history = useMemo(
+    () => mergeDecisionHistory(events.data ?? [], rec.audit_events),
+    [events.data, rec.audit_events]
+  );
 
   return (
     <div className="mt-5">
@@ -229,45 +241,46 @@ function TasksPanel({ rec, onTaskAct }: { rec: RecommendationRow; onTaskAct: (ta
         <p className="mt-2 rounded-md bg-muted p-3 text-sm text-muted-foreground">No tasks yet — dispatch creates them in the same transaction.</p>
       )}
 
-      {events.data && events.data.length > 0 && (
-        <div className="mt-3">
-          <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Workflow audit ({events.data.length})</p>
-          <ul className="mt-1.5 flex flex-col divide-y divide-border rounded-md border border-border">
-            {events.data.map((e) => (
-              <li key={e.id} className="px-3 py-2 text-xs">
-                <span className="font-semibold text-foreground">
-                  {e.actor_role ?? "system"} · {e.prior_status ?? "—"} → {e.new_status}
-                </span>
-                <span className="ml-1 text-muted-foreground">
-                  · {e.reason} · req {e.request_id.slice(0, 8)} · {new Date(e.created_at).toLocaleString()}
-                </span>
-                {e.new_status === "verified" && Array.isArray(e.payload?.evidence) && (e.payload.evidence as string[]).length > 0 && (
-                  <p className="mt-1 text-foreground">Outcome evidence: {(e.payload.evidence as string[]).join(" · ")}</p>
-                )}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+      <div className="mt-3">
+        <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Decision history ({history.length})</p>
+        <ul className="mt-1.5 flex flex-col divide-y divide-border rounded-md border border-border">
+          {history.map((e) => (
+            <li key={e.key} className="px-3 py-2 text-xs">
+              <span className="font-semibold text-foreground">
+                {e.kind === "creation" ? e.actionLabel : `${e.actor} · ${e.actionLabel}`}
+              </span>
+              <span className="ml-1 text-muted-foreground">
+                · {e.detail} · {new Date(e.timestamp).toLocaleString()}
+              </span>
+              {e.message && <p className="mt-0.5 italic text-foreground">Note: {e.message}</p>}
+              {e.evidence && e.evidence.length > 0 && (
+                <p className="mt-0.5 text-foreground">Outcome evidence: {e.evidence.join(" · ")}</p>
+              )}
+            </li>
+          ))}
+        </ul>
+      </div>
     </div>
   );
 }
 
 function RecommendationCard({
   rec,
+  resolvers,
   onAct,
   onTaskAct,
   busy,
 }: {
   rec: RecommendationRow;
+  resolvers: RecResolvers;
   onAct: (rec: RecommendationRow, action: string, fn: "review" | "execute") => void;
   onTaskAct: (task: ActionTaskRow, action: string) => void;
   busy: boolean;
 }) {
-  const [showAudit, setShowAudit] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
   const chip = STATUS_CHIP[rec.status] ?? STATUS_CHIP.suggested;
   const actions = REC_ACTIONS[rec.status] ?? [];
+  const { subject, target, actorName } = resolvers;
 
   return (
     <div className="rounded-lg bg-white p-6">
@@ -284,7 +297,23 @@ function RecommendationCard({
             )}
           </div>
           <h3 className="mt-2 text-lg font-extrabold tracking-tight text-foreground">{CATEGORY_LABEL[rec.category] ?? rec.category.replace(/_/g, " ")}</h3>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            {/* Batch C (C1): the subject is a resolved person, never a sliced id. */}
+            {subject ? (
+              <>
+                Subject: <b className="text-foreground">{subject.name}</b> ({subject.role.replace("_", " ")}
+                {subject.jobTitle ? ` · ${subject.jobTitle}` : ""})
+              </>
+            ) : (
+              "Subject: —"
+            )}
+            {target ? (
+              <>
+                {" "}· Target: <b className="text-foreground">{target.title}</b>
+                {target.department ? ` (${target.department})` : ""}
+              </>
+            ) : null}
+            <br />
             Requires sign-off: {rec.required_signoff_role?.replace("_", " ") ?? "—"} · {new Date(rec.created_at).toLocaleDateString()} · v{rec.version}
           </p>
         </div>
@@ -376,7 +405,7 @@ function RecommendationCard({
         </div>
       )}
 
-      {/* Tasks + workflow audit (execution states) */}
+      {/* Tasks + canonical decision history (all lifecycle states) */}
       <TasksPanel rec={rec} onTaskAct={onTaskAct} />
 
       {/* Human decision */}
@@ -393,35 +422,13 @@ function RecommendationCard({
         </div>
       )}
 
-      {/* Legacy audit trail */}
-      <button
-        type="button"
-        onClick={() => setShowAudit((v) => !v)}
-        className="mt-4 flex w-full items-center justify-between rounded-md bg-muted px-3 py-2 text-left"
-      >
-        <span className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
-          <Activity className="h-4 w-4" /> Decision history ({rec.audit_events.length})
-        </span>
-        <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform duration-300 ${showAudit ? "rotate-180" : ""}`} />
-      </button>
-      {showAudit && (
-        <ul className="mt-2 flex flex-col divide-y divide-border rounded-md border border-border">
-          {rec.audit_events.map((a, i) => (
-            <li key={i} className="flex flex-col gap-0.5 px-3 py-2 text-xs">
-              <span className="font-semibold text-foreground">
-                {a.action.replace(/_/g, " ")}
-                {a.before && a.after ? ` · ${a.before} → ${a.after}` : ""}
-              </span>
-              <span className="text-muted-foreground">
-                {a.rationale || a.note || ""} · {a.actor} · {new Date(a.timestamp).toLocaleString()}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
+      {/* Batch C (C2): persisted comments with visibility permissions. */}
+      <CommentsPanel recId={rec.id} actorNames={actorName} />
     </div>
   );
 }
+
+const PAGE_SIZE = 10;
 
 export default function RecommendationHub() {
   const { role, user, twin } = useAuth();
@@ -430,6 +437,7 @@ export default function RecommendationHub() {
   const focusRec = searchParams.get("rec");
   const [dialog, setDialog] = useState<DialogState>(null);
   const [rationale, setRationale] = useState("");
+  const [message, setMessage] = useState("");
   const [evidence, setEvidence] = useState("");
   const [busy, setBusy] = useState(false);
   const [scanning, setScanning] = useState(false);
@@ -437,16 +445,82 @@ export default function RecommendationHub() {
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [ownerFilter, setOwnerFilter] = useState("all");
   const [page, setPage] = useState(0);
-  const PAGE_SIZE = 10;
 
-  const recs = useQuery({
-    queryKey: ["hub-recs", user?.id ?? "anon"],
+  // Subject + target resolution (Batch C, C1): names/titles come from the org
+  // rosters and requisitions, never from sliced ids. RLS scopes both queries.
+  const twinsQ = useQuery({
+    queryKey: ["hub-twins", user?.id ?? "anon"],
     queryFn: async () => {
-      const { data, error } = await supabase.from("recommendations").select("*").order("created_at", { ascending: false }).limit(20);
-      if (error) throw error;
-      return (data ?? []).map((r) => decode(recommendationRowSchema, r, "recommendation-row"));
+      const { data } = await supabase
+        .from("digital_twins")
+        .select("id, name, role, job_title");
+      return (data ?? []) as { id: string; name: string; role: string; job_title: string | null }[];
     },
   });
+  const reqsQ = useQuery({
+    queryKey: ["hub-requisitions", user?.id ?? "anon"],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("job_requisitions")
+        .select("id, title, department");
+      return (data ?? []) as { id: string; title: string; department: string | null }[];
+    },
+  });
+
+  const twinsById = useMemo(() => new Map((twinsQ.data ?? []).map((t) => [t.id, t])), [twinsQ.data]);
+  const reqsById = useMemo(() => new Map((reqsQ.data ?? []).map((r) => [r.id, r])), [reqsQ.data]);
+
+  const resolveSubject = (rec: RecommendationRow) => {
+    if (!rec.twin_id) return null;
+    const t = twinsById.get(rec.twin_id);
+    return t ? { name: t.name, role: t.role, jobTitle: t.job_title } : null;
+  };
+  const resolveTarget = (rec: RecommendationRow) => {
+    if (!rec.resource_ref) return null;
+    const r = reqsById.get(rec.resource_ref);
+    return r ? { title: r.title, department: r.department } : null;
+  };
+  const actorName = (twinId: string) => twinsById.get(twinId)?.name ?? null;
+
+  // Batch C (C4): honest pagination — the server returns the exact count under
+  // the same filters and RLS, and the page slice is fetched server-side, so the
+  // count is never a "latest 20" approximation and filters are not local-only.
+  const recs = useQuery({
+    queryKey: ["hub-recs", user?.id ?? "anon", statusFilter, categoryFilter, ownerFilter, page],
+    queryFn: async () => {
+      const from = page * PAGE_SIZE;
+      const to = from + PAGE_SIZE - 1;
+
+      let countQ = supabase.from("recommendations").select("id", { count: "exact", head: true });
+      if (statusFilter !== "all") countQ = countQ.eq("status", statusFilter);
+      if (categoryFilter !== "all") countQ = countQ.eq("category", categoryFilter);
+      if (ownerFilter !== "all") countQ = countQ.eq("required_signoff_role", ownerFilter);
+
+      let dataQ = supabase
+        .from("recommendations")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .range(from, to);
+      if (statusFilter !== "all") dataQ = dataQ.eq("status", statusFilter);
+      if (categoryFilter !== "all") dataQ = dataQ.eq("category", categoryFilter);
+      if (ownerFilter !== "all") dataQ = dataQ.eq("required_signoff_role", ownerFilter);
+
+      const [{ count }, { data, error }] = await Promise.all([countQ, dataQ]);
+      if (error) throw error;
+      return {
+        total: count ?? 0,
+        items: (data ?? []).map((r) => decode(recommendationRowSchema, r, "recommendation-row")),
+      };
+    },
+  });
+
+  // Clamp out-of-range pages (e.g. a filter now matches fewer rows).
+  useEffect(() => {
+    const total = recs.data?.total ?? 0;
+    if (total > 0 && page > 0 && page * PAGE_SIZE >= total) {
+      setPage(Math.max(0, Math.ceil(total / PAGE_SIZE) - 1));
+    }
+  }, [recs.data?.total, page]);
 
   useEffect(() => {
     if (!focusRec || !recs.data) return;
@@ -479,6 +553,7 @@ export default function RecommendationHub() {
     void qc.invalidateQueries({ queryKey: ["hub-recs", user?.id ?? "anon"] });
     void qc.invalidateQueries({ queryKey: ["rec-tasks", user?.id ?? "anon"] });
     void qc.invalidateQueries({ queryKey: ["rec-events", user?.id ?? "anon"] });
+    void qc.invalidateQueries({ queryKey: ["rec-comments"] });
     void qc.invalidateQueries({ queryKey: ["dashboard", user?.id ?? "anon"] });
   };
 
@@ -503,28 +578,29 @@ export default function RecommendationHub() {
     if (!dialog || rationale.trim().length < 5) return;
     setBusy(true);
     try {
-        if (dialog.kind === "rec") {
-          // Verify outcome requires accepted evidence references (Batch A4).
-          if (dialog.action === "verify") {
-            const evs = evidence.split("\n").map((s) => s.trim()).filter(Boolean);
-            if (evs.length === 0) {
-              toast.error("Outcome verification requires at least one evidence reference.");
-              return;
-            }
-            const res = await recommendationExecute(dialog.rec.id, dialog.action, rationale.trim(), undefined, undefined, evs);
-            toast.success(res.effect ? `Status: ${res.status.replace(/_/g, " ")} — ${res.effect}` : `Status: ${res.status.replace(/_/g, " ")}`);
-          } else {
-            const res =
-              dialog.fn === "review"
-                ? await recommendationReview(dialog.rec.id, dialog.action, rationale.trim())
-                : await recommendationExecute(dialog.rec.id, dialog.action, rationale.trim());
-            toast.success(
-              res.effect
-                ? `Status: ${res.status.replace(/_/g, " ")} — ${res.effect}`
-                : `Status: ${res.status.replace(/_/g, " ")}`
-            );
+      const note = message.trim() || undefined;
+      if (dialog.kind === "rec") {
+        // Verify outcome requires accepted evidence references (Batch A4).
+        if (dialog.action === "verify") {
+          const evs = evidence.split("\n").map((s) => s.trim()).filter(Boolean);
+          if (evs.length === 0) {
+            toast.error("Outcome verification requires at least one evidence reference.");
+            return;
           }
+          const res = await recommendationExecute(dialog.rec.id, dialog.action, rationale.trim(), undefined, undefined, evs, note);
+          toast.success(res.effect ? `Status: ${res.status.replace(/_/g, " ")} — ${res.effect}` : `Status: ${res.status.replace(/_/g, " ")}`);
         } else {
+          const res =
+            dialog.fn === "review"
+              ? await recommendationReview(dialog.rec.id, dialog.action, rationale.trim(), undefined, undefined, note)
+              : await recommendationExecute(dialog.rec.id, dialog.action, rationale.trim(), undefined, undefined, undefined, note);
+          toast.success(
+            res.effect
+              ? `Status: ${res.status.replace(/_/g, " ")} — ${res.effect}`
+              : `Status: ${res.status.replace(/_/g, " ")}`
+          );
+        }
+      } else {
         const res = await actionTaskUpdate(
           dialog.task.id,
           dialog.action,
@@ -541,6 +617,7 @@ export default function RecommendationHub() {
       }
       setDialog(null);
       setRationale("");
+      setMessage("");
       setEvidence("");
       invalidate();
     } catch (err) {
@@ -553,15 +630,9 @@ export default function RecommendationHub() {
   const taskOwnerLabel = (task: ActionTaskRow) =>
     task.owner_twin_id === twin?.id ? " (you)" : "";
 
-  // Phase 11 item 2: type/status/owner filters + pagination (client-side).
-  const allRecs = recs.data ?? [];
-  const filteredRecs = allRecs.filter((r) => {
-    if (statusFilter !== "all" && r.status !== statusFilter) return false;
-    if (categoryFilter !== "all" && r.category !== categoryFilter) return false;
-    if (ownerFilter !== "all" && r.required_signoff_role !== ownerFilter) return false;
-    return true;
-  });
-  const pageRecs = filteredRecs.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+  const total = recs.data?.total ?? 0;
+  const pageRecs = recs.data?.items ?? [];
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   return (
     <AppShell>
@@ -592,7 +663,8 @@ export default function RecommendationHub() {
           </div>
         )}
 
-        {/* Filters + pagination (Phase 11 items 2) */}
+        {/* Filters + pagination — the count shown is the exact server count
+            under the same filters (Batch C, C4), not a local approximation. */}
         <div className="mt-8 flex flex-wrap items-center gap-2 rounded-lg bg-white p-3">
           <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(0); }} aria-label="Filter by status" className="h-9 rounded-md border border-border bg-white px-2 text-sm font-medium text-foreground focus:border-primary focus:outline-none">
             <option value="all">All statuses</option>
@@ -613,7 +685,7 @@ export default function RecommendationHub() {
             <option value="recruiter">Recruiter</option>
           </select>
           <span className="ml-auto text-xs font-bold uppercase tracking-wider text-muted-foreground">
-            {filteredRecs.length} shown
+            {total} shown
           </span>
         </div>
 
@@ -629,13 +701,13 @@ export default function RecommendationHub() {
               <p className="mt-1">{recs.error instanceof Error ? recs.error.message : "unknown error"}</p>
             </div>
           )}
-          {!recs.isLoading && !recs.isError && recs.data && recs.data.length === 0 && (
+          {!recs.isLoading && !recs.isError && total === 0 && (
             <div className="flex flex-col items-center gap-3 rounded-lg bg-muted px-6 py-16 text-center">
               <MessageSquareText className="h-8 w-8 text-muted-foreground" strokeWidth={2} />
               <p className="text-sm text-muted-foreground">No recommendations yet — run the intelligence scan.</p>
             </div>
           )}
-          {!recs.isLoading && !recs.isError && (recs.data?.length ?? 0) > 0 && filteredRecs.length === 0 && (
+          {!recs.isLoading && !recs.isError && total > 0 && pageRecs.length === 0 && (
             <div className="flex flex-col items-center gap-3 rounded-lg bg-muted px-6 py-10 text-center">
               <p className="text-sm text-muted-foreground">No recommendations match the current filters.</p>
             </div>
@@ -644,29 +716,36 @@ export default function RecommendationHub() {
             <div key={rec.id} id={`rec-${rec.id}`} className="rounded-lg transition-all duration-500">
               <RecommendationCard
                 rec={rec}
+                resolvers={{
+                  subject: resolveSubject(rec),
+                  target: resolveTarget(rec),
+                  actorName,
+                }}
                 busy={busy}
                 onAct={(r, action, fn) => {
                   setDialog({ kind: "rec", rec: r, action, fn });
                   setRationale("");
+                  setMessage("");
                   setEvidence("");
                 }}
                 onTaskAct={(task, action) => {
                   setDialog({ kind: "task", task, action });
                   setRationale("");
+                  setMessage("");
                   setEvidence("");
                 }}
               />
             </div>
           ))}
-          {(recs.data?.length ?? 0) > PAGE_SIZE && (
+          {total > PAGE_SIZE && (
             <div className="flex items-center justify-center gap-3">
               <Button variant="outline" size="sm" disabled={page === 0} onClick={() => setPage((p) => Math.max(0, p - 1))}>
                 Previous
               </Button>
               <span className="text-xs font-semibold text-muted-foreground">
-                Page {page + 1} of {Math.max(1, Math.ceil(filteredRecs.length / PAGE_SIZE))}
+                Page {page + 1} of {totalPages}
               </span>
-              <Button variant="outline" size="sm" disabled={(page + 1) * PAGE_SIZE >= filteredRecs.length} onClick={() => setPage((p) => p + 1)}>
+              <Button variant="outline" size="sm" disabled={(page + 1) * PAGE_SIZE >= total} onClick={() => setPage((p) => p + 1)}>
                 Next
               </Button>
             </div>
@@ -710,7 +789,8 @@ export default function RecommendationHub() {
                   <p className="mt-1 text-foreground">
                     <b>{dialog.rec.proposed_action.title}</b> for{" "}
                     <b>{dialog.rec.category.replace(/_/g, " ")}</b>
-                    {dialog.rec.resource_ref ? ` · resource ${dialog.rec.resource_ref.slice(0, 8)}` : ""}.
+                    {resolveSubject(dialog.rec) ? ` — subject ${resolveSubject(dialog.rec)!.name}` : ""}
+                    {dialog.rec.resource_ref ? ` · target ${resolveTarget(dialog.rec)?.title ?? "requisition (not visible to you)"}` : ""}.
                   </p>
                   <p className="mt-1 text-muted-foreground">{dialog.rec.proposed_action.description}</p>
                   <p className="mt-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">Planned tasks after dispatch</p>
@@ -746,6 +826,15 @@ export default function RecommendationHub() {
                 onChange={(e) => setRationale(e.target.value)}
                 placeholder="Type your rationale (required)…"
               />
+              {dialog.kind === "rec" && (
+                <Textarea
+                  rows={2}
+                  value={message}
+                  onChange={(e) => setMessage(e.target.value)}
+                  placeholder="Add a note (optional) — recorded on the decision and visible to approvers…"
+                  aria-label="Optional decision note"
+                />
+              )}
               {(dialog.kind === "task" && dialog.action === "complete") || (dialog.kind === "rec" && dialog.action === "verify") ? (
                 <Textarea
                   rows={2}

@@ -72,6 +72,7 @@ const FNS = {
   "performance-synthesis": ["qwen", "validate"],
   "recommendation-review": ["workflow-engine"],
   "recommendation-execute": ["workflow-engine"],
+  "recommendation-comment": [],
   "action-task-update": ["workflow-engine"],
   "recommendation-scan": ["skill-graph-engine", "recommendation-engine", "workforce-review-index", "workflow-engine", "qwen", "validate"],
   dashboard: ["skill-graph-engine", "workforce-review-index"],

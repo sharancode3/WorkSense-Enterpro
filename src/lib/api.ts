@@ -8,6 +8,8 @@ import {
   meResultSchema,
   myWorkSchema,
   onboardingQueueSchema,
+  recommendationCommentListSchema,
+  recommendationCommentResultSchema,
   type CandidateCompare,
   type OnboardingQueue,
 } from "./contracts";
@@ -531,19 +533,45 @@ export interface WorkflowEventRow {
   created_at: string;
 }
 
+export interface RecommendationCommentRow {
+  id: string;
+  recommendation_id: string;
+  actor_twin_id: string;
+  actor_role: string | null;
+  body: string;
+  visibility: "all" | "approvers";
+  created_at: string;
+}
+
 export const recommendationScan = () =>
   invoke<{ ok: true; scanned_candidates: number; created: number; unchanged: number; made_stale: number; created_ids: string[] }>("recommendation-scan", {});
 
-export const recommendationReview = (recId: string, action: string, rationale: string, requestId?: string, supersededBy?: string) =>
+export const recommendationReview = (recId: string, action: string, rationale: string, requestId?: string, supersededBy?: string, message?: string) =>
   invoke<{ ok: true; request_id: string; prior_status: string; status: string; idempotent: boolean; effect?: string | null }>(
     "recommendation-review",
-    { rec_id: recId, action, rationale, request_id: requestId, superseded_by: supersededBy }
+    { rec_id: recId, action, rationale, request_id: requestId, superseded_by: supersededBy, message }
   );
 
-export const recommendationExecute = (recId: string, action: string, rationale: string, requestId?: string, reviewerFeedback?: string, evidence?: string[]) =>
+export const recommendationExecute = (recId: string, action: string, rationale: string, requestId?: string, reviewerFeedback?: string, evidence?: string[], message?: string) =>
   invoke<{ ok: true; request_id: string; prior_status: string; status: string; created_tasks: number; idempotent: boolean; effect?: string | null }>(
     "recommendation-execute",
-    { rec_id: recId, action, rationale, request_id: requestId, reviewer_feedback: reviewerFeedback, evidence }
+    { rec_id: recId, action, rationale, request_id: requestId, reviewer_feedback: reviewerFeedback, evidence, message }
+  );
+
+export const recommendationCommentAdd = (recId: string, comment: string, visibility: "all" | "approvers" = "all") =>
+  invoke<{ ok: true; comment: RecommendationCommentRow }>(
+    "recommendation-comment",
+    { action: "add", rec_id: recId, comment, visibility },
+    recommendationCommentResultSchema,
+    "recommendation-comment.add"
+  );
+
+export const recommendationCommentList = (recId: string) =>
+  invoke<{ ok: true; comments: RecommendationCommentRow[] }>(
+    "recommendation-comment",
+    { action: "list", rec_id: recId },
+    recommendationCommentListSchema,
+    "recommendation-comment.list"
   );
 
 export const actionTaskUpdate = (taskId: string, action: string, rationale: string, requestId?: string, evidence?: string[], outcome?: Record<string, unknown>) =>

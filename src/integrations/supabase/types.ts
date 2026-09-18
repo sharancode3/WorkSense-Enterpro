@@ -4805,6 +4805,58 @@ export type Database = {
           },
         ]
       }
+      recommendation_comments: {
+        Row: {
+          actor_role: string | null
+          actor_twin_id: string
+          body: string
+          created_at: string
+          id: string
+          org_id: string
+          recommendation_id: string
+          visibility: string
+        }
+        Insert: {
+          actor_role?: string | null
+          actor_twin_id: string
+          body: string
+          created_at?: string
+          id?: string
+          org_id: string
+          recommendation_id: string
+          visibility?: string
+        }
+        Update: {
+          actor_role?: string | null
+          actor_twin_id?: string
+          body?: string
+          created_at?: string
+          id?: string
+          org_id?: string
+          recommendation_id?: string
+          visibility?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "recommendation_comments_actor_twin_id_fkey"
+            columns: ["actor_twin_id"]
+            referencedRelation: "digital_twins"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "recommendation_comments_org_id_fkey"
+            columns: ["org_id"]
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "recommendation_comments_recommendation_id_fkey"
+            columns: ["recommendation_id"]
+            referencedRelation: "recommendations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       recommendations: {
         Row: {
           alternatives: Json
