@@ -1,5 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
-import { computePerformanceFacts, performanceSourceHash } from "../_shared/performance-intelligence.ts";
+import { computePerformanceFacts, performanceSourceHash, validatePerformanceCitations } from "../_shared/performance-intelligence.ts";
 import { callQwen, QwenError } from "../_shared/qwen.ts";
 
 const corsHeaders = {
@@ -28,15 +28,17 @@ async function isTeamMember(supabase, rootTwinId: string, checkTwinId: string): 
 }
 
 const NARRATIVE_SYSTEM = `You are the WorkSense Performance Summarizer — decision support, not a formal assessment.
-You are given deterministic SOURCE FACTS (each tagged with a ref like S1, S2), plus contradiction and sparse-evidence analysis.
+You are given deterministic SOURCE FACTS (each tagged with a ref like S1, S2), plus contradiction, sparse-evidence and stale-evidence analysis.
 Write a structured narrative under these hard rules:
-1. Every strength, improvement area or observation MUST cite at least one source fact by its [ref].
-2. You may propose inferred themes, but each MUST be explicitly labeled "inference" — never present them as fact.
-3. NEVER invent metrics, examples, achievements, or causal diagnoses (no "X causes Y", no resignation/attrition claims).
+1. Every strength, improvement area, development action or observation MUST cite at least one source fact by its [ref]. A claim with no [ref] is rejected.
+2. NEVER invent a [ref], metric, example, achievement, or causal diagnosis (no "X causes Y", no resignation/attrition claims).
+3. Treat missing facts as missing: if the facts show only one review cycle, no work artifacts, or stale records, SAY SO and do not imply current, sustained behavior.
 4. Sentiment counts and goal averages are directional context only — do not turn them into a performance verdict.
-5. End with one sentence: "This summary is decision support; model confidence is not calibrated reliability."
+5. development_actions each target a skill gap or low-proficiency skill, name the measurable evidence requirement that would demonstrate growth, and cite its basis.
+6. If sparse evidence exists, list at most ONE strength and keep it tied to a concrete cited record.
+7. End with one sentence: "This summary is decision support; model confidence is not calibrated reliability."
 Respond with JSON only:
-{"narrative":"string","strengths":["string"],"improvement_areas":["string"],"inferred_themes":[{"theme":"string","basis":["[ref]..."]}],"data_quality":"complete|partial|sparse"}`;
+{"narrative":"string","strengths":["string"],"improvement_areas":["string"],"development_actions":[{"skill":"string","gap_basis":["[ref]..."],"action":"string","measurable_evidence":"string"}],"inferred_themes":[{"theme":"string","basis":["[ref]..."]}],"data_quality":"complete|partial|sparse"}`;
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -108,6 +110,7 @@ Deno.serve(async (req) => {
     })),
     evidence_items: (evRes.data ?? []).map((e) => ({ source_type: e.source_type, quote: e.quote, captured_at: e.captured_at })),
     seeking_growth: signals.some((s) => s.type === "seeks_growth" && s.value === true),
+    computed_at: new Date().toISOString(),
   };
   const facts = computePerformanceFacts(input as Parameters<typeof computePerformanceFacts>[0]);
   const hash = performanceSourceHash(input as Parameters<typeof performanceSourceHash>[0]);
@@ -118,7 +121,7 @@ Deno.serve(async (req) => {
   // Cache: same source version -> return the stored summary without a model call.
   const { data: existingRow } = await supabase
     .from("performance_summaries")
-    .select("id, source_version_hash, narrative, source_facts, inferred_themes, contradictions, sparse_evidence, model_note")
+    .select("id, source_version_hash, narrative, source_facts, inferred_themes, contradictions, sparse_evidence, model_note, reviewer_draft, reviewer_draft_at, strengths, improvement_areas, development_actions")
     .eq("org_id", caller.org_id)
     .eq("twin_id", twinId)
     .eq("period", period)
@@ -136,6 +139,11 @@ Deno.serve(async (req) => {
         contradictions: existingRow.contradictions,
         sparse_evidence: existingRow.sparse_evidence,
         model_note: existingRow.model_note,
+        strengths: existingRow.strengths ?? [],
+        improvement_areas: existingRow.improvement_areas ?? [],
+        development_actions: existingRow.development_actions ?? [],
+        reviewer_draft: existingRow.reviewer_draft ?? {},
+        reviewer_draft_at: existingRow.reviewer_draft_at ?? null,
       },
     });
   }
@@ -147,11 +155,15 @@ ${facts.source_facts.map((f) => `[${f.ref}] ${f.source}: ${f.fact}`).join("\n")}
 CONTRADICTIONS (must stay visible in your narrative):
 ${facts.contradictions.length > 0 ? facts.contradictions.map((c) => `- ${c.title}: ${c.evidence.join(" ")}`).join("\n") : "(none)"}
 SPARSE EVIDENCE: ${facts.sparse_evidence.flags.join("; ") || "(none)"}
+STALE EVIDENCE: ${facts.stale_evidence.map((s) => `- ${s.detail}`).join("\n") || "(none)"}
+EVIDENCE GAPS (target development actions here):
+${facts.evidence_gaps.length > 0 ? facts.evidence_gaps.map((g) => `- ${g.skill}: ${g.gap}`).join("\n") : "(no recorded evidence gaps)"}
+WORK ARTIFACTS: ${facts.work_artifacts.length > 0 ? facts.work_artifacts.map((a) => `"${a.quote}" (${a.source_type}, ${a.period ?? "no date"})`).join(" | ") : "(none)"}
 Write the narrative JSON.`;
   const parsed = (await callQwen({
     json: true,
     temperature: 0.2,
-    maxTokens: 1100,
+    maxTokens: 1300,
     task: "performance_summary",
     system: NARRATIVE_SYSTEM,
     user: userPrompt,
@@ -159,12 +171,44 @@ Write the narrative JSON.`;
     narrative?: string;
     strengths?: string[];
     improvement_areas?: string[];
+    development_actions?: { skill?: string; gap_basis?: string[]; action?: string; measurable_evidence?: string }[];
     inferred_themes?: { theme?: string; basis?: string[] }[];
     data_quality?: string;
   };
 
   const narrative = typeof parsed.narrative === "string" ? parsed.narrative : "";
   if (!narrative) throw new QwenError("MODEL_OUTPUT_INVALID", "performance-summary: empty narrative");
+
+  // Phase 7 (item 17): validate citations — reject unsupported claims.
+  // Narrative/strengths/improvement areas must cite a source fact directly;
+  // development actions cite through their gap_basis (the action text is a
+  // suggestion, its support lives in the basis refs).
+  const allRefs = facts.source_facts.map((f) => f.ref);
+  const claimsToCheck = [
+    narrative,
+    ...(parsed.strengths ?? []),
+    ...(parsed.improvement_areas ?? []),
+  ];
+  const unsupported = validatePerformanceCitations(claimsToCheck, allRefs);
+  const devActions = parsed.development_actions ?? [];
+  for (const a of devActions) {
+    const basis = a?.gap_basis ?? [];
+    if (basis.length === 0) {
+      unsupported.push(`development action for "${a?.skill ?? "?"}" has no cited evidence basis`);
+    } else {
+      unsupported.push(...validatePerformanceCitations(basis, allRefs));
+    }
+  }
+  if (unsupported.length > 0) {
+    throw new QwenError("MODEL_OUTPUT_INVALID", `performance-summary: unsupported claims rejected (${unsupported.slice(0, 3).join("; ")})`);
+  }
+
+  // Phase 7 (item 12): do not infer broad strengths from a single generic
+  // seeded review. If the evidence is thin, cap strengths at one.
+  const thinEvidence = facts.history_state === "none" || (facts.history_state === "partial" && facts.work_artifacts.length === 0 && facts.feedback_stats.total < 2);
+  let strengths = (parsed.strengths ?? []).map((s) => String(s)).filter(Boolean);
+  if (thinEvidence && strengths.length > 1) strengths = strengths.slice(0, 1);
+
   const modelThemes = (parsed.inferred_themes ?? [])
     .filter((t) => t?.theme)
     .map((t) => ({
@@ -173,7 +217,23 @@ Write the narrative JSON.`;
       inference: true,
       confidence_note: "Inferred from the model narrative — not a verified source fact.",
     }));
-  const dataQuality = ["complete", "partial", "sparse"].includes(parsed.data_quality ?? "") ? parsed.data_quality! : facts.sparse_evidence.flags.length >= 2 ? "sparse" : facts.sparse_evidence.flags.length === 1 ? "partial" : "complete";
+  const dataQuality = ["complete", "partial", "sparse"].includes(parsed.data_quality ?? "")
+    ? parsed.data_quality!
+    : thinEvidence
+      ? "sparse"
+      : facts.sparse_evidence.flags.length >= 2
+        ? "sparse"
+        : facts.sparse_evidence.flags.length === 1
+          ? "partial"
+          : "complete";
+  const developmentActions = (parsed.development_actions ?? [])
+    .filter((a) => a?.skill)
+    .map((a) => ({
+      skill: a.skill!,
+      gap_basis: Array.isArray(a.gap_basis) ? a.gap_basis : [],
+      action: a.action ?? "",
+      measurable_evidence: a.measurable_evidence ?? "",
+    }));
 
   const row = {
     org_id: caller.org_id,
@@ -187,8 +247,11 @@ Write the narrative JSON.`;
     goal_stats: facts.goal_stats,
     feedback_stats: facts.feedback_stats,
     evidence_summary: facts.evidence_summary,
+    strengths,
+    improvement_areas: (parsed.improvement_areas ?? []).map((s) => String(s)).filter(Boolean),
+    development_actions: developmentActions,
     source_version_hash: hash,
-    model_note: `Generated from ${facts.source_facts.length} deterministic source facts. Data quality: ${dataQuality}. Decision support — model confidence is not calibrated reliability.`,
+    model_note: `Generated from ${facts.source_facts.length} deterministic source facts; every claim cites its [ref]. Data quality: ${dataQuality}. Decision support — model confidence is not calibrated reliability.`,
     from_cache: false,
     generated_at: new Date().toISOString(),
   };
@@ -214,7 +277,17 @@ Write the narrative JSON.`;
     })
     .eq("id", twinId);
 
-  return json({ ok: true, cached: false, period, facts, summary: row });
+  return json({
+    ok: true,
+    cached: false,
+    period,
+    facts,
+    summary: {
+      ...row,
+      reviewer_draft: existingRow?.reviewer_draft ?? {},
+      reviewer_draft_at: existingRow?.reviewer_draft_at ?? null,
+    },
+  });
   } catch (err) {
     return json({ error: err instanceof QwenError ? err.code : "INTERNAL", message: err instanceof Error ? err.message : "unknown" });
   }

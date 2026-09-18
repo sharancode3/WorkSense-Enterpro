@@ -7,7 +7,7 @@
 // manager/HR review conversation is warranted. It is a REVIEW INDEX, never a
 // probability of leaving, and never a performance verdict on its own.
 //
-// Documented design (Phase 9 baseline):
+// Documented design (Phase 9 baseline, Phase 7 hardened):
 // - Factor weights sum to EXACTLY 1.0 (max index = 100).
 // - Missing observations are gaps that reduce data completeness; they never
 //   count as poor performance and never push anyone into the top tier.
@@ -17,6 +17,12 @@
 //   contributes to the index (growth interest != intent to leave).
 // - Priority tiers: low < 40, medium 40-59, high 60-74, review >= 75 (the
 //   top tier additionally requires >= REVIEW_MIN_COMPLETENESS data).
+// - Phase 7: observed factors, coverage, freshness and review confidence are
+//   reported SEPARATELY. Data-quality problems surface BEFORE classification
+//   (flags + severity + confidence), insufficient history is distinguished
+//   from stable behavior (history_state), and every trend carries explicit
+//   favorable/unfavorable semantics. No validated predictive model exists:
+//   REVIEW_MODEL_STATUS documents what a future attrition model would require.
 // ---------------------------------------------------------------------------
 
 export interface ReviewObservation {
@@ -35,6 +41,7 @@ export interface ReviewIndexInput {
   observations?: ReviewObservation[]; // period-scoped, explicit missing flag
   seeks_growth?: boolean; // self-reported development interest — NEVER adds risk
   engagement_window_months?: number; // default 6
+  computed_at?: string; // ISO timestamp for freshness computations
 }
 
 export interface ReviewFactor {
@@ -43,6 +50,10 @@ export interface ReviewFactor {
   definition: string; // plain-language factor definition
   source_period: string | null; // evidence period used (or null when n/a)
   note: string | null; // caveat / data-state note
+  /** Phase 7: coverage of the evidence this factor relies on (0-1). */
+  coverage: number;
+  /** Phase 7: how fresh the factor's evidence is (latest period used, or null). */
+  freshness: string | null;
 }
 
 export interface ReviewTrend {
@@ -52,6 +63,19 @@ export interface ReviewTrend {
   first: number | null;
   last: number | null;
   periods: string[];
+  /** Phase 7: canonical direction that counts as favorable for this metric. */
+  favorable_direction: "up" | "down";
+  /** Phase 7: whether the observed change is favorable for the metric. */
+  favorable: boolean;
+}
+
+/** Phase 7: review confidence — how much the index can be trusted given the
+ *  data, NOT a probability of leaving and NOT model calibration. */
+export type ReviewConfidence = "high" | "medium" | "low";
+
+export interface DataQualityIssue {
+  kind: string; // missing_periods | stale_observations | zero_history | snapshot_only
+  detail: string;
 }
 
 export interface ReviewIndexResult {
@@ -66,7 +90,79 @@ export interface ReviewIndexResult {
   recommended_fact_finding: string[];
   sensitivity: { individual_absence: boolean; individual_engagement: boolean };
   limitations: string[];
+  // Phase 7 additions:
+  confidence: ReviewConfidence;
+  confidence_reason: string;
+  history_state: "none" | "partial" | "adequate";
+  data_quality: { issues: DataQualityIssue[]; severity: "ok" | "warning" | "critical" };
+  freshness: {
+    oldest_observation_period: string | null;
+    latest_observation_period: string | null;
+    months_since_latest: number | null;
+    stale: boolean;
+    computed_at: string;
+  };
+  case_rationale: { factor: string; why: string }[];
 }
+
+/** Canonical review bands — the single source of truth the UI and backend both
+ *  use so "review bands match across UI and backend". */
+export const REVIEW_BANDS: Record<"low" | "medium" | "high" | "review", { min: number; max: number }> = {
+  low: { min: 0, max: 39 },
+  medium: { min: 40, max: 59 },
+  high: { min: 60, max: 74 },
+  review: { min: 75, max: 100 },
+};
+
+export const REVIEW_BAND_LABELS: Record<keyof typeof REVIEW_BANDS, string> = {
+  low: "Low (0-39)",
+  medium: "Medium (40-59)",
+  high: "High (60-74)",
+  review: "Review (75-100)",
+};
+
+/** Map an index value to its canonical band (backend + UI agree on this). */
+export function reviewBandFor(index: number): "low" | "medium" | "high" | "review" {
+  if (index >= REVIEW_BANDS.review.min) return "review";
+  if (index >= REVIEW_BANDS.high.min) return "high";
+  if (index >= REVIEW_BANDS.medium.min) return "medium";
+  return "low";
+}
+
+/** Phase 7: per-metric semantics so trends are rendered with the CORRECT
+ *  favorable/unfavorable meaning (attendance up = bad; delivery/engagement
+ *  up = good). */
+export const REVIEW_METRIC_FAVORABLE_DIRECTION: Record<string, "up" | "down"> = {
+  attendance: "down",
+  delivery: "up",
+  engagement: "up",
+};
+
+export type ReviewBand = "low" | "medium" | "high" | "review";
+
+/** Phase 7: fewer distinct present periods than this = "insufficient history"
+ *  (distinct from stable behavior, which requires enough data to actually be flat). */
+export const REVIEW_HISTORY_MIN_PERIODS = 3;
+/** Phase 7: latest observation older than this many months = stale. */
+export const STALE_OBSERVATION_MONTHS = 6;
+
+/** Phase 7 — honest model status. No validated attrition/predictive model
+ *  exists; this is the (unchanged) honest REVIEW INDEX terminology the spec
+ *  asks to preserve. The future-ML checklist (spec items 21-26) is documented
+ *  here so nobody mistakes the heuristic composite for a calibrated predictor. */
+export const REVIEW_MODEL_STATUS = {
+  has_validated_predictive_model: false,
+  label: "Workforce Review Index — a documented heuristic composite (0-100), not a probability of leaving and not a calibrated prediction.",
+  future_ml_requirements: [
+    "21. Define an explicit outcome (e.g., voluntary attrition within a horizon) and a prediction horizon.",
+    "22. Split by time (train on earlier periods, evaluate on later) and prevent post-outcome leakage.",
+    "23. Compare against interpretable baselines (e.g., historical base rate) before any complex model.",
+    "24. Report calibration, precision/recall, cohort stability and missingness handling.",
+    "25. Clearly distinguish synthetic-data demonstrations from externally validated predictive performance.",
+    "26. Keep any future prediction as restricted decision support, never automatic action.",
+  ],
+  note: "None of the above is implemented because no suitable labeled outcome dataset exists in this deployment. Until it does, every case stays a review index with documented heuristics.",
+} as const;
 
 // Weights — sum is exactly 1.0 (0.30 + 0.30 + 0.30 + 0.10).
 export const REVIEW_WEIGHTS = { career: 0.3, attendance: 0.3, delivery: 0.3, engagement: 0.1 } as const;
@@ -92,6 +188,7 @@ export function computeReviewIndex(input: ReviewIndexInput): ReviewIndexResult {
   const engWindow = input.engagement_window_months ?? 6;
   const obs = input.observations ?? [];
   const seeksGrowth = input.seeks_growth === true;
+  const computedAt = input.computed_at ?? new Date().toISOString();
 
   // --- F_career: time in band beyond the career-review horizon --------------
   const lag = Math.max(0, Number(input.promotion_lag_months) || 0);
@@ -101,6 +198,8 @@ export function computeReviewIndex(input: ReviewIndexInput): ReviewIndexResult {
     weight: REVIEW_WEIGHTS.career,
     definition: `Months in current band without a promotion, scaled against the ${threshold}-month career-review horizon.`,
     source_period: "twin profile (as of computed_at)",
+    coverage: 1,
+    freshness: "profile snapshot",
     note: career >= 0.5 ? "Extended time in band warrants a career-path conversation — not, by itself, a risk conclusion." : null,
   };
 
@@ -109,7 +208,8 @@ export function computeReviewIndex(input: ReviewIndexInput): ReviewIndexResult {
   const recent = input.attendance?.recent;
   let attendanceScore = 0;
   let attendanceNote: string | null = null;
-  if (base === null || base === undefined || recent === null || recent === undefined) {
+  const attendanceCoverage = base === null || base === undefined || recent === null || recent === undefined ? 0 : 1;
+  if (attendanceCoverage === 0) {
     attendanceNote = "No absence snapshot recorded — treated as unknown, not penalized.";
   } else if (Number(base) > 0) {
     const b = Math.max(0, Number(base));
@@ -130,6 +230,8 @@ export function computeReviewIndex(input: ReviewIndexInput): ReviewIndexResult {
     weight: REVIEW_WEIGHTS.attendance,
     definition: "Deviation of the recent unapproved-absence rate from the person's own baseline (pattern change, never cross-person counts).",
     source_period: "most recent absence snapshot (HRIS)",
+    coverage: attendanceCoverage,
+    freshness: "HRIS snapshot",
     note: attendanceNote,
   };
 
@@ -142,6 +244,8 @@ export function computeReviewIndex(input: ReviewIndexInput): ReviewIndexResult {
     weight: REVIEW_WEIGHTS.delivery,
     definition: "Missed milestones as a share of the review window's total — a workload/availability indicator, not a quality verdict.",
     source_period: "recent delivery window (missed/total)",
+    coverage: total > 0 ? 1 : 0,
+    freshness: "delivery window snapshot",
     note: total <= 0 ? "No delivery observations in window — treated as unknown, not penalized." : deliveryScore >= 0.5 ? "High miss share — investigate workload/resourcing before drawing conclusions." : null,
   };
 
@@ -165,6 +269,8 @@ export function computeReviewIndex(input: ReviewIndexInput): ReviewIndexResult {
     weight: REVIEW_WEIGHTS.engagement,
     definition: `Decline in engagement observations over the last ${engWindow} months (first-vs-second-half means). Missing periods are gaps, not poor performance.`,
     source_period: eng.length >= 2 ? `${eng[0].period} → ${eng[eng.length - 1].period}` : null,
+    coverage: eng.length >= 2 ? 1 : eng.length === 1 ? 0.5 : 0,
+    freshness: eng.length >= 2 ? eng[eng.length - 1].period : null,
     note: engNote,
   };
 
@@ -194,18 +300,71 @@ export function computeReviewIndex(input: ReviewIndexInput): ReviewIndexResult {
     .map(([metric, periods]) => ({ metric, periods: periods.sort() }))
     .sort((a, b) => a.metric.localeCompare(b.metric));
 
-  // --- Trend per metric -------------------------------------------------------
+  // --- Freshness (Phase 7) ----------------------------------------------------
+  const allPresent = (obs ?? [])
+    .filter((o) => !o.missing && typeof o.value === "number")
+    .map((o) => o.period)
+    .sort();
+  const oldest = allPresent[0] ?? null;
+  const latest = allPresent[allPresent.length - 1] ?? null;
+  let monthsSinceLatest: number | null = null;
+  if (latest) {
+    const [ly, lm] = latest.split("-").map(Number);
+    const now = new Date(computedAt);
+    monthsSinceLatest = (now.getUTCFullYear() - ly) * 12 + (now.getUTCMonth() + 1 - lm);
+  }
+  const stale = monthsSinceLatest !== null && monthsSinceLatest > STALE_OBSERVATION_MONTHS;
+
+  // --- History state (Phase 7): insufficient history vs stable behavior ------
+  const distinctPresentPeriods = new Set(allPresent).size;
+  const history_state: ReviewIndexResult["history_state"] =
+    distinctPresentPeriods === 0 ? "none" : distinctPresentPeriods < REVIEW_HISTORY_MIN_PERIODS ? "partial" : "adequate";
+
+  // --- Data quality surfaced BEFORE classification (Phase 7) ------------------
+  const issues: DataQualityIssue[] = [];
+  if (distinctPresentPeriods === 0) {
+    issues.push({ kind: "zero_history", detail: "No longitudinal observations exist — the index reflects profile snapshots only (career lag, absence and delivery snapshots)." });
+  } else if (distinctPresentPeriods < REVIEW_HISTORY_MIN_PERIODS) {
+    issues.push({ kind: "snapshot_only", detail: `Only ${distinctPresentPeriods} observation period(s) present — trends cannot be established yet.` });
+  }
+  if (missing_data.length > 0) {
+    const missingCount = missing_data.reduce((n, m) => n + m.periods.length, 0);
+    issues.push({ kind: "missing_periods", detail: `${missingCount} observation slot(s) missing across ${missing_data.length} metric(s).` });
+  }
+  if (stale) {
+    issues.push({ kind: "stale_observations", detail: `Latest observation is ${monthsSinceLatest} months old (stale threshold: ${STALE_OBSERVATION_MONTHS}).` });
+  }
+  const severity: ReviewIndexResult["data_quality"]["severity"] =
+    distinctPresentPeriods === 0 || data_completeness < 0.4 ? "critical" : data_completeness < REVIEW_MIN_COMPLETENESS || stale ? "warning" : "ok";
+
+  // --- Review confidence (Phase 7): data-driven, explicitly not a probability --
+  let confidence: ReviewConfidence;
+  let confidence_reason: string;
+  if (distinctPresentPeriods === 0 || data_completeness < 0.5 || stale) {
+    confidence = "low";
+    confidence_reason = `Low — longitudinal observation history is ${distinctPresentPeriods === 0 ? "absent" : "incomplete"} (${Math.round(data_completeness * 100)}% complete${stale ? ", stale" : ""}). Use the index as a starting point, not a signal.`;
+  } else if (data_completeness < REVIEW_MIN_COMPLETENESS || distinctPresentPeriods < 6) {
+    confidence = "medium";
+    confidence_reason = `Medium — coverage is ${Math.round(data_completeness * 100)}% across ${distinctPresentPeriods} period(s); confirm with a conversation before any conclusion.`;
+  } else {
+    confidence = "high";
+    confidence_reason = `High — coverage is ${Math.round(data_completeness * 100)}% across ${distinctPresentPeriods} period(s) and observations are fresh.`;
+  }
+
+  // --- Trend per metric (favorable/unfavorable semantics) ---------------------
   const trend: ReviewTrend[] = ["attendance", "engagement", "delivery"].map((metric) => {
     const vals = presentValues(obs, metric);
+    const favorable_direction = REVIEW_METRIC_FAVORABLE_DIRECTION[metric] ?? "up";
     if (vals.length < 2 * TREND_HALF_PERIODS) {
-      return { metric, direction: "insufficient", delta: null, first: null, last: null, periods: vals.map((v) => v.period) };
+      return { metric, direction: "insufficient", delta: null, first: null, last: null, periods: vals.map((v) => v.period), favorable_direction, favorable: false };
     }
     const firstMean = vals.slice(0, TREND_HALF_PERIODS).reduce((s, p) => s + p.value, 0) / TREND_HALF_PERIODS;
     const lastMean = vals.slice(-TREND_HALF_PERIODS).reduce((s, p) => s + p.value, 0) / TREND_HALF_PERIODS;
     const delta = firstMean > 0 ? (lastMean - firstMean) / firstMean : null;
     const eps = 0.03;
     const direction = delta === null || Math.abs(delta) < eps ? "flat" : delta > 0 ? "up" : "down";
-    return { metric, direction, delta, first: +firstMean.toFixed(3), last: +lastMean.toFixed(3), periods: vals.map((v) => v.period) };
+    const favorable = direction === favorable_direction;
+    return { metric, direction, delta, first: +firstMean.toFixed(3), last: +lastMean.toFixed(3), periods: vals.map((v) => v.period), favorable_direction, favorable };
   });
 
   // --- Priority tier (review index, not probability) -------------------------
@@ -216,7 +375,11 @@ export function computeReviewIndex(input: ReviewIndexInput): ReviewIndexResult {
 
   let tierCapped = false;
   let gateReason: string | null = null;
-  if (priority === "review" && data_completeness < REVIEW_MIN_COMPLETENESS) {
+  if (priority === "review" && history_state === "none") {
+    priority = "high";
+    tierCapped = true;
+    gateReason = "The index qualifies for the top tier on profile snapshots alone, but there is zero longitudinal observation history — the case is honestly capped until history exists. It is not an alarming classification on no data.";
+  } else if (priority === "review" && data_completeness < REVIEW_MIN_COMPLETENESS) {
     priority = "high";
     tierCapped = true;
     gateReason = `Index qualifies for the top tier, but observation data completeness is ${Math.round(data_completeness * 100)}% (min ${Math.round(REVIEW_MIN_COMPLETENESS * 100)}% required) — missing data never escalates a case; complete the gaps before treating this as a top-priority review.`;
@@ -224,18 +387,24 @@ export function computeReviewIndex(input: ReviewIndexInput): ReviewIndexResult {
 
   // --- Recommended fact-finding (deterministic, action-oriented) -------------
   const recommended_fact_finding: string[] = [];
+  const case_rationale: { factor: string; why: string }[] = [];
   if (attendanceScore >= 0.5) {
     recommended_fact_finding.push("Verify the unapproved-absence pattern with the employee's manager before any conclusion.");
+    case_rationale.push({ factor: "attendance", why: attendanceNote ?? "The recent absence rate is materially above the person's own baseline." });
   }
   const engTrendDir = trend.find((t) => t.metric === "engagement")?.direction ?? "insufficient";
   if (engagementScore >= 0.5 || engTrendDir === "down" || engTrendDir === "insufficient") {
     recommended_fact_finding.push("Collect an engagement pulse and discuss drivers in a 1:1 — do not infer reasons from the numbers.");
+    if (engTrendDir === "down") case_rationale.push({ factor: "engagement", why: "Engagement observations trend downward across the window." });
+    else if (engTrendDir === "insufficient") case_rationale.push({ factor: "engagement", why: "Engagement history is insufficient to judge direction — a conversation is the only honest next step." });
   }
   if (career >= 0.5) {
     recommended_fact_finding.push("Open a career-path conversation; review band-change timing and growth options.");
+    case_rationale.push({ factor: "career", why: `${Math.round(lag)} months in band without a promotion — beyond the ${threshold}-month career-review horizon.` });
   }
   if (deliveryScore >= 0.5) {
     recommended_fact_finding.push("Review workload and resourcing; distinguish missed deadlines caused by capacity from quality issues.");
+    case_rationale.push({ factor: "delivery", why: `${Math.round(missed)} of ${Math.round(total)} milestones missed in the delivery window.` });
   }
   if (data_completeness < REVIEW_MIN_COMPLETENESS) {
     recommended_fact_finding.push(`Observation history is ${Math.round(data_completeness * 100)}% complete — collect the missing periods before finalizing the review.`);
@@ -261,7 +430,20 @@ export function computeReviewIndex(input: ReviewIndexInput): ReviewIndexResult {
       "Missing observations are treated as data gaps (lower completeness), never as poor performance.",
       "Seeking-growth / development interest is reported separately and never contributes to the index.",
       "The attendance factor uses the most recent absence snapshot; confirm with the manager before conclusions.",
+      "Review confidence reflects data coverage and freshness — it is not a calibrated model reliability measure.",
     ],
+    confidence,
+    confidence_reason,
+    history_state,
+    data_quality: { issues, severity },
+    freshness: {
+      oldest_observation_period: oldest,
+      latest_observation_period: latest,
+      months_since_latest: monthsSinceLatest,
+      stale,
+      computed_at: computedAt,
+    },
+    case_rationale,
   };
 }
 

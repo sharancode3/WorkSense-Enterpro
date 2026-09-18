@@ -85,6 +85,7 @@ Deno.serve(async (req) => {
 
   const signals = (twin.signals ?? []) as { type?: string; value?: unknown }[];
   const seeksGrowth = signals.some((s) => s.type === "seeks_growth" && s.value === true);
+  const now = new Date().toISOString();
 
   const input = {
     twin_id: twinId,
@@ -93,13 +94,58 @@ Deno.serve(async (req) => {
     delivery: twin.delivery ?? {},
     observations,
     seeks_growth: seeksGrowth,
+    computed_at: now,
   };
   const result = computeReviewIndex(input);
   const hash = reviewSourceHash(input);
-  const now = new Date().toISOString();
 
   const periodStart = observations.length > 0 ? `${observations[0].period}-01` : `${now.slice(0, 7)}-01`;
   const periodEnd = observations.length > 0 ? `${observations[observations.length - 1].period}-28` : now.slice(0, 10);
+
+  // Authorized reviewer actions for this case (dismiss/defer/acknowledge).
+  const { data: actionRows } = await supabase
+    .from("review_case_actions")
+    .select("id, action, reason, follow_up_at, acted_by, acted_at")
+    .eq("org_id", caller.org_id)
+    .eq("twin_id", twinId)
+    .order("acted_at", { ascending: true });
+  const actions = (actionRows ?? []).map((a) => ({
+    id: a.id,
+    action: a.action,
+    reason: a.reason,
+    follow_up_at: a.follow_up_at ?? null,
+    acted_by: a.acted_by,
+    acted_at: a.acted_at,
+  }));
+
+  // Intervention outcomes (item 8): post-action observation deltas, explicitly
+  // labeled as observed-after — correlation, never causation.
+  const metricByWeight = Object.entries(result.factors).sort((a, b) => b[1].score - a[1].score);
+  const primaryMetric = metricByWeight[0] && metricByWeight[0][1].score > 0 ? (metricByWeight[0][0] === "career" ? "engagement" : metricByWeight[0][0]) : "engagement";
+  const metricValues = observations
+    .filter((o) => o.metric === primaryMetric && !o.missing && typeof o.value === "number")
+    .sort((a, b) => a.period.localeCompare(b.period))
+    .map((o) => ({ period: o.period, value: o.value as number }));
+  const outcomes = actions
+    .map((a) => {
+      const at = String(a.acted_at).slice(0, 7);
+      const before = metricValues.filter((v) => v.period < at).slice(-3);
+      const after = metricValues.filter((v) => v.period >= at).slice(0, 3);
+      if (before.length === 0 || after.length === 0) return null;
+      const bm = before.reduce((s, v) => s + v.value, 0) / before.length;
+      const am = after.reduce((s, v) => s + v.value, 0) / after.length;
+      return {
+        action_id: a.id,
+        action: a.action,
+        metric: primaryMetric,
+        before_mean: +bm.toFixed(2),
+        after_mean: +am.toFixed(2),
+        delta: +(am - bm).toFixed(2),
+        observed_after: `${before[before.length - 1].period} → ${after[after.length - 1].period}`,
+        note: `Observed after the ${a.action} action — correlation, not causation; confirm with the employee before drawing conclusions.`,
+      };
+    })
+    .filter((o): o is NonNullable<typeof o> => o !== null);
 
   // Upsert the stored case (longitudinal review record).
   const caseRow = {
@@ -118,6 +164,12 @@ Deno.serve(async (req) => {
     sensitivity: result.sensitivity,
     limitations: result.limitations,
     priority_gate: result.priority_gate,
+    confidence: result.confidence,
+    confidence_reason: result.confidence_reason,
+    history_state: result.history_state,
+    data_quality: result.data_quality,
+    freshness: result.freshness,
+    case_rationale: result.case_rationale,
     source_version_hash: hash,
     computed_at: now,
   };
@@ -131,7 +183,7 @@ Deno.serve(async (req) => {
     .maybeSingle();
   if (existing && existing.source_version_hash === hash && !body.force) {
     // Data unchanged since the last computation — return the stored result.
-    return json({ ok: true, cached: true, ...result, case: caseRow, label: "Workforce Review Index — decision support, not a probability." });
+    return json({ ok: true, cached: true, ...result, case: caseRow, actions, outcomes, label: "Workforce Review Index — decision support, not a probability." });
   }
   if (existing) {
     const { error: upErr } = await supabase
@@ -174,6 +226,8 @@ Deno.serve(async (req) => {
     cached: false,
     ...result,
     case: caseRow,
+    actions,
+    outcomes,
     label: "Workforce Review Index — decision support, not a probability.",
   });
 });

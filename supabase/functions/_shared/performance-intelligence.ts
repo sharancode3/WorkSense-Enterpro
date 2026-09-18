@@ -37,10 +37,20 @@ export interface PerformanceInput {
   observations?: { metric: string; period: string; value: number | null; missing: boolean }[];
   evidence_items?: { source_type?: string; quote?: string; captured_at?: string }[];
   seeking_growth?: boolean;
+  computed_at?: string;
+}
+
+export interface PerformanceSourceFact {
+  ref: string;
+  source: string;
+  fact: string;
+  /** Phase 7: the record period the fact refers to (resolvable supporting
+   *  evidence), e.g. "2026-H1" or a captured date, or null when n/a. */
+  period: string | null;
 }
 
 export interface PerformanceFacts {
-  source_facts: { ref: string; source: string; fact: string }[];
+  source_facts: PerformanceSourceFact[];
   goal_stats: { cycles: number; avg: number | null; min: number | null; max: number | null; note: string };
   feedback_stats: {
     total: number;
@@ -56,6 +66,11 @@ export interface PerformanceFacts {
   sparse_evidence: { flags: string[] };
   inferred_themes: { theme: string; basis: string[]; confidence_note: string }[];
   source_version_hash: string;
+  // Phase 7 additions:
+  history_state: "none" | "partial" | "adequate";
+  stale_evidence: { kind: string; detail: string }[];
+  evidence_gaps: { skill: string; proficiency: number | null; gap: string }[];
+  work_artifacts: { source_type: string; quote: string; captured_at: string | null; period: string | null }[];
 }
 
 const RATING_ORDER: Record<string, number> = {
@@ -66,22 +81,51 @@ const RATING_ORDER: Record<string, number> = {
   "Exceptional": 5,
 };
 
+/** Phase 7: stale-evidence thresholds (calendar months before computed_at). */
+export const STALE_FEEDBACK_MONTHS = 18;
+export const STALE_WORK_EVIDENCE_MONTHS = 12;
+export const PERFORMANCE_HISTORY_MIN_CYCLES = 2;
+
+function monthsBetween(from: string, toIso: string): number {
+  const src = /^\d{4}-\d{2}$/.test(String(from)) ? `${from}-01` : String(from);
+  const f = new Date(src);
+  const t = new Date(toIso);
+  if (isNaN(f.getTime())) return 0;
+  return (t.getUTCFullYear() - f.getUTCFullYear()) * 12 + (t.getUTCMonth() - f.getUTCMonth());
+}
+
+/** Phase 7 (spec item 17): validate that every source citation in a claim
+ *  exists in the source-fact refs. Accepts "[S3]" or bare "S3" (the model
+ *  emits both). Returns the list of unsupported refs (empty = ok). */
+export function validatePerformanceCitations(claims: string[], sourceRefs: string[]): string[] {
+  const valid = new Set(sourceRefs);
+  const unsupported = new Set<string>();
+  for (const claim of claims) {
+    const refs = [...String(claim ?? "").matchAll(/(?:\[?\s*S(\d+)\s*\]?)/gi)].map((m) => `S${m[1]}`);
+    if (refs.length === 0) unsupported.add(`claim without any source citation: "${String(claim).slice(0, 80)}…"`);
+    for (const ref of refs) if (!valid.has(ref)) unsupported.add(`unknown citation ${ref} in "${String(claim).slice(0, 80)}…"`);
+  }
+  return [...unsupported];
+}
+
 export function computePerformanceFacts(input: PerformanceInput): PerformanceFacts {
   const history = (input.performance_history ?? []).filter((h) => h && h.cycle);
   const cycles = history.length;
+  const computedAt = input.computed_at ?? new Date().toISOString();
 
   // --- source facts (verbatim rows, attributed) ------------------------------
-  const source_facts: { ref: string; source: string; fact: string }[] = [];
+  const source_facts: PerformanceSourceFact[] = [];
+  const periodFor = (h: PerfCycle) => h.cycle;
   for (const h of history) {
-    if (h.rating) source_facts.push({ ref: `S${source_facts.length + 1}`, source: `PERFORMANCE:${h.cycle}`, fact: `Rating "${h.rating}" recorded for cycle ${h.cycle}.` });
-    if (typeof h.goals_met === "number") source_facts.push({ ref: `S${source_facts.length + 1}`, source: `PERFORMANCE:${h.cycle}`, fact: `Goal attainment ${h.goals_met}% recorded for cycle ${h.cycle} (review goals and difficulty in conversation — the raw number is directional context).` });
+    if (h.rating) source_facts.push({ ref: `S${source_facts.length + 1}`, source: `PERFORMANCE:${h.cycle}`, fact: `Rating "${h.rating}" recorded for cycle ${h.cycle}.`, period: periodFor(h) });
+    if (typeof h.goals_met === "number") source_facts.push({ ref: `S${source_facts.length + 1}`, source: `PERFORMANCE:${h.cycle}`, fact: `Goal attainment ${h.goals_met}% recorded for cycle ${h.cycle} (review goals and difficulty in conversation — the raw number is directional context).`, period: periodFor(h) });
     for (const f of h.feedback ?? []) {
       if (f?.text) {
         const d = f.date ? ` (dated ${f.date})` : ` (cycle ${h.cycle})`;
-        source_facts.push({ ref: `S${source_facts.length + 1}`, source: `FEEDBACK:${h.cycle}`, fact: `Feedback [${f.sentiment ?? "neutral"}]: "${f.text}"${d}.` });
+        source_facts.push({ ref: `S${source_facts.length + 1}`, source: `FEEDBACK:${h.cycle}`, fact: `Feedback [${f.sentiment ?? "neutral"}]: "${f.text}"${d}.`, period: f.date ?? periodFor(h) });
       }
     }
-    if (h.summary) source_facts.push({ ref: `S${source_facts.length + 1}`, source: `PERFORMANCE:${h.cycle}`, fact: `Cycle summary: "${h.summary}".` });
+    if (h.summary) source_facts.push({ ref: `S${source_facts.length + 1}`, source: `PERFORMANCE:${h.cycle}`, fact: `Cycle summary: "${h.summary}".`, period: periodFor(h) });
   }
 
   const skills = input.verified_skills ?? [];
@@ -91,6 +135,7 @@ export function computePerformanceFacts(input: PerformanceInput): PerformanceFac
         ref: `S${source_facts.length + 1}`,
         source: "SKILL_ASSESSMENT",
         fact: `Skill assessment: ${s.name} (proficiency ${s.proficiency ?? "n/a"}/5, verification rigor "${s.verification_rigor ?? "not stated"}").`,
+        period: null,
       });
     }
   }
@@ -102,8 +147,14 @@ export function computePerformanceFacts(input: PerformanceInput): PerformanceFac
   }
   const evidence_summary = [...evCounts.entries()].map(([source_type, count]) => ({ source_type, count })).sort((a, b) => b.count - a.count);
   const workEvidence = (input.evidence_items ?? []).filter((e) => e?.quote);
+  const work_artifacts = workEvidence.slice(0, 6).map((e) => ({
+    source_type: e.source_type ?? "work_sample",
+    quote: e.quote ?? "",
+    captured_at: e.captured_at ?? null,
+    period: e.captured_at ? e.captured_at.slice(0, 7) : null,
+  }));
   for (const e of workEvidence.slice(0, 4)) {
-    source_facts.push({ ref: `S${source_facts.length + 1}`, source: `EVIDENCE:${e.source_type ?? "work_sample"}`, fact: `Work evidence: "${e.quote}"${e.captured_at ? ` (captured ${e.captured_at.slice(0, 10)})` : ""}.` });
+    source_facts.push({ ref: `S${source_facts.length + 1}`, source: `EVIDENCE:${e.source_type ?? "work_sample"}`, fact: `Work evidence: "${e.quote}"${e.captured_at ? ` (captured ${e.captured_at.slice(0, 10)})` : ""}.`, period: e.captured_at ? e.captured_at.slice(0, 7) : null });
   }
 
   // --- goal stats (directional context, not a verdict) -----------------------
@@ -184,6 +235,37 @@ export function computePerformanceFacts(input: PerformanceInput): PerformanceFac
   }
   if (workEvidence.length === 0) flags.push("No work-evidence items attached — strengths claims cannot cite concrete outputs.");
 
+  // --- Phase 7: history state (insufficient vs adequate) ----------------------
+  const history_state: PerformanceFacts["history_state"] = cycles === 0 ? "none" : cycles < PERFORMANCE_HISTORY_MIN_CYCLES ? "partial" : "adequate";
+
+  // --- Phase 7: stale evidence (spec item 13) ---------------------------------
+  const stale_evidence: { kind: string; detail: string }[] = [];
+  for (const h of history) {
+    for (const f of h.feedback ?? []) {
+      if (f?.date && monthsBetween(f.date, computedAt) > STALE_FEEDBACK_MONTHS) {
+        stale_evidence.push({ kind: "stale_feedback", detail: `Feedback from ${f.date} is over ${STALE_FEEDBACK_MONTHS} months old (cycle ${h.cycle}).` });
+      }
+    }
+  }
+  for (const e of workEvidence) {
+    if (e.captured_at && monthsBetween(e.captured_at.slice(0, 10), computedAt) > STALE_WORK_EVIDENCE_MONTHS) {
+      stale_evidence.push({ kind: "stale_work_evidence", detail: `Work evidence captured ${e.captured_at.slice(0, 10)} is over ${STALE_WORK_EVIDENCE_MONTHS} months old.` });
+    }
+  }
+  if (stale_evidence.length > 0) flags.push(`${stale_evidence.length} record(s) are stale — treat them as historical, not current, and re-verify in conversation.`);
+
+  // --- Phase 7: evidence gaps for development actions (spec item 15) ----------
+  const evidence_gaps: { skill: string; proficiency: number | null; gap: string }[] = [];
+  for (const s of skills) {
+    if (!s?.name) continue;
+    const rigor = s.verification_rigor ?? "not stated";
+    if (rigor === "claimed" || rigor === "low" || rigor === "not stated" || rigor === "") {
+      evidence_gaps.push({ skill: s.name, proficiency: s.proficiency ?? null, gap: `"${s.name}" has no verified evidence — only a ${rigor === "not stated" || rigor === "" ? "self-reported/claimed" : rigor}-rigor record. Development claims must attach a concrete, verifiable artifact.` });
+    } else if ((s.proficiency ?? 0) < 3) {
+      evidence_gaps.push({ skill: s.name, proficiency: s.proficiency ?? null, gap: `"${s.name}" is assessed below the working bar (${s.proficiency}/5) — a development action should name the measurable evidence that would demonstrate growth.` });
+    }
+  }
+
   // --- inferred themes (labeled inference, not diagnosis) ---------------------
   const inferred_themes: { theme: string; basis: string[]; confidence_note: string }[] = [];
   if (fb.negative > 0 && engTrend === "down") {
@@ -225,6 +307,10 @@ export function computePerformanceFacts(input: PerformanceInput): PerformanceFac
     sparse_evidence: { flags },
     inferred_themes,
     source_version_hash: performanceSourceHash(input),
+    history_state,
+    stale_evidence,
+    evidence_gaps,
+    work_artifacts,
   };
 }
 

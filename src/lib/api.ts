@@ -531,6 +531,8 @@ export interface DashboardFilters {
   department?: string | null;
   requisition_id?: string | null;
   period?: string | null;
+  review_band?: "low" | "medium" | "high" | "review" | null;
+  min_completeness?: number | null;
 }
 
 export interface HeatmapBucket {
@@ -668,6 +670,28 @@ export interface ReviewTrend {
   first: number | null;
   last: number | null;
   periods: string[];
+  favorable_direction?: "up" | "down";
+  favorable?: boolean;
+}
+
+export interface ReviewAction {
+  id: string;
+  action: "acknowledged" | "dismissed" | "deferred";
+  reason: string;
+  follow_up_at: string | null;
+  acted_by: string;
+  acted_at: string;
+}
+
+export interface ReviewOutcome {
+  action_id: string;
+  action: string;
+  metric: string;
+  before_mean: number;
+  after_mean: number;
+  delta: number;
+  observed_after: string;
+  note: string;
 }
 
 export interface WorkforceReviewResult {
@@ -684,21 +708,40 @@ export interface WorkforceReviewResult {
   recommended_fact_finding: string[];
   sensitivity: { individual_absence: boolean; individual_engagement: boolean };
   limitations: string[];
+  confidence: "high" | "medium" | "low";
+  confidence_reason: string;
+  history_state: "none" | "partial" | "adequate";
+  data_quality: { issues: { kind: string; detail: string }[]; severity: "ok" | "warning" | "critical" };
+  freshness: { oldest_observation_period: string | null; latest_observation_period: string | null; months_since_latest: number | null; stale: boolean; computed_at: string };
+  case_rationale: { factor: string; why: string }[];
+  actions?: ReviewAction[];
+  outcomes?: ReviewOutcome[];
   label: string;
 }
 
 export const fetchWorkforceReview = (twinId: string, force = false) =>
   invoke<WorkforceReviewResult>("workforce-review-index", { twin_id: twinId, force });
 
+export const workforceReviewAction = (payload: { twin_id: string; action: "acknowledged" | "dismissed" | "deferred"; reason: string; follow_up_at?: string | null }) =>
+  invoke<{ ok: true; action: ReviewAction; outcome_note: string }>("workforce-review-action", payload);
+
 export interface PerfSourceFact {
   ref: string;
   source: string;
   fact: string;
+  period?: string | null;
 }
 
 export interface PerfContradiction {
   title: string;
   evidence: string[];
+}
+
+export interface PerfDevelopmentAction {
+  skill: string;
+  gap_basis: string[];
+  action: string;
+  measurable_evidence: string;
 }
 
 export interface PerformanceSummaryResult {
@@ -714,6 +757,10 @@ export interface PerformanceSummaryResult {
     sparse_evidence: { flags: string[] };
     inferred_themes: { theme: string; basis: string[]; confidence_note: string }[];
     source_version_hash: string;
+    history_state: "none" | "partial" | "adequate";
+    stale_evidence: { kind: string; detail: string }[];
+    evidence_gaps: { skill: string; proficiency: number | null; gap: string }[];
+    work_artifacts: { source_type: string; quote: string; captured_at: string | null; period: string | null }[];
   };
   summary: {
     narrative: string;
@@ -722,11 +769,23 @@ export interface PerformanceSummaryResult {
     contradictions: PerfContradiction[];
     sparse_evidence: { flags: string[] };
     model_note: string;
+    strengths?: string[];
+    improvement_areas?: string[];
+    development_actions?: PerfDevelopmentAction[];
+    reviewer_draft?: Record<string, unknown>;
+    reviewer_draft_at?: string | null;
   };
 }
 
 export const fetchPerformanceSummary = (twinId: string, force = false) =>
   invoke<PerformanceSummaryResult>("performance-summary", { twin_id: twinId, force });
+
+export const savePerformanceDraft = (twinId: string, period: string, draft: Record<string, unknown>) =>
+  invoke<{ ok: true; saved_at: string; reviewer_draft: Record<string, unknown>; label: string }>("performance-draft", {
+    twin_id: twinId,
+    period,
+    draft,
+  });
 
 export interface ReviewCaseRow {
   twin_id: string;
@@ -734,6 +793,8 @@ export interface ReviewCaseRow {
   index: number;
   priority: string;
   completeness: number;
+  confidence?: "high" | "medium" | "low";
+  history_state?: "none" | "partial" | "adequate";
   seeking_growth: boolean;
 }
 

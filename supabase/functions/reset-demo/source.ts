@@ -865,6 +865,7 @@ async function reseed(supabase, authIds: Record<string, string>) {
         delivery: p.delivery ?? {},
         observations: pObs,
         seeks_growth: p.seeks_growth === true,
+        computed_at: fx.clock,
       };
       const r = computeReviewIndex(input);
       const firstPeriod = pObs.length > 0 ? pObs[0].period : "2025-10";
@@ -885,6 +886,12 @@ async function reseed(supabase, authIds: Record<string, string>) {
         sensitivity: r.sensitivity,
         limitations: r.limitations,
         priority_gate: r.priority_gate,
+        confidence: r.confidence,
+        confidence_reason: r.confidence_reason,
+        history_state: r.history_state,
+        data_quality: r.data_quality,
+        freshness: r.freshness,
+        case_rationale: r.case_rationale,
         source_version_hash: reviewSourceHash(input),
         computed_at: fx.clock,
       };

@@ -4559,12 +4559,14 @@ export type Database = {
       performance_summaries: {
         Row: {
           contradictions: Json
+          development_actions: Json
           evidence_summary: Json
           feedback_stats: Json
           from_cache: boolean
           generated_at: string
           goal_stats: Json
           id: string
+          improvement_areas: Json
           inferred_themes: Json
           model_note: string
           narrative: string
@@ -4572,19 +4574,25 @@ export type Database = {
           period: string
           reviewed_at: string | null
           reviewed_by: string | null
+          reviewer_draft: Json
+          reviewer_draft_at: string | null
+          reviewer_draft_by: string | null
           source_facts: Json
           source_version_hash: string
           sparse_evidence: Json
+          strengths: Json
           twin_id: string
         }
         Insert: {
           contradictions?: Json
+          development_actions?: Json
           evidence_summary?: Json
           feedback_stats?: Json
           from_cache?: boolean
           generated_at?: string
           goal_stats?: Json
           id?: string
+          improvement_areas?: Json
           inferred_themes?: Json
           model_note?: string
           narrative?: string
@@ -4592,19 +4600,25 @@ export type Database = {
           period: string
           reviewed_at?: string | null
           reviewed_by?: string | null
+          reviewer_draft?: Json
+          reviewer_draft_at?: string | null
+          reviewer_draft_by?: string | null
           source_facts?: Json
           source_version_hash: string
           sparse_evidence?: Json
+          strengths?: Json
           twin_id: string
         }
         Update: {
           contradictions?: Json
+          development_actions?: Json
           evidence_summary?: Json
           feedback_stats?: Json
           from_cache?: boolean
           generated_at?: string
           goal_stats?: Json
           id?: string
+          improvement_areas?: Json
           inferred_themes?: Json
           model_note?: string
           narrative?: string
@@ -4612,9 +4626,13 @@ export type Database = {
           period?: string
           reviewed_at?: string | null
           reviewed_by?: string | null
+          reviewer_draft?: Json
+          reviewer_draft_at?: string | null
+          reviewer_draft_by?: string | null
           source_facts?: Json
           source_version_hash?: string
           sparse_evidence?: Json
+          strengths?: Json
           twin_id?: string
         }
         Relationships: [
@@ -4627,6 +4645,12 @@ export type Database = {
           {
             foreignKeyName: "performance_summaries_reviewed_by_fkey"
             columns: ["reviewed_by"]
+            referencedRelation: "digital_twins"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "performance_summaries_reviewer_draft_by_fkey"
+            columns: ["reviewer_draft_by"]
             referencedRelation: "digital_twins"
             referencedColumns: ["id"]
           },
@@ -5012,6 +5036,70 @@ export type Database = {
           },
         ]
       }
+      review_case_actions: {
+        Row: {
+          acted_at: string
+          acted_by: string
+          action: string
+          case_id: string | null
+          created_at: string
+          follow_up_at: string | null
+          id: string
+          org_id: string
+          reason: string
+          twin_id: string
+        }
+        Insert: {
+          acted_at?: string
+          acted_by: string
+          action: string
+          case_id?: string | null
+          created_at?: string
+          follow_up_at?: string | null
+          id?: string
+          org_id: string
+          reason: string
+          twin_id: string
+        }
+        Update: {
+          acted_at?: string
+          acted_by?: string
+          action?: string
+          case_id?: string | null
+          created_at?: string
+          follow_up_at?: string | null
+          id?: string
+          org_id?: string
+          reason?: string
+          twin_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "review_case_actions_acted_by_fkey"
+            columns: ["acted_by"]
+            referencedRelation: "digital_twins"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "review_case_actions_case_id_fkey"
+            columns: ["case_id"]
+            referencedRelation: "workforce_review_cases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "review_case_actions_org_id_fkey"
+            columns: ["org_id"]
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "review_case_actions_twin_id_fkey"
+            columns: ["twin_id"]
+            referencedRelation: "digital_twins"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       skill_assertions: {
         Row: {
           claimed_proficiency: number
@@ -5213,11 +5301,17 @@ export type Database = {
       }
       workforce_review_cases: {
         Row: {
+          case_rationale: Json
           computed_at: string
+          confidence: string
+          confidence_reason: string | null
           created_at: string
           data_completeness: number
+          data_quality: Json
           fact_finding: Json
           factors: Json
+          freshness: Json
+          history_state: string
           id: string
           index: number
           limitations: Json
@@ -5235,11 +5329,17 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          case_rationale?: Json
           computed_at?: string
+          confidence?: string
+          confidence_reason?: string | null
           created_at?: string
           data_completeness?: number
+          data_quality?: Json
           fact_finding?: Json
           factors?: Json
+          freshness?: Json
+          history_state?: string
           id?: string
           index: number
           limitations?: Json
@@ -5257,11 +5357,17 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          case_rationale?: Json
           computed_at?: string
+          confidence?: string
+          confidence_reason?: string | null
           created_at?: string
           data_completeness?: number
+          data_quality?: Json
           fact_finding?: Json
           factors?: Json
+          freshness?: Json
+          history_state?: string
           id?: string
           index?: number
           limitations?: Json

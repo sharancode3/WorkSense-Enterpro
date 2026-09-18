@@ -1,19 +1,25 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useSearchParams } from "react-router-dom";
+import { toast } from "sonner";
 import {
   Activity,
   AlertTriangle,
   ArrowRight,
   BarChart3,
+  CalendarClock,
+  CheckCircle2,
   ClipboardList,
+  Cpu,
   Eye,
   FileText,
   Info,
   Loader2,
+  PencilLine,
   RefreshCw,
   Search,
   ShieldAlert,
+  ThumbsDown,
   TrendingDown,
   TrendingUp,
   UserCheck,
@@ -26,17 +32,43 @@ import {
   fetchDashboard,
   fetchWorkforceReview,
   fetchPerformanceSummary,
+  savePerformanceDraft,
+  workforceReviewAction,
+  type PerfDevelopmentAction,
   type ReviewCaseRow,
   type WorkforceReviewResult,
   type PerformanceSummaryResult,
 } from "@/lib/api";
+import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
+
+// Canonical review bands — MUST match the backend REVIEW_BANDS so "review bands
+// match across UI and backend" (Phase 7 acceptance).
+export const REVIEW_BANDS = {
+  low: { min: 0, max: 39, label: "Low (0-39)" },
+  medium: { min: 40, max: 59, label: "Medium (40-59)" },
+  high: { min: 60, max: 74, label: "High (60-74)" },
+  review: { min: 75, max: 100, label: "Review (75-100)" },
+} as const;
+export type ReviewBand = keyof typeof REVIEW_BANDS;
 
 const PRIORITY_CLS: Record<string, string> = {
   review: "bg-destructive text-white",
   high: "bg-destructive/80 text-white",
   medium: "bg-accent text-foreground",
   low: "bg-muted text-foreground",
+};
+
+const CONFIDENCE_CLS: Record<string, string> = {
+  high: "bg-secondary text-white",
+  medium: "bg-accent text-foreground",
+  low: "bg-destructive text-white",
+};
+
+const HISTORY_LABEL: Record<string, string> = {
+  none: "No longitudinal history",
+  partial: "Insufficient history",
+  adequate: "Adequate history",
 };
 
 const FACTOR_LABEL: Record<string, string> = {
@@ -46,7 +78,14 @@ const FACTOR_LABEL: Record<string, string> = {
   engagement: "Engagement trend",
 };
 
-function FactorBar({ name, factor }: { name: string; factor: { score: number; weight: number; definition: string; source_period: string | null; note: string | null } }) {
+/** Favorable direction per metric (matches backend REVIEW_METRIC_FAVORABLE_DIRECTION). */
+const FAVORABLE_DIRECTION: Record<string, "up" | "down"> = {
+  attendance: "down",
+  delivery: "up",
+  engagement: "up",
+};
+
+function FactorBar({ name, factor }: { name: string; factor: { score: number; weight: number; definition: string; source_period: string | null; note: string | null; coverage?: number; freshness?: string | null } }) {
   return (
     <div className="rounded-lg bg-muted p-4">
       <div className="flex items-center justify-between">
@@ -58,8 +97,16 @@ function FactorBar({ name, factor }: { name: string; factor: { score: number; we
       <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-foreground/10">
         <div className="h-full bg-primary" style={{ width: `${Math.round(factor.score * 100)}%` }} />
       </div>
-      <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{factor.definition}</p>
-      {factor.source_period && <p className="mt-1 text-[11px] font-semibold text-primary">Source period: {factor.source_period}</p>}
+      <p className="mt-2 text-xs leading-relaxed text-foreground">{factor.definition}</p>
+      <div className="mt-1.5 flex flex-wrap gap-1.5 text-[11px]">
+        {factor.source_period && <span className="rounded bg-primary/10 px-1.5 py-0.5 font-semibold text-primary">Source: {factor.source_period}</span>}
+        {typeof factor.coverage === "number" && (
+          <span className={`rounded px-1.5 py-0.5 font-semibold ${factor.coverage >= 0.5 ? "bg-secondary/10 text-secondary" : "bg-destructive/10 text-destructive"}`}>
+            Coverage {Math.round(factor.coverage * 100)}%
+          </span>
+        )}
+        {factor.freshness && <span className="rounded bg-muted px-1.5 py-0.5 font-semibold text-muted-foreground">Fresh: {factor.freshness}</span>}
+      </div>
       {factor.note && (
         <p className="mt-2 flex items-start gap-1.5 rounded-md bg-accent/60 p-2 text-[11px] leading-relaxed text-foreground">
           <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" /> {factor.note}
@@ -69,19 +116,30 @@ function FactorBar({ name, factor }: { name: string; factor: { score: number; we
   );
 }
 
-function TrendRow({ t }: { t: { metric: string; direction: string; delta: number | null; first: number | null; last: number | null; periods: string[] } }) {
+function TrendRow({ t }: { t: { metric: string; direction: string; delta: number | null; first: number | null; last: number | null; periods: string[]; favorable_direction?: "up" | "down"; favorable?: boolean } }) {
   const up = t.direction === "up";
   const down = t.direction === "down";
+  const favorableDir = t.favorable_direction ?? FAVORABLE_DIRECTION[t.metric] ?? "up";
+  const favorable = t.favorable ?? (t.direction === favorableDir);
   return (
     <div className="flex items-center justify-between rounded-lg bg-muted px-4 py-2.5">
       <span className="text-sm font-semibold capitalize text-foreground">{t.metric}</span>
       <span className="flex items-center gap-1.5 text-xs font-bold text-muted-foreground">
         {t.direction === "insufficient" ? (
-          <span className="text-muted-foreground">insufficient data</span>
+          <span className="text-muted-foreground">insufficient data — no trend claim</span>
         ) : (
           <>
-            {up ? <TrendingUp className="h-3.5 w-3.5 text-destructive" /> : down ? <TrendingDown className="h-3.5 w-3.5 text-primary" /> : <Activity className="h-3.5 w-3.5 text-muted-foreground" />}
+            {up ? (
+              <TrendingUp className={`h-3.5 w-3.5 ${favorable ? "text-secondary" : "text-destructive"}`} />
+            ) : down ? (
+              <TrendingDown className={`h-3.5 w-3.5 ${favorable ? "text-secondary" : "text-destructive"}`} />
+            ) : (
+              <Activity className="h-3.5 w-3.5 text-muted-foreground" />
+            )}
             {up ? "rising" : down ? "declining" : "flat"}
+            <span className={favorable ? "text-secondary" : "text-destructive"}>
+              {favorable ? "· favorable" : "· attention"}
+            </span>
             {t.delta !== null ? ` (${(t.delta * 100).toFixed(0)}%)` : ""}
           </>
         )}
@@ -90,13 +148,28 @@ function TrendRow({ t }: { t: { metric: string; direction: string; delta: number
   );
 }
 
+type ActionKind = "acknowledged" | "dismissed" | "deferred";
+
 export default function WorkforceReview() {
   const { role, twin: me } = useAuth();
   const isEmployee = role === "employee";
+  const isReviewer = !isEmployee && (can(role, "view_all_workforce") || can(role, "view_team"));
+
+  const [searchParams] = useSearchParams();
+  const [q, setQ] = useState("");
+  const [deptFilter, setDeptFilter] = useState("all");
+  const [bandFilter, setBandFilter] = useState<"all" | ReviewBand>("all");
+  const [completenessFilter, setCompletenessFilter] = useState<"all" | "50" | "75">("all");
+  const [periodFilter, setPeriodFilter] = useState<string>("all");
 
   const dash = useQuery({
-    queryKey: ["dashboard", me?.id ?? "anon", role],
-    queryFn: () => fetchDashboard(),
+    queryKey: ["dashboard", me?.id ?? "anon", role, bandFilter, completenessFilter, periodFilter],
+    queryFn: () =>
+      fetchDashboard({
+        review_band: bandFilter === "all" ? null : bandFilter,
+        min_completeness: completenessFilter === "all" ? null : Number(completenessFilter) / 100,
+        period: periodFilter === "all" ? null : periodFilter,
+      }),
   });
 
   const cases: ReviewCaseRow[] = useMemo(() => {
@@ -104,44 +177,52 @@ export default function WorkforceReview() {
     return dash.data?.review_cases ?? [];
   }, [dash.data, isEmployee, me]);
 
-  // Phase 32: search + department + risk filters for the case list.
-  const [q, setQ] = useState("");
-  const [deptFilter, setDeptFilter] = useState("all");
-  const [riskFilter, setRiskFilter] = useState("all");
   const members = useQuery({
     queryKey: ["wr-members", me?.id ?? "anon"],
-    enabled: !isEmployee && !!me,
+    enabled: !!isReviewer && !!me,
     queryFn: async () => {
       const { data } = await supabase.from("digital_twins").select("id, department");
       return new Map((data ?? []).map((t) => [t.id, t.department ?? "—"]));
     },
   });
-  const riskBucket = (index: number) => (index >= 71 ? "high" : index >= 31 ? "medium" : "low");
+
   const filteredCases = useMemo(() => {
     const text = q.trim().toLowerCase();
     return cases.filter((c) => {
       if (text && !c.name.toLowerCase().includes(text)) return false;
       if (deptFilter !== "all" && (members.data?.get(c.twin_id) ?? "—") !== deptFilter) return false;
-      if (riskFilter !== "all" && riskBucket(c.index) !== riskFilter) return false;
       return true;
     });
-  }, [cases, q, deptFilter, riskFilter, members.data]);
+  }, [cases, q, deptFilter, members.data]);
+
   const departments = useMemo(() => {
     const seen = new Set<string>();
     for (const c of cases) seen.add(members.data?.get(c.twin_id) ?? "—");
     return [...seen].sort();
   }, [cases, members.data]);
 
-  // Employees review only their own case; managers/HR get the scoped list.
+  const periodOptions = useMemo(() => {
+    const range = dash.data?.observation_range;
+    if (!range) return [];
+    const [ys, ms] = range.start.split("-").map(Number);
+    const [ye, me2] = range.end.split("-").map(Number);
+    const out: string[] = [];
+    let y = ys, m = ms;
+    while (y < ye || (y === ye && m <= me2)) {
+      out.push(`${y}-${String(m).padStart(2, "0")}`);
+      m += 1;
+      if (m > 12) { m = 1; y += 1; }
+    }
+    return out;
+  }, [dash.data]);
+
   // ?twin=<id> deep-links to a specific case from the "My work" feed.
-  const [searchParams] = useSearchParams();
   const urlTwin = searchParams.get("twin");
   const caseListRef = useRef<HTMLUListElement>(null);
   const [selectedId, setSelectedId] = useState<string | null>(urlTwin ?? null);
   const [perfForce, setPerfForce] = useState(false);
   const activeId = isEmployee ? (me?.id ?? null) : selectedId ?? cases[0]?.twin_id ?? null;
 
-  // Deep link: bring the referenced case into view when the list has loaded.
   useEffect(() => {
     if (!urlTwin) return;
     const el = caseListRef.current?.querySelector(`[data-case="${urlTwin}"]`);
@@ -174,6 +255,68 @@ export default function WorkforceReview() {
     },
   });
 
+  // Dismiss/defer dialog state.
+  const [actionOpen, setActionOpen] = useState(false);
+  const [actionKind, setActionKind] = useState<ActionKind>("deferred");
+  const [actionReason, setActionReason] = useState("");
+  const [actionFollowUp, setActionFollowUp] = useState("");
+  const [actionSaving, setActionSaving] = useState(false);
+
+  // Reviewer draft state (performance).
+  const [draftOpen, setDraftOpen] = useState(false);
+  const [draftText, setDraftText] = useState("");
+  const [draftSaving, setDraftSaving] = useState(false);
+
+  const detail: WorkforceReviewResult | undefined = caseQuery.data;
+  const perf: PerformanceSummaryResult | undefined = perfQuery.data;
+  const selected = cases.find((c) => c.twin_id === activeId);
+  const canAct = isReviewer && !!activeId && detail && detail.priority !== "low";
+
+  const submitAction = async () => {
+    if (!activeId) return;
+    if (actionKind !== "acknowledged" && !actionReason.trim()) {
+      toast.error("A reason is required to dismiss or defer a case — decisions on people always carry a rationale.");
+      return;
+    }
+    if (actionKind === "deferred" && !actionFollowUp) {
+      toast.error("A follow-up date is required when deferring.");
+      return;
+    }
+    setActionSaving(true);
+    try {
+      await workforceReviewAction({
+        twin_id: activeId,
+        action: actionKind,
+        reason: actionReason.trim() || "Acknowledged in review.",
+        follow_up_at: actionKind === "deferred" ? new Date(actionFollowUp).toISOString() : null,
+      });
+      toast.success(`Case ${actionKind}. The action is tracked; any later change in observations is labeled observed-after, never causation.`);
+      setActionOpen(false);
+      setActionReason("");
+      setActionFollowUp("");
+      caseQuery.refetch();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not save the action.");
+    } finally {
+      setActionSaving(false);
+    }
+  };
+
+  const saveDraft = async () => {
+    if (!activeId || !perf) return;
+    setDraftSaving(true);
+    try {
+      await savePerformanceDraft(activeId, perf.period, { narrative: draftText });
+      toast.success("Reviewer draft saved. The model summary stays on record; this draft is your working text.");
+      setDraftOpen(false);
+      perfQuery.refetch();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not save the draft.");
+    } finally {
+      setDraftSaving(false);
+    }
+  };
+
   if (!role || !me) return null;
   if (!can(role, "view_all_workforce") && !can(role, "view_team") && role !== "employee") {
     return (
@@ -187,9 +330,8 @@ export default function WorkforceReview() {
     );
   }
 
-  const detail: WorkforceReviewResult | undefined = caseQuery.data;
-  const perf: PerformanceSummaryResult | undefined = perfQuery.data;
-  const selected = cases.find((c) => c.twin_id === activeId);
+  const draftFrom = (perf?.summary?.reviewer_draft?.narrative as string | undefined) ?? "";
+  const draftEditedAt = perf?.summary?.reviewer_draft_at ?? null;
 
   return (
     <AppShell>
@@ -199,9 +341,9 @@ export default function WorkforceReview() {
           <h1 className="text-3xl font-extrabold tracking-tight text-foreground md:text-4xl">Longitudinal review cases</h1>
           <p className="max-w-3xl text-muted-foreground">
             The Workforce Review Index (0–100) is interpretable decision support: it flags when a review conversation is
-            warranted, with the contributing factors, trend, data completeness and recommended fact-finding shown.{" "}
-            <span className="font-bold text-foreground">It is not a probability of leaving</span>, and missing data or
-            development interest are never treated as risk.
+            warranted, with the contributing factors, coverage, freshness and review confidence shown separately.{" "}
+            <span className="font-bold text-foreground">It is not a probability of leaving</span>, and missing data,
+            stale data or development interest are never treated as risk.
           </p>
         </div>
 
@@ -215,7 +357,7 @@ export default function WorkforceReview() {
                   value={q}
                   onChange={(e) => setQ(e.target.value)}
                   placeholder="Search employee name…"
-                  className="w-44 bg-transparent text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
+                  className="w-40 bg-transparent text-sm text-foreground placeholder:text-muted-foreground focus:outline-none sm:w-44"
                   aria-label="Search employees"
                 />
               </label>
@@ -231,24 +373,46 @@ export default function WorkforceReview() {
                 ))}
               </select>
               <select
-                value={riskFilter}
-                onChange={(e) => setRiskFilter(e.target.value)}
-                aria-label="Filter by risk level"
+                value={bandFilter}
+                onChange={(e) => setBandFilter(e.target.value as "all" | ReviewBand)}
+                aria-label="Filter by review band"
                 className="h-9 rounded-md border border-border bg-white px-2 text-sm font-medium text-foreground focus:border-primary focus:outline-none"
               >
-                <option value="all">All risk levels</option>
-                <option value="high">High risk (71-100)</option>
-                <option value="medium">Moderate (31-70)</option>
-                <option value="low">Low (0-30)</option>
+                <option value="all">All review bands</option>
+                {Object.entries(REVIEW_BANDS).map(([key, b]) => (
+                  <option key={key} value={key}>{b.label}</option>
+                ))}
               </select>
+              <select
+                value={completenessFilter}
+                onChange={(e) => setCompletenessFilter(e.target.value as "all" | "50" | "75")}
+                aria-label="Filter by data completeness"
+                className="h-9 rounded-md border border-border bg-white px-2 text-sm font-medium text-foreground focus:border-primary focus:outline-none"
+              >
+                <option value="all">Any completeness</option>
+                <option value="75">Completeness ≥ 75%</option>
+                <option value="50">Completeness ≥ 50%</option>
+              </select>
+              {periodOptions.length > 0 && (
+                <select
+                  value={periodFilter}
+                  onChange={(e) => setPeriodFilter(e.target.value)}
+                  aria-label="Filter by observation period"
+                  className="h-9 rounded-md border border-border bg-white px-2 text-sm font-medium text-foreground focus:border-primary focus:outline-none"
+                >
+                  <option value="all">All periods</option>
+                  {periodOptions.map((p) => (
+                    <option key={p} value={p}>{p}</option>
+                  ))}
+                </select>
+              )}
               <span className="ml-auto text-xs font-bold uppercase tracking-wider text-muted-foreground">
                 {dash.data?.scope === "team" ? "Your team" : "Org-wide"} · {filteredCases.length} of {cases.length} employees
               </span>
             </div>
             <ul ref={caseListRef} className="max-h-72 divide-y divide-border overflow-y-auto">
               {filteredCases.map((c) => {
-                const bucket = riskBucket(c.index);
-                const gaugeCls = bucket === "high" ? "bg-destructive" : bucket === "medium" ? "bg-accent" : "bg-secondary";
+                const gaugeCls = c.priority === "high" || c.priority === "review" ? "bg-destructive" : c.priority === "medium" ? "bg-accent" : "bg-secondary";
                 const dept = members.data?.get(c.twin_id) ?? "—";
                 return (
                   <li key={c.twin_id} data-case={c.twin_id}>
@@ -258,9 +422,19 @@ export default function WorkforceReview() {
                     >
                       <div className="min-w-0">
                         <p className="truncate text-sm font-bold text-foreground">{c.name}</p>
-                        <p className="text-xs text-muted-foreground">{dept} · Completeness {Math.round(c.completeness * 100)}%</p>
+                        <p className="text-xs text-muted-foreground">
+                          {dept} · completeness {Math.round(c.completeness * 100)}% · confidence{" "}
+                          <span className={`font-semibold ${c.confidence === "low" ? "text-destructive" : c.confidence === "medium" ? "text-accent" : "text-secondary"}`}>
+                            {c.confidence ?? "—"}
+                          </span>
+                        </p>
                       </div>
                       <div className="flex shrink-0 items-center gap-2">
+                        {c.history_state === "none" && (
+                          <span className="rounded-md bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-700" title="Zero longitudinal observation history">
+                            no history
+                          </span>
+                        )}
                         {c.seeking_growth && (
                           <span className="flex items-center gap-1 rounded-md bg-secondary px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">
                             <TrendingUp className="h-3 w-3" /> growth interest
@@ -299,6 +473,26 @@ export default function WorkforceReview() {
             </div>
           ) : (
             <>
+              {/* Data quality surfaced BEFORE classification */}
+              {detail.data_quality?.severity !== "ok" && (
+                <div
+                  className={`rounded-lg p-5 ${
+                    detail.data_quality.severity === "critical" ? "bg-destructive text-white" : "bg-amber-100 text-amber-900"
+                  }`}
+                  role="alert"
+                >
+                  <p className="flex items-center gap-2 text-sm font-extrabold uppercase tracking-wider">
+                    <AlertTriangle className="h-4 w-4" />
+                    Data quality first — read this before the index
+                  </p>
+                  <ul className="mt-2 flex list-disc flex-col gap-1 pl-5 text-sm">
+                    {(detail.data_quality.issues ?? []).map((i, idx) => (
+                      <li key={idx} className={detail.data_quality.severity === "critical" ? "text-white/90" : "text-amber-800"}>{i.detail}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
               {/* Header */}
               <div className="rounded-lg bg-foreground p-6 text-white">
                 <div className="flex flex-wrap items-center justify-between gap-4">
@@ -310,7 +504,23 @@ export default function WorkforceReview() {
                     </span>
                   </div>
                   <div className="flex flex-col items-end gap-2 text-sm text-white/80">
-                    <span>Data completeness: {Math.round(detail.data_completeness * 100)}%</span>
+                    <span>
+                      Data completeness: <b>{Math.round(detail.data_completeness * 100)}%</b>
+                    </span>
+                    <span>
+                      Review confidence:{" "}
+                      <b className={`rounded-md px-2 py-0.5 text-xs uppercase tracking-wider ${CONFIDENCE_CLS[detail.confidence] ?? "bg-muted text-foreground"}`}>
+                        {detail.confidence}
+                      </b>
+                    </span>
+                    <span>
+                      History: <b className="capitalize">{HISTORY_LABEL[detail.history_state] ?? detail.history_state}</b>
+                    </span>
+                    {detail.freshness?.stale && (
+                      <span className="rounded-md bg-amber-500 px-2.5 py-1 text-xs font-bold text-white">
+                        Observations stale ({detail.freshness.months_since_latest} months old)
+                      </span>
+                    )}
                     {detail.seeking_growth && (
                       <span className="flex items-center gap-1.5 rounded-md bg-secondary px-2.5 py-1 text-xs font-bold text-white">
                         <TrendingUp className="h-3.5 w-3.5" /> Reports development interest — a growth conversation, not risk
@@ -319,11 +529,32 @@ export default function WorkforceReview() {
                   </div>
                 </div>
                 <p className="mt-4 flex items-start gap-2 rounded-md bg-white/10 p-3 text-xs leading-relaxed text-white/85">
+                  <Info className="mt-0.5 h-4 w-4 shrink-0" />
+                  {detail.confidence_reason}
+                </p>
+                <p className="mt-2 flex items-start gap-2 rounded-md bg-white/10 p-3 text-xs leading-relaxed text-white/85">
                   <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-secondary" />
-                  This index is interpretable decision support, not a probability of leaving. Missing observations are data
-                  gaps (shown below), never poor performance.
+                  This index is interpretable decision support, not a probability of leaving. Missing observations are
+                  data gaps (shown above), never poor performance.
                 </p>
               </div>
+
+              {/* Why a conversation is suggested */}
+              {detail.case_rationale.length > 0 && (
+                <div>
+                  <h2 className="flex items-center gap-2 text-lg font-extrabold tracking-tight text-foreground">
+                    <UserCheck className="h-5 w-5 text-primary" strokeWidth={2.5} /> Why a conversation is suggested
+                  </h2>
+                  <ul className="mt-3 flex flex-col gap-2">
+                    {detail.case_rationale.map((r, i) => (
+                      <li key={i} className="flex items-start gap-2 rounded-lg bg-muted p-3 text-sm leading-relaxed text-foreground">
+                        <span className="mt-0.5 shrink-0 rounded bg-foreground px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">{r.factor}</span>
+                        {r.why}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
 
               {/* Factors */}
               <div>
@@ -343,6 +574,9 @@ export default function WorkforceReview() {
                   <h3 className="flex items-center gap-2 text-sm font-extrabold uppercase tracking-wider text-muted-foreground">
                     <TrendingUp className="h-4 w-4" /> Trend (last 6 months)
                   </h3>
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    Colored by metric semantics: favorable = improving for that metric (attendance down, delivery/engagement up), attention = the opposite.
+                  </p>
                   <div className="mt-3 flex flex-col gap-2">
                     {detail.trend.map((t) => (
                       <TrendRow key={t.metric} t={t} />
@@ -389,13 +623,71 @@ export default function WorkforceReview() {
                 </div>
               </div>
 
-              {/* Alternative explanations / limitations */}
+              {/* Reviewer actions (dismiss/defer) */}
+              {isReviewer && (
+                <div className="rounded-lg bg-white p-5">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <h3 className="flex items-center gap-2 text-sm font-extrabold uppercase tracking-wider text-foreground">
+                      <CalendarClock className="h-4 w-4 text-primary" /> Reviewer action
+                    </h3>
+                    <Button size="sm" onClick={() => { setActionKind("deferred"); setActionOpen(true); }}>
+                      <ThumbsDown className="h-4 w-4" /> Dismiss / defer case
+                    </Button>
+                  </div>
+                  {(detail.actions ?? []).length > 0 && (
+                    <ul className="mt-3 flex flex-col gap-1.5">
+                      {(detail.actions ?? []).map((a) => (
+                        <li key={a.id} className="flex flex-wrap items-center gap-2 rounded-md bg-muted px-3 py-2 text-xs text-foreground">
+                          <span className={`rounded px-1.5 py-0.5 font-bold uppercase tracking-wider ${a.action === "deferred" ? "bg-amber-100 text-amber-700" : "bg-secondary/15 text-secondary"}`}>
+                            {a.action}
+                          </span>
+                          <span className="flex-1">{a.reason}</span>
+                          {a.follow_up_at && (
+                            <span className="font-semibold text-primary">follow up {new Date(a.follow_up_at).toLocaleDateString()}</span>
+                          )}
+                          <span className="text-muted-foreground">{new Date(a.acted_at).toLocaleDateString()}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {(detail.outcomes ?? []).length > 0 && (
+                    <div className="mt-3 rounded-md bg-accent/50 p-3">
+                      <p className="text-xs font-extrabold uppercase tracking-wider text-foreground">Observed after the action</p>
+                      <ul className="mt-1.5 flex flex-col gap-1">
+                        {(detail.outcomes ?? []).map((o) => (
+                          <li key={o.action_id} className="text-xs leading-relaxed text-foreground/85">
+                            {o.metric}: {o.before_mean.toFixed(2)} → {o.after_mean.toFixed(2)} (Δ {o.delta >= 0 ? "+" : ""}{o.delta.toFixed(2)}) over {o.observed_after}.
+                            <span className="italic text-muted-foreground"> {o.note}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Model status — honest, no validated predictive model */}
               <div className="rounded-lg bg-accent/50 p-5">
+                <h3 className="flex items-center gap-2 text-sm font-extrabold uppercase tracking-wider text-foreground">
+                  <Cpu className="h-4 w-4" /> Model status
+                </h3>
+                <p className="mt-2 text-xs leading-relaxed text-foreground">
+                  No validated predictive (attrition) model exists. The Workforce Review Index is a documented heuristic
+                  composite with fixed weights. A future attrition model would require an explicit outcome and horizon,
+                  time-based train/evaluate splits without leakage, interpretable baselines, calibration and
+                  precision/recall reporting, cohort-stability and missingness checks, and would have to distinguish
+                  synthetic-demo results from externally validated performance — none of which exists in this
+                  deployment, so no predictive accuracy is claimed here.
+                </p>
+              </div>
+
+              {/* Alternative explanations / limitations */}
+              <div className="rounded-lg bg-muted p-5">
                 <h3 className="flex items-center gap-2 text-sm font-extrabold uppercase tracking-wider text-foreground">
                   <Info className="h-4 w-4" /> Alternative explanations & limitations
                 </h3>
                 {detail.priority_gate?.tier_capped && detail.priority_gate.reason && (
-                  <p className="mt-2 rounded-md bg-muted p-3 text-xs leading-relaxed text-foreground">{detail.priority_gate.reason}</p>
+                  <p className="mt-2 rounded-md bg-accent/60 p-3 text-xs leading-relaxed text-foreground">{detail.priority_gate.reason}</p>
                 )}
                 <ul className="mt-2 flex list-disc flex-col gap-1.5 pl-5 text-xs leading-relaxed text-foreground/80">
                   {detail.limitations.map((l, i) => (
@@ -410,16 +702,23 @@ export default function WorkforceReview() {
                   <h2 className="flex items-center gap-2 text-lg font-extrabold tracking-tight text-foreground">
                     <FileText className="h-5 w-5 text-secondary" strokeWidth={2.5} /> Performance summary
                   </h2>
-                  <button
-                    onClick={() => {
-                      setPerfForce(true);
-                      perfQuery.refetch();
-                    }}
-                    disabled={perfQuery.isFetching}
-                    className="flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
-                  >
-                    <RefreshCw className={`h-3.5 w-3.5 ${perfQuery.isFetching ? "animate-spin" : ""}`} /> Regenerate
-                  </button>
+                  <div className="flex items-center gap-2">
+                    {isReviewer && perf?.summary?.narrative && (
+                      <Button size="sm" variant="outline" onClick={() => { setDraftText(draftFrom); setDraftOpen(true); }}>
+                        <PencilLine className="h-4 w-4" /> {draftFrom ? "Edit reviewer draft" : "Write reviewer draft"}
+                      </Button>
+                    )}
+                    <button
+                      onClick={() => {
+                        setPerfForce(true);
+                        perfQuery.refetch();
+                      }}
+                      disabled={perfQuery.isFetching}
+                      className="flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                    >
+                      <RefreshCw className={`h-3.5 w-3.5 ${perfQuery.isFetching ? "animate-spin" : ""}`} /> Regenerate
+                    </button>
+                  </div>
                 </div>
                 {perfQuery.isLoading ? (
                   <p className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
@@ -429,14 +728,71 @@ export default function WorkforceReview() {
                   <p className="mt-4 rounded-md bg-destructive/10 p-4 text-sm text-destructive">
                     Performance summary unavailable: {perfQuery.error instanceof Error ? perfQuery.error.message : "unknown"}
                   </p>
-                ) : !perf.summary ? (
+                ) : !perf.summary?.narrative && !perf.summary?.reviewer_draft?.narrative ? (
                   <p className="mt-4 rounded-lg bg-muted p-4 text-sm text-muted-foreground">
                     No performance summary synthesized for this employee yet. Click "Regenerate" above to synthesize.
                   </p>
                 ) : (
                   <div className="mt-4 flex flex-col gap-5">
                     {perf.cached && <p className="text-xs font-semibold text-muted-foreground">Cached from the same source version — regenerated only when underlying records change.</p>}
-                    <p className="rounded-lg bg-muted p-4 text-sm leading-relaxed text-foreground">{perf.summary?.narrative ?? "No narrative available."}</p>
+                    {draftFrom ? (
+                      <>
+                        <p className="rounded-lg bg-amber-50 p-4 text-sm leading-relaxed text-foreground">{draftFrom}</p>
+                        <p className="text-[11px] font-semibold text-muted-foreground">
+                          Reviewer draft{draftEditedAt ? ` (edited ${new Date(draftEditedAt).toLocaleString()})` : ""} — working text, not a final appraisal. The model narrative is preserved below.
+                        </p>
+                      </>
+                    ) : (
+                      <p className="rounded-lg bg-muted p-4 text-sm leading-relaxed text-foreground">{perf.summary?.narrative ?? "No narrative available."}</p>
+                    )}
+
+                    {/* Strengths / improvement areas / development actions */}
+                    <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+                      <div className="rounded-lg bg-muted p-4">
+                        <h4 className="text-xs font-extrabold uppercase tracking-wider text-muted-foreground">Strengths (cited)</h4>
+                        <ul className="mt-2 flex flex-col gap-1.5">
+                          {(perf.summary?.strengths ?? []).map((s, i) => (
+                            <li key={i} className="text-xs leading-relaxed text-foreground">• {s}</li>
+                          ))}
+                          {(perf.summary?.strengths ?? []).length === 0 && <li className="text-xs italic text-muted-foreground">No strengths asserted — evidence is too thin to infer broad strengths.</li>}
+                        </ul>
+                      </div>
+                      <div className="rounded-lg bg-muted p-4">
+                        <h4 className="text-xs font-extrabold uppercase tracking-wider text-muted-foreground">Improvement areas</h4>
+                        <ul className="mt-2 flex flex-col gap-1.5">
+                          {(perf.summary?.improvement_areas ?? []).map((s, i) => (
+                            <li key={i} className="text-xs leading-relaxed text-foreground">• {s}</li>
+                          ))}
+                          {(perf.summary?.improvement_areas ?? []).length === 0 && <li className="text-xs italic text-muted-foreground">None asserted.</li>}
+                        </ul>
+                      </div>
+                      <div className="rounded-lg bg-muted p-4">
+                        <h4 className="text-xs font-extrabold uppercase tracking-wider text-muted-foreground">Development actions → evidence</h4>
+                        <ul className="mt-2 flex flex-col gap-2">
+                          {(perf.summary?.development_actions ?? []).map((a, i) => (
+                            <li key={i} className="rounded bg-white p-2 text-[11px] leading-relaxed text-foreground">
+                              <span className="font-bold">{a.skill}:</span> {a.action}
+                              {a.measurable_evidence && <span className="mt-1 block text-primary">Measurable evidence: {a.measurable_evidence}</span>}
+                            </li>
+                          ))}
+                          {(perf.summary?.development_actions ?? []).length === 0 && <li className="text-xs italic text-muted-foreground">None proposed.</li>}
+                        </ul>
+                      </div>
+                    </div>
+
+                    {/* Stale evidence + evidence gaps */}
+                    {(perf.facts?.stale_evidence?.length ?? 0) > 0 && (
+                      <div className="rounded-md bg-amber-50 p-3 text-xs text-amber-800">
+                        <p className="font-extrabold uppercase tracking-wider">Stale evidence — treat as historical</p>
+                        {(perf.facts?.stale_evidence ?? []).map((s, i) => <p key={i} className="mt-1">• {s.detail}</p>)}
+                      </div>
+                    )}
+                    {(perf.facts?.evidence_gaps?.length ?? 0) > 0 && (
+                      <div className="rounded-md bg-accent/50 p-3 text-xs text-foreground">
+                        <p className="font-extrabold uppercase tracking-wider">Evidence gaps (development actions must address these)</p>
+                        {(perf.facts?.evidence_gaps ?? []).map((g, i) => <p key={i} className="mt-1">• {g.gap}</p>)}
+                      </div>
+                    )}
 
                     <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
                       <div>
@@ -444,7 +800,8 @@ export default function WorkforceReview() {
                         <ul className="mt-2 flex max-h-56 list-none flex-col gap-1.5 overflow-y-auto">
                           {(perf.facts?.source_facts ?? []).map((sf) => (
                             <li key={sf.ref} className="rounded-md bg-muted p-2.5 text-xs leading-relaxed text-foreground">
-                              <span className="font-bold text-primary">[{sf.ref}]</span> <span className="font-semibold">{sf.source}</span> — {sf.fact}
+                              <span className="font-bold text-primary">[{sf.ref}]</span> <span className="font-semibold">{sf.source}</span>
+                              {sf.period && <span className="text-muted-foreground"> · {sf.period}</span>} — {sf.fact}
                             </li>
                           ))}
                         </ul>
@@ -521,6 +878,93 @@ export default function WorkforceReview() {
           )}
         </div>
       </div>
+
+      {/* Dismiss / defer dialog */}
+      {actionOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div role="dialog" aria-modal="true" aria-labelledby="action-title" className="w-full max-w-md rounded-lg bg-white p-6">
+            <h2 id="action-title" className="text-lg font-extrabold text-foreground">Reviewer action on this case</h2>
+            <div className="mt-4 flex flex-col gap-3">
+              <label className="flex flex-col gap-1 text-sm">
+                <span className="font-semibold text-muted-foreground">Action</span>
+                <select
+                  value={actionKind}
+                  onChange={(e) => setActionKind(e.target.value as ActionKind)}
+                  className="h-11 rounded-md bg-muted px-3 text-sm font-medium text-foreground focus:outline-none"
+                >
+                  <option value="deferred">Defer — follow up later</option>
+                  <option value="dismissed">Dismiss — no follow-up needed</option>
+                  <option value="acknowledged">Acknowledge — noted, keep tracking</option>
+                </select>
+              </label>
+              <label className="flex flex-col gap-1 text-sm">
+                <span className="font-semibold text-muted-foreground">
+                  Reason {actionKind !== "acknowledged" && <b className="text-destructive">*</b>}
+                </span>
+                <textarea
+                  value={actionReason}
+                  onChange={(e) => setActionReason(e.target.value)}
+                  rows={3}
+                  placeholder="Why is this case dismissed/deferred? This rationale is recorded."
+                  className="rounded-md bg-muted p-3 text-sm text-foreground focus:outline-none"
+                  aria-label="Reason for the action"
+                />
+              </label>
+              {actionKind === "deferred" && (
+                <label className="flex flex-col gap-1 text-sm">
+                  <span className="font-semibold text-muted-foreground">Follow-up date <b className="text-destructive">*</b></span>
+                  <input
+                    type="date"
+                    value={actionFollowUp}
+                    onChange={(e) => setActionFollowUp(e.target.value)}
+                    className="h-11 rounded-md bg-muted px-3 text-sm text-foreground focus:outline-none"
+                    aria-label="Follow-up date"
+                  />
+                </label>
+              )}
+              <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
+                <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                The action is tracked. Later observation changes are labeled observed-after — correlation is never claimed as causation.
+              </p>
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setActionOpen(false)}>Cancel</Button>
+              <Button onClick={() => void submitAction()} disabled={actionSaving}>
+                {actionSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                Save action
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reviewer draft dialog */}
+      {draftOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div role="dialog" aria-modal="true" aria-labelledby="draft-title" className="w-full max-w-2xl rounded-lg bg-white p-6">
+            <h2 id="draft-title" className="text-lg font-extrabold text-foreground">Reviewer draft — working text, not a final appraisal</h2>
+            <p className="mt-1 text-xs text-muted-foreground">
+              This is your editable draft. The model summary stays on record and every claim must still be backed by a
+              source fact — a final written appraisal requires a human reviewer.
+            </p>
+            <textarea
+              value={draftText}
+              onChange={(e) => setDraftText(e.target.value)}
+              rows={12}
+              className="mt-3 w-full rounded-md bg-muted p-3 text-sm leading-relaxed text-foreground focus:outline-none"
+              aria-label="Reviewer draft narrative"
+              placeholder="Write or paste the reviewer's narrative here…"
+            />
+            <div className="mt-5 flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setDraftOpen(false)}>Cancel</Button>
+              <Button onClick={() => void saveDraft()} disabled={draftSaving}>
+                {draftSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                Save draft
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </AppShell>
   );
 }

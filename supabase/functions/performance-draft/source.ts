@@ -1,0 +1,120 @@
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+};
+const json = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+
+const ROLE_GATE = ["hr_executive", "hr_partner", "manager"];
+
+async function isTeamMember(supabase, rootTwinId: string, checkTwinId: string): Promise<boolean> {
+  const { data } = await supabase.from("digital_twins").select("id, manager_id");
+  const children = new Map<string, string[]>();
+  for (const t of data ?? []) {
+    if (t.manager_id) children.set(t.manager_id, [...(children.get(t.manager_id) ?? []), t.id]);
+  }
+  const seen = new Set<string>();
+  const stack = [rootTwinId];
+  while (stack.length > 0) {
+    const cur = stack.pop()!;
+    if (seen.has(cur)) continue;
+    seen.add(cur);
+    for (const c of children.get(cur) ?? []) stack.push(c);
+  }
+  return seen.has(checkTwinId);
+}
+
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+
+  const supabase = createClient(
+    Deno.env.get("SUPABASE_URL")!,
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+  );
+
+  const authHeader = req.headers.get("Authorization") ?? "";
+  const { data: userData } = await supabase.auth.getUser(authHeader.replace("Bearer ", ""));
+  const uid = userData?.user?.id;
+  if (!uid) return json({ error: "UNAUTHENTICATED" }, 401);
+
+  const { data: caller } = await supabase
+    .from("digital_twins")
+    .select("id, role, org_id, email")
+    .eq("auth_user_id", uid)
+    .maybeSingle();
+  if (!caller || !ROLE_GATE.includes(caller.role)) {
+    return json({ error: "FORBIDDEN", message: "Performance review access required (HR or manager)." }, 403);
+  }
+
+  let body: { twin_id?: string; period?: string; draft?: Record<string, unknown> } = {};
+  try {
+    body = await req.json();
+  } catch {
+    /* empty */
+  }
+  const twinId = (body.twin_id ?? "").trim();
+  const period = (body.period ?? "").trim();
+  const draft = (body.draft ?? {}) as Record<string, unknown>;
+  if (!twinId || !period) return json({ error: "VALIDATION_ERROR", message: "twin_id and period are required." }, 400);
+  if (typeof draft !== "object" || Array.isArray(draft)) {
+    return json({ error: "VALIDATION_ERROR", message: "draft must be an object." }, 400);
+  }
+  if (typeof draft.narrative === "string" && draft.narrative.trim().length === 0) {
+    return json({ error: "VALIDATION_ERROR", message: "The draft narrative cannot be empty." }, 400);
+  }
+
+  const { data: twin } = await supabase
+    .from("digital_twins")
+    .select("id, org_id, role, audit_events")
+    .eq("id", twinId)
+    .maybeSingle();
+  if (!twin) return json({ error: "NOT_FOUND" }, 404);
+
+  let allowed = false;
+  if (["hr_executive", "hr_partner"].includes(caller.role)) allowed = twin.org_id === caller.org_id;
+  else if (caller.role === "manager") allowed = twin.id === caller.id || (await isTeamMember(supabase, caller.id, twin.id));
+  if (!allowed) return json({ error: "FORBIDDEN", message: "This employee is not in your review scope." }, 403);
+
+  const { data: row, error: rowErr } = await supabase
+    .from("performance_summaries")
+    .select("id")
+    .eq("org_id", caller.org_id)
+    .eq("twin_id", twinId)
+    .eq("period", period)
+    .maybeSingle();
+  if (rowErr || !row) {
+    return json({ error: "NOT_FOUND", message: "No performance summary exists for this employee and period — synthesize one first." }, 404);
+  }
+
+  // Sanitize: only known draft sections are persisted; anything else is dropped
+  // so free-text from the client can never widen the schema.
+  const allowedKeys = ["narrative", "strengths", "improvement_areas", "development_actions"];
+  const clean: Record<string, unknown> = {};
+  for (const key of allowedKeys) if (key in draft) clean[key] = draft[key];
+
+  const now = new Date().toISOString();
+  const { error: upErr } = await supabase
+    .from("performance_summaries")
+    .update({ reviewer_draft: clean, reviewer_draft_by: caller.id, reviewer_draft_at: now })
+    .eq("id", row.id);
+  if (upErr) return json({ error: "INTERNAL", message: upErr.message }, 500);
+
+  await supabase
+    .from("digital_twins")
+    .update({
+      audit_events: [
+        ...(twin.audit_events ?? []),
+        { actor: caller.email ?? uid, action: "performance_draft_saved", note: `Reviewer draft saved for ${twinId} (${period}).`, timestamp: now },
+      ],
+    })
+    .eq("id", twinId);
+
+  return json({
+    ok: true,
+    saved_at: now,
+    reviewer_draft: clean,
+    label: "Reviewer draft saved. The model summary stays on record; this draft is the reviewer's working text until a final appraisal is written by a human.",
+  });
+});

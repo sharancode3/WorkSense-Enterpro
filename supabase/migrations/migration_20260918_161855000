@@ -1,0 +1,31 @@
+create table public.review_case_actions (
+  id uuid primary key default gen_random_uuid(),
+  org_id uuid not null references public.organizations(id) on delete cascade,
+  case_id uuid references public.workforce_review_cases(id) on delete cascade,
+  twin_id uuid not null references public.digital_twins(id) on delete cascade,
+  action text not null check (action in ('acknowledged','dismissed','deferred')),
+  reason text not null,
+  follow_up_at timestamptz,
+  acted_by uuid not null references public.digital_twins(id),
+  acted_at timestamptz not null default now(),
+  created_at timestamptz not null default now()
+);
+create index review_case_actions_org_idx on public.review_case_actions (org_id, twin_id, acted_at desc);
+alter table public.review_case_actions enable row level security;
+create policy review_case_actions_read on public.review_case_actions for select using (
+  exists (select 1 from public.current_twin() ct where ct.org_id = public.review_case_actions.org_id)
+);
+alter table public.performance_summaries
+  add column reviewer_draft jsonb not null default '{}'::jsonb,
+  add column reviewer_draft_by uuid references public.digital_twins(id) on delete set null,
+  add column reviewer_draft_at timestamptz,
+  add column strengths jsonb not null default '[]'::jsonb,
+  add column improvement_areas jsonb not null default '[]'::jsonb,
+  add column development_actions jsonb not null default '[]'::jsonb;
+alter table public.workforce_review_cases
+  add column confidence text not null default 'low' check (confidence in ('high','medium','low')),
+  add column confidence_reason text,
+  add column history_state text not null default 'none' check (history_state in ('none','partial','adequate')),
+  add column data_quality jsonb not null default '{}'::jsonb,
+  add column freshness jsonb not null default '{}'::jsonb,
+  add column case_rationale jsonb not null default '[]'::jsonb;

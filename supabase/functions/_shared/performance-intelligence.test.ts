@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { computePerformanceFacts, performanceSourceHash, type PerformanceInput } from "./performance-intelligence.ts";
+import {
+  computePerformanceFacts,
+  performanceSourceHash,
+  validatePerformanceCitations,
+  type PerformanceInput,
+} from "./performance-intelligence.ts";
 
 const base = (over: Partial<PerformanceInput> = {}): PerformanceInput => ({
   performance_history: [
@@ -113,5 +118,87 @@ describe("performance-intelligence (Phase 9)", () => {
     expect(performanceSourceHash(a)).not.toBe(
       performanceSourceHash(base({ evidence_items: [...a.evidence_items!, { source_type: "resume_document", quote: "New doc." }] }))
     );
+  });
+});
+
+describe("performance-intelligence (Phase 7 — defensibility)", () => {
+  it("every source fact carries a resolvable record period", () => {
+    const f = computePerformanceFacts(
+      base({
+        computed_at: "2026-09-15T00:00:00Z",
+        evidence_items: [{ source_type: "work_sample", quote: "Led the migration to dbt.", captured_at: "2026-03-10T00:00:00Z" }],
+      })
+    );
+    for (const sf of f.source_facts) {
+      if (sf.source.startsWith("PERFORMANCE") || sf.source.startsWith("FEEDBACK")) {
+        expect(sf.period).toBeTruthy();
+      }
+      if (sf.source.startsWith("EVIDENCE")) {
+        expect(sf.period).toBe("2026-03");
+      }
+      expect(sf.ref).toMatch(/^S\d+$/);
+    }
+  });
+
+  it("flags stale feedback and stale work evidence", () => {
+    const f = computePerformanceFacts(
+      base({
+        computed_at: "2026-09-15T00:00:00Z",
+        performance_history: [
+          { cycle: "2023-H2", rating: "On Track", feedback: [{ sentiment: "positive", text: "Old praise.", date: "2023-11-01" }] },
+        ],
+        evidence_items: [{ source_type: "work_sample", quote: "Old artifact.", captured_at: "2024-01-10T00:00:00Z" }],
+      })
+    );
+    expect(f.stale_evidence.some((s) => s.kind === "stale_feedback")).toBe(true);
+    expect(f.stale_evidence.some((s) => s.kind === "stale_work_evidence")).toBe(true);
+    expect(f.sparse_evidence.flags.some((fl) => fl.includes("stale"))).toBe(true);
+  });
+
+  it("detects evidence gaps for development actions (spec item 15)", () => {
+    const f = computePerformanceFacts(
+      base({
+        verified_skills: [
+          { name: "Python", proficiency: 4, verification_rigor: "high" },
+          { name: "Go", proficiency: 4, verification_rigor: "claimed" },
+          { name: "Statistics", proficiency: 2, verification_rigor: "medium" },
+        ],
+      })
+    );
+    const goGap = f.evidence_gaps.find((g) => g.skill === "Go");
+    const statsGap = f.evidence_gaps.find((g) => g.skill === "Statistics");
+    expect(goGap?.gap).toContain("no verified evidence");
+    expect(statsGap?.gap).toContain("below the working bar");
+  });
+
+  it("distinguishes history states honestly", () => {
+    expect(computePerformanceFacts({ performance_history: [] }).history_state).toBe("none");
+    expect(computePerformanceFacts({ performance_history: [{ cycle: "2026-H1", rating: "On Track" }] }).history_state).toBe("partial");
+    expect(computePerformanceFacts(base()).history_state).toBe("adequate");
+  });
+
+  it("exposes work artifacts with source type and capture period", () => {
+    const f = computePerformanceFacts(
+      base({
+        evidence_items: [{ source_type: "work_sample", quote: "Led the migration to dbt with measurable latency wins.", captured_at: "2026-03-10T00:00:00Z" }],
+      })
+    );
+    expect(f.work_artifacts.length).toBeGreaterThan(0);
+    expect(f.work_artifacts[0].source_type).toBe("work_sample");
+    expect(f.work_artifacts[0].period).toBe("2026-03");
+  });
+
+  it("citation validation rejects unknown refs and accepts valid ones", () => {
+    const f = computePerformanceFacts(base());
+    const refs = f.source_facts.map((sf) => sf.ref);
+    const ok = validatePerformanceCitations([`Delivered strongly [${refs[0]}] and [${refs[1]}]`], refs);
+    expect(ok).toEqual([]);
+    // Bare "S#" form is accepted too (the model emits both bracket styles).
+    const bare = validatePerformanceCitations([`Owned the metrics dashboard (${refs[2]}, ${refs[3]})`], refs);
+    expect(bare).toEqual([]);
+    const bad = validatePerformanceCitations([`Claim [S99] not real`], refs);
+    expect(bad.length).toBeGreaterThan(0);
+    const none = validatePerformanceCitations([`No citation here`], refs);
+    expect(none.some((e) => e.includes("without any source citation"))).toBe(true);
   });
 });

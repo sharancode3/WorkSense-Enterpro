@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
 import { computeFit, type GraphSkill } from "../_shared/skill-graph-engine.ts";
-import { computeReviewIndex } from "../_shared/workforce-review-index.ts";
+import { computeReviewIndex, REVIEW_BANDS, type ReviewBand } from "../_shared/workforce-review-index.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -87,6 +87,8 @@ Deno.serve(async (req) => {
   const department = typeof body.department === "string" && body.department.trim() ? body.department.trim() : null;
   const requisitionId = typeof body.requisition_id === "string" && body.requisition_id.trim() ? body.requisition_id.trim() : null;
   const period = typeof body.period === "string" && /^\d{4}-\d{2}$/.test(body.period) ? body.period : null;
+  const reviewBand = typeof body.review_band === "string" && body.review_band in REVIEW_BANDS ? (body.review_band as ReviewBand) : null;
+  const minCompleteness = typeof body.min_completeness === "number" && body.min_completeness >= 0 && body.min_completeness <= 1 ? body.min_completeness : null;
 
   // Load all org twins once, then resolve the scoped set.
   const { data: allTwins } = await supabase
@@ -139,16 +141,25 @@ Deno.serve(async (req) => {
     return r;
   };
   const scopedWithIndex = scoped.map((t) => ({ twin: t, index: reviewIndex(t) }));
-  const reviewCases = scopedWithIndex
+  let reviewCases = scopedWithIndex
     .map((x) => ({
       twin_id: x.twin.id,
       name: x.twin.name,
       index: x.index.index,
       priority: x.index.priority,
       completeness: x.index.data_completeness,
+      confidence: x.index.confidence,
+      history_state: x.index.history_state,
       seeking_growth: x.index.seeking_growth,
     }))
     .sort((a, b) => b.index - a.index);
+  if (reviewBand) {
+    const band = REVIEW_BANDS[reviewBand];
+    reviewCases = reviewCases.filter((c) => c.index >= band.min && c.index <= band.max);
+  }
+  if (minCompleteness !== null) {
+    reviewCases = reviewCases.filter((c) => c.completeness >= minCompleteness);
+  }
 
   // Cards — every number from real records; 0 / "No data" when absent.
   const headcount = scoped.length;
@@ -307,7 +318,7 @@ Deno.serve(async (req) => {
     observation_range: periodBounds,
     definitions: DEFINITIONS,
     filters: {
-      applied: { department, requisition_id: requisitionId, period },
+      applied: { department, requisition_id: requisitionId, period, review_band: reviewBand, min_completeness: minCompleteness },
       available: { departments: availableDepartments, requisitions: availableRequisitions },
     },
     review_cases: reviewCases,
