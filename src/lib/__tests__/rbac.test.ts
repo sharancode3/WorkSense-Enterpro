@@ -32,13 +32,15 @@ describe("rbac", () => {
     expect(can("manager", "manage_recruitment")).toBe(false);
   });
 
-  it("recruiter (Technical Recruiter) has recruitment access only", () => {
+  it("recruiter (Technical Recruiter) has recruitment + skill-graph + policy access", () => {
     expect(can("recruiter", "manage_recruitment")).toBe(true);
     expect(can("recruiter", "view_all_workforce")).toBe(false);
     expect(can("recruiter", "view_team")).toBe(false);
     expect(can("recruiter", "approve_recommendations")).toBe(false);
     expect(can("recruiter", "reset_demo")).toBe(false);
-    expect(can("recruiter", "explore_skill_graph")).toBe(false);
+    // Phase 27: recruiters get the Skill Graph (candidate matching) + policy assistant.
+    expect(can("recruiter", "explore_skill_graph")).toBe(true);
+    expect(can("recruiter", "use_policy_studio")).toBe(true);
   });
 
   it("employee has self-service only", () => {

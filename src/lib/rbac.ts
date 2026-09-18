@@ -89,8 +89,8 @@ export const ROLE_ACTIONS: Record<Role, Action[]> = {
   ],
   hr_partner: ["view_all_workforce", "approve_recommendations", "view_onboarding", "use_policy_studio"],
   manager: ["view_team", "approve_recommendations", "approve_onboarding", "view_onboarding", "use_policy_studio"],
-  recruiter: ["manage_recruitment", "use_policy_studio"],
-  employee: ["self_service", "view_onboarding", "use_policy_studio"],
+  recruiter: ["manage_recruitment", "use_policy_studio", "explore_skill_graph"],
+  employee: ["self_service", "view_onboarding", "use_policy_studio", "explore_skill_graph"],
   candidate: [],
   it_security: ["view_onboarding"],
 };

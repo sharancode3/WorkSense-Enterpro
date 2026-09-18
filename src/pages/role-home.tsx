@@ -6,14 +6,10 @@ import {
   Activity,
   AlertTriangle,
   ArrowRight,
-  Briefcase,
   CheckCircle2,
   Database,
-  GitBranch,
   History,
-  ListChecks,
   Loader2,
-  MessageSquareText,
   ShieldAlert,
   ShieldCheck,
   UserCheck,
@@ -221,199 +217,6 @@ function StatBlock({
       {definition && (
         <span className={`text-[11px] leading-snug ${tone === "dark" ? "text-white/60" : "text-foreground/55"}`}>{definition}</span>
       )}
-    </div>
-  );
-}
-
-// Phase 12: honest per-role module grid — every card opens a module the role
-// can actually reach (same predicates as the app-shell nav). Nothing locked,
-// nothing shown as "Phase 1+" placeholders.
-interface ModuleDef {
-  title: string;
-  desc: string;
-  icon: typeof Users;
-  to: string;
-  show: (role: Role) => boolean;
-}
-
-const MODULES: ModuleDef[] = [
-  {
-    title: "Workforce review",
-    desc: "Index-driven review cases with evidence-to-action trails.",
-    icon: Users,
-    to: "/workforce",
-    show: (role) => can(role, "view_all_workforce") || can(role, "view_team") || role === "employee",
-  },
-  {
-    title: "Recruitment",
-    desc: "Requisitions, applications, interviews, and decisions.",
-    icon: Briefcase,
-    to: "/recruitment",
-    show: (role) => can(role, "manage_recruitment"),
-  },
-  {
-    title: "Onboarding",
-    desc: "Adaptive journeys, approvals, and completion evidence.",
-    icon: ListChecks,
-    to: "/onboarding",
-    show: (role) => can(role, "view_onboarding"),
-  },
-  {
-    title: "Recommendation hub",
-    desc: "Review, approve, and execute recommended actions.",
-    icon: ShieldCheck,
-    to: "/hub",
-    show: (role) => can(role, "approve_recommendations"),
-  },
-  {
-    title: "Policy studio",
-    desc: "Source-backed policy questions and answers.",
-    icon: MessageSquareText,
-    to: "/policy",
-    show: (role) => can(role, "use_policy_studio"),
-  },
-  {
-    title: "Skill graph",
-    desc: "Skills versus current and future needs.",
-    icon: GitBranch,
-    to: "/graph",
-    show: (role) => can(role, "explore_skill_graph"),
-  },
-  {
-    title: "Staffing planner",
-    desc: "Hire / Move / Upskill / Hybrid with honest estimates.",
-    icon: Users,
-    to: "/staffing",
-    show: (role) => can(role, "view_all_workforce") || can(role, "view_team"),
-  },
-  {
-    title: "Access & users",
-    desc: "Invite members, manage roles, and audit access changes.",
-    icon: UserCheck,
-    to: "/admin/access",
-    show: (role) => can(role, "manage_users"),
-  },
-];
-
-// Phase 26: for Administrators the bottom module shortcuts (which duplicate the
-// header nav) are replaced with the Platform Operations & Security Governance
-// panel — access control, audit trail, model telemetry and data quality.
-function AdminGovernancePanel() {
-  return (
-    <div className="flex flex-col gap-4">
-      <div>
-        <h2 className="flex items-center gap-2 text-xl font-extrabold tracking-tight text-foreground">
-          <ShieldAlert className="h-5 w-5 text-primary" strokeWidth={2.5} />
-          Platform Operations & Security Governance
-        </h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Enterprise access control, audit logging, model health telemetry, and data quality.
-        </p>
-      </div>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Link
-          to="/admin/access"
-          className="group flex flex-col justify-between gap-3 rounded-lg border-2 border-border bg-white p-5 transition-all duration-200 hover:scale-[1.02] hover:border-primary"
-        >
-          <div className="flex items-center justify-between">
-            <span className="flex h-10 w-10 items-center justify-center rounded-md bg-primary/10 text-primary">
-              <UserCog className="h-5 w-5" strokeWidth={2.5} />
-            </span>
-            <span className="rounded bg-primary/15 px-2 py-0.5 text-[10px] font-bold uppercase text-primary">ACCESS</span>
-          </div>
-          <div>
-            <h3 className="text-sm font-extrabold text-foreground">Access & Governance</h3>
-            <p className="mt-1 text-xs text-muted-foreground">Directory, role elevation, member invitations & account suspension.</p>
-          </div>
-          <span className="mt-2 inline-flex items-center gap-1 text-xs font-bold text-primary">
-            Open Console <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-1" />
-          </span>
-        </Link>
-
-        <Link
-          to="/admin/access?tab=audit"
-          className="group flex flex-col justify-between gap-3 rounded-lg border-2 border-border bg-white p-5 transition-all duration-200 hover:scale-[1.02] hover:border-primary"
-        >
-          <div className="flex items-center justify-between">
-            <span className="flex h-10 w-10 items-center justify-center rounded-md bg-secondary/10 text-secondary">
-              <History className="h-5 w-5" strokeWidth={2.5} />
-            </span>
-            <span className="rounded bg-secondary/15 px-2 py-0.5 text-[10px] font-bold uppercase text-secondary">AUDIT</span>
-          </div>
-          <div>
-            <h3 className="text-sm font-extrabold text-foreground">Security Audit Logs</h3>
-            <p className="mt-1 text-xs text-muted-foreground">Access changes, candidate conversions & policy waivers.</p>
-          </div>
-          <span className="mt-2 inline-flex items-center gap-1 text-xs font-bold text-secondary">
-            View Audit Trail <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-1" />
-          </span>
-        </Link>
-
-        <Link
-          to="/status"
-          className="group flex flex-col justify-between gap-3 rounded-lg border-2 border-border bg-white p-5 transition-all duration-200 hover:scale-[1.02] hover:border-primary"
-        >
-          <div className="flex items-center justify-between">
-            <span className="flex h-10 w-10 items-center justify-center rounded-md bg-accent/30 text-foreground">
-              <Activity className="h-5 w-5" strokeWidth={2.5} />
-            </span>
-            <span className="rounded bg-muted px-2 py-0.5 text-[10px] font-bold uppercase text-foreground">HEALTH</span>
-          </div>
-          <div>
-            <h3 className="text-sm font-extrabold text-foreground">System & Model Health</h3>
-            <p className="mt-1 text-xs text-muted-foreground">Qwen gateway state, latency & deployment versions.</p>
-          </div>
-          <span className="mt-2 inline-flex items-center gap-1 text-xs font-bold text-foreground">
-            Check Telemetry <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-1" />
-          </span>
-        </Link>
-
-        <Link
-          to="/workforce/data-quality"
-          className="group flex flex-col justify-between gap-3 rounded-lg border-2 border-border bg-white p-5 transition-all duration-200 hover:scale-[1.02] hover:border-primary"
-        >
-          <div className="flex items-center justify-between">
-            <span className="flex h-10 w-10 items-center justify-center rounded-md bg-primary/10 text-primary">
-              <Database className="h-5 w-5" strokeWidth={2.5} />
-            </span>
-            <span className="rounded bg-primary/15 px-2 py-0.5 text-[10px] font-bold uppercase text-primary">QUALITY</span>
-          </div>
-          <div>
-            <h3 className="text-sm font-extrabold text-foreground">Data Quality Engine</h3>
-            <p className="mt-1 text-xs text-muted-foreground">Orphaned claims, missing twin data & assertion rigor distribution.</p>
-          </div>
-          <span className="mt-2 inline-flex items-center gap-1 text-xs font-bold text-primary">
-            Inspect Quality <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-1" />
-          </span>
-        </Link>
-      </div>
-    </div>
-  );
-}
-
-function ModuleGrid({ role }: { role: Role }) {
-  const modules = MODULES.filter((m) => m.show(role));
-  if (modules.length === 0) return null;
-  return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-      {modules.map(({ icon: Icon, title, desc, to }) => (
-        <Link
-          key={to}
-          to={to}
-          className="group flex h-full flex-col gap-3 rounded-lg bg-muted p-5 transition-all duration-200 hover:scale-[1.02]"
-        >
-          <span className="flex h-12 w-12 items-center justify-center rounded-md bg-white text-primary transition-transform duration-200 group-hover:scale-110">
-            <Icon className="h-6 w-6" strokeWidth={2.5} />
-          </span>
-          <div>
-            <h3 className="font-bold text-foreground">{title}</h3>
-            <p className="mt-1 text-sm text-muted-foreground">{desc}</p>
-          </div>
-          <span className="mt-auto inline-flex w-fit items-center gap-1 rounded-md bg-primary px-2.5 py-1 text-xs font-bold uppercase tracking-wider text-white">
-            Open <ArrowRight className="h-3.5 w-3.5 transition-transform duration-200 group-hover:translate-x-0.5" />
-          </span>
-        </Link>
-      ))}
     </div>
   );
 }
@@ -698,21 +501,24 @@ export default function RoleHome() {
           </>
         )}
 
-        {/* Phase 26: Administrators get the governance panel; other roles keep
-            honest per-role module shortcuts (nothing locked, no placeholders). */}
+        {/* Phase 27: administrators get the governance panel; everyone else sees
+            their live action-tasks feed — no duplicate module shortcuts. */}
         <div className="mt-14">
           {role === "hr_executive" ? (
             <AdminGovernancePanel />
           ) : (
-            <>
-              <h2 className="text-xl font-extrabold tracking-tight text-foreground">Your modules</h2>
+            <div>
+              <h2 className="text-xl font-extrabold tracking-tight text-foreground">Action tasks & review feed</h2>
               <p className="mt-1 text-sm text-muted-foreground">
-                Everything you can open from here — access is enforced at the data layer, not hidden UI.
+                Tasks assigned to you from approved recommendations appear here — complete them with evidence and a rationale.
               </p>
               <div className="mt-6">
-                <ModuleGrid role={role} />
+                <MyActionTasks twinId={twin.id} />
+                <p className="rounded-lg bg-muted p-4 text-sm text-muted-foreground">
+                  No assigned action tasks right now — approved recommendations dispatch tasks here automatically.
+                </p>
               </div>
-            </>
+            </div>
           )}
         </div>
       </div>

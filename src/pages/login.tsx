@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { ArrowLeft, ArrowRight, ChevronDown, Eye, EyeOff, KeyRound, Loader2, ShieldCheck } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 import { DEMO_ACCOUNTS, DEMO_CANDIDATE_CODE } from "@/lib/demo-accounts";
-import { ROLE_LABEL, type Role } from "@/lib/rbac";
+import { ROLE_LABEL, resolveLanding, type Role } from "@/lib/rbac";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -49,7 +49,7 @@ export default function Login() {
     setBusy(role);
     try {
       await signInDemo(role);
-      navigate("/app");
+      navigate(resolveLanding(role), { replace: true });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Demo login failed");
     } finally {

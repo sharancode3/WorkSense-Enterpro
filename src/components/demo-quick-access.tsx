@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { ExternalLink } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 import { DEMO_ACCOUNTS, DEMO_CANDIDATE_CODE } from "@/lib/demo-accounts";
-import type { Role } from "@/lib/rbac";
+import { resolveLanding, type Role } from "@/lib/rbac";
 import { RoleCard, type CardTone } from "@/components/role-card";
 
 const ROLE_TONE: Record<string, CardTone> = {
@@ -30,7 +30,7 @@ export function DemoQuickAccess() {
     setBusy(role);
     try {
       await signInDemo(role);
-      navigate("/app");
+      navigate(resolveLanding(role));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Demo login failed");
     } finally {

@@ -110,6 +110,28 @@ export default function CandidateStatus() {
 
           {view.kind === "success" && (
             <div className="mt-6 flex flex-col gap-4">
+              {/* Phase 27: simple application progress stepper */}
+              <div className="flex w-full items-center" aria-label="Application progress">
+                {["Applied", "Technical Interview", "Final Round", "Selected"].map((step, i) => {
+                  const order = ["screening", "technical_interview", "final_round", "selected"];
+                  const idx = order.indexOf(view.data.application_status);
+                  const reached = view.data.application_status === "rejected" ? i === 0 : i <= idx;
+                  return (
+                    <div key={step} className="flex flex-1 flex-col items-center gap-1">
+                      <span
+                        className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold ${
+                          reached ? "bg-primary text-white" : "bg-muted text-muted-foreground"
+                        }`}
+                      >
+                        {i + 1}
+                      </span>
+                      <span className={`text-[11px] font-semibold ${reached ? "text-foreground" : "text-muted-foreground"}`}>{step}</span>
+                      {i < 3 && <span className={`h-0.5 w-full ${i < idx ? "bg-primary" : "bg-muted"}`} aria-hidden="true" />}
+                    </div>
+                  );
+                })}
+              </div>
+
               <div className="flex flex-col gap-3 rounded-lg bg-muted p-6 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Application status</p>

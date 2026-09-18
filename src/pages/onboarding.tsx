@@ -109,6 +109,14 @@ function WhyEvidence({ task }: { task: PlanTaskView }) {
   );
 }
 
+const STEP_LABELS: Record<number, { n: string; label: string }> = {
+  0: { n: "1", label: "IT & Pre-boarding Setup" },
+  1: { n: "2", label: "Core Orientation & Learning" },
+  2: { n: "3", label: "Role Verification & First Contribution" },
+};
+const stepFor = (level: number) =>
+  STEP_LABELS[level] ?? { n: String(level + 1), label: `Step ${level + 1}` };
+
 function TaskCard({
   task,
   plan,
@@ -118,6 +126,7 @@ function TaskCard({
   canAdapt,
   canFail,
   canResolve,
+  titleFor,
   onComplete,
   onBlock,
   onResolve,
@@ -209,7 +218,7 @@ function TaskCard({
       {(task.depends_on ?? []).length > 0 && (
         <p className="text-[11px] text-muted-foreground">
           <GitBranch className="mr-1 inline h-3 w-3" />
-          needs: {task.depends_on.join(", ")}
+          Prerequisite: {(task.depends_on ?? []).map((d) => (titleFor ? titleFor(d) : d)).join(", ")} must be completed first.
         </p>
       )}
 
@@ -797,14 +806,14 @@ export default function Onboarding() {
             {/* DAG view */}
             <div>
               <h2 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                Dependency graph — wave by wave
+                Dependency graph — step by step
               </h2>
               <div className="mt-4 flex flex-col gap-6 lg:flex-row lg:items-start">
                 {columns.map((col, level) => (
                   <div key={level} className="flex-1">
                     <div className="mb-2 flex items-center gap-2">
-                      <span className="flex h-6 w-6 items-center justify-center rounded-md bg-foreground text-xs font-bold text-white">{level}</span>
-                      <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Wave {level}</span>
+                      <span className="flex h-6 w-6 items-center justify-center rounded-md bg-foreground text-xs font-bold text-white">{stepFor(level).n}</span>
+                      <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Step {stepFor(level).n}: {stepFor(level).label}</span>
                     </div>
                     <div className="flex flex-col gap-3">
                       {col.map((task) => {
@@ -838,6 +847,7 @@ export default function Onboarding() {
                             canAdapt={canAdaptAct}
                             canFail={canFail}
                             canResolve={canResolve}
+                            titleFor={(code) => allTasks.find((t) => t.task_code === code)?.title ?? code}
                             onComplete={(evidence, note) => void act(task.task_code, "complete", { evidence, note })}
                             onBlock={(note) => void act(task.task_code, "block", { note })}
                             onResolve={(blockerId) => void act(task.task_code, "resolve", { blocker_id: blockerId })}

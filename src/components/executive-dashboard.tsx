@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   AlertTriangle,
   ArrowRight,
+  BarChart3,
   Briefcase,
   Clock,
   Filter,
@@ -215,21 +216,26 @@ export function ExecutiveDashboard() {
           definition={d.definitions.headcount}
           to={can(role, "view_all_workforce") || can(role, "view_team") || role === "employee" ? "/workforce" : undefined}
         />
-        <StatCard
-          label="Open requisitions"
-          value={d.cards.open_requisitions}
-          tone="secondary"
-          sub={`on hold ${d.cards.requisition_statuses.on_hold ?? 0} · filled ${d.cards.requisition_statuses.filled ?? 0} · closed ${d.cards.requisition_statuses.closed ?? 0}`}
-          definition={d.definitions.open_requisitions}
-          to={can(role, "manage_recruitment") ? "/recruitment" : undefined}
-        />
-        <StatCard
-          label="Active candidates"
-          value={d.cards.active_candidates}
-          tone="accent"
-          sub="in pipeline on open reqs"
-          definition={d.definitions.active_candidates}
-        />
+        {can(role, "manage_recruitment") && (
+          <>
+            <StatCard
+              label="Open requisitions"
+              value={d.cards.open_requisitions}
+              tone="secondary"
+              sub={`on hold ${d.cards.requisition_statuses.on_hold ?? 0} · filled ${d.cards.requisition_statuses.filled ?? 0} · closed ${d.cards.requisition_statuses.closed ?? 0}`}
+              definition={d.definitions.open_requisitions}
+              to="/recruitment"
+            />
+            <StatCard
+              label="Active candidates"
+              value={d.cards.active_candidates}
+              tone="accent"
+              sub="in pipeline on open reqs"
+              definition={d.definitions.active_candidates}
+              to="/recruitment"
+            />
+          </>
+        )}
         <StatCard
           label="Onboarding journeys"
           value={d.cards.journeys_in_progress}
@@ -273,6 +279,73 @@ export function ExecutiveDashboard() {
           Scope is enforced server-side — a manager request can never widen to the full org.
         </span>
       </p>
+
+      {/* Phase 27: visual analytics — skill-gap distribution + onboarding progress */}
+      {d.heatmap.length > 0 && (
+        <div>
+          <h2 className="flex items-center gap-2 text-lg font-extrabold tracking-tight text-foreground">
+            <BarChart3 className="h-5 w-5 text-primary" strokeWidth={2.5} />
+            Skill gap distribution
+          </h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Each open requisition's future skill, broken into readiness buckets as a share of workers in scope.
+          </p>
+          <div className="mt-4 flex flex-col gap-3">
+            {d.heatmap.slice(0, 6).map((h) => {
+              const denom = Math.max(1, h.total);
+              const ready = (h.buckets.ready / denom) * 100;
+              const support = ((h.buckets.adjacent_support + h.buckets.below_target) / denom) * 100;
+              const insufficient = (h.buckets.insufficient_evidence / denom) * 100;
+              const missing = (h.buckets.missing / denom) * 100;
+              return (
+                <div key={`${h.req_id}-${h.skill}-chart`} className="rounded-lg bg-white p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-sm font-bold text-foreground">{h.skill}</p>
+                    <p className="text-xs text-muted-foreground">{h.req_title} · bar {h.target_proficiency}/5</p>
+                  </div>
+                  <div className="mt-2 flex h-4 w-full overflow-hidden rounded-full bg-muted">
+                    <div className="h-full bg-secondary" style={{ width: `${ready}%` }} title={`Ready ${h.buckets.ready}`} />
+                    <div className="h-full bg-primary" style={{ width: `${support}%` }} title={`Adjacent/below ${h.buckets.adjacent_support + h.buckets.below_target}`} />
+                    <div className="h-full bg-accent" style={{ width: `${insufficient}%` }} title={`Insufficient evidence ${h.buckets.insufficient_evidence}`} />
+                    <div className="h-full bg-destructive" style={{ width: `${missing}%` }} title={`Missing ${h.buckets.missing}`} />
+                  </div>
+                  <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-0.5 text-[11px] text-muted-foreground">
+                    <span><b className="text-secondary">Ready</b> {h.buckets.ready}</span>
+                    <span><b className="text-primary">Support</b> {h.buckets.adjacent_support + h.buckets.below_target}</span>
+                    <span><b className="text-foreground">Insufficient</b> {h.buckets.insufficient_evidence}</span>
+                    <span><b className="text-destructive">Missing</b> {h.buckets.missing}</span>
+                    <span className="ml-auto">n = {h.total}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {d.cards.journeys_in_progress > 0 && (
+        <div>
+          <h2 className="flex items-center gap-2 text-lg font-extrabold tracking-tight text-foreground">
+            <ListChecks className="h-5 w-5 text-secondary" strokeWidth={2.5} />
+            Onboarding progress
+          </h2>
+          <div className="mt-4 rounded-lg bg-white p-4">
+            <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+              <p className="font-bold text-foreground">Active journeys in scope</p>
+              <p className="text-muted-foreground">
+                {d.cards.journeys_on_track} on track · {d.cards.journeys_blocked} blocked
+              </p>
+            </div>
+            <div className="mt-2 flex h-4 w-full overflow-hidden rounded-full bg-muted">
+              <div className="h-full bg-secondary" style={{ width: `${(d.cards.journeys_on_track / Math.max(1, d.cards.journeys_in_progress)) * 100}%` }} />
+              <div className="h-full bg-destructive" style={{ width: `${(d.cards.journeys_blocked / Math.max(1, d.cards.journeys_in_progress)) * 100}%` }} />
+            </div>
+            <p className="mt-1.5 text-[11px] text-muted-foreground">
+              <b className="text-secondary">On track</b> vs <b className="text-destructive">blocked</b> — blocked journeys need an authorized resolution.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Recommended Actions feed — straight from Phase 6's needs_review */}
       <div>

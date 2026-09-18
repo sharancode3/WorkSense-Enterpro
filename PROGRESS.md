@@ -355,3 +355,14 @@ Bounded repair loop: max 3 attempts per external blocker, then stop + report evi
 ## 26. Admin governance panel + redundancy cleanup
 
 `src/pages/role-home.tsx`: the bottom "Your modules" grid (which duplicated the header nav) is replaced for `hr_executive` with the **Platform Operations & Security Governance panel** — 4 cards: Access & Governance (`/admin/access`), Security Audit Logs (`/admin/access?tab=audit`, deep-link opens the drawer), System & Model Health (`/status`), Data Quality Engine (`/workforce/data-quality`). Non-admin roles keep the honest per-role module grid. New pages: `src/pages/status.tsx` (live gateway state, model, latency probe, build/schema versions; jobs correctly remain function-mediated) and `src/pages/data-quality.tsx` (read-only ledger health: assertion rigor distribution, orphaned claims, twins with missing/thin verified skills, evidence-with-quotes). Routes registered; admin RLS reads verified live. `pnpm check` 223/223 · `pnpm build` green.
+
+## 27. Role isolation, redundancy cleanup & visual scannability (frontend only)
+
+- **Nav**: flattened to a single row of icon-backed tabs (no category labels) in `app-shell.tsx`; per-role tab sets — admin adds System Health (`/status`) + Data Quality (`/workforce/data-quality`); recruiter and employee now get Skill Graph (`explore_skill_graph` granted in rbac, recruiter matrix test updated); role landings wired for real via `resolveLanding` in login + demo quick-access (recruiter → `/recruitment`, admin → `/admin/access`).
+- **KPI cards** (`executive-dashboard`): recruitment cards (Open Requisitions / Active Candidates) render only for recruitment managers; every rendered card is clickable with a valid `to`.
+- **Redundancy**: "Your modules" grid removed for all roles; administrators keep the Platform Operations & Security Governance panel; other roles get a live "Action tasks & review feed".
+- **Onboarding jargon** (`onboarding.tsx`): Wave 0/1/2 → Step 1 (IT & Pre-boarding Setup) / Step 2 (Core Orientation & Learning) / Step 3 (Role Verification & First Contribution); dependencies render as "Prerequisite: <task title> must be completed first."
+- **Charts**: exec dashboard adds a skill-gap distribution bar (Ready / Support / Insufficient / Missing per future skill) and an onboarding progress bar (on track vs blocked) — hand-rolled semantic bars (no new dependency).
+- **Candidate**: 4-step application stepper (Applied → Technical Interview → Final Round → Selected) on `/candidate-status`.
+- **Typography**: Outfit font applied to the base layer.
+- Backend untouched (no function/RPC/schema changes). `pnpm check` 223/223 · `pnpm build` green. Deferred (scope): dedicated recruiter candidate-directory page and literal Recharts dependency.

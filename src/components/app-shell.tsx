@@ -3,7 +3,9 @@ import { Link, useLocation } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
+  Activity,
   Briefcase,
+  Database,
   GitBranch,
   Layers,
   ListChecks,
@@ -57,9 +59,9 @@ function HealthChip({
   return <span className={`rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${cls}`}>{label}</span>;
 }
 
-// ---- Phase 12: role-coherent navigation -------------------------------------
-// Sections are gated by the same server-enforced actions as every page. A role
-// only ever sees modules it can actually open — no locked placeholders.
+// ---- Phase 27: role-scoped navigation --------------------------------------
+// One flat row of icon-backed tabs, each gated by the same server-enforced
+// actions as the page it opens. No locked placeholders, no category labels.
 interface NavLinkDef {
   label: string;
   to: string;
@@ -67,63 +69,22 @@ interface NavLinkDef {
   show: (role: Role) => boolean;
 }
 
-interface NavSection {
-  label: string;
-  links: NavLinkDef[];
-}
-
-const NAV_SECTIONS: NavSection[] = [
-  {
-    label: "Overview",
-    links: [
-      { label: "Decision overview", to: "/app", icon: ShieldCheck, show: () => true },
-    ],
-  },
-  {
-    label: "Workforce",
-    links: [
-      {
-        label: "Workforce review",
-        to: "/workforce",
-        icon: Users,
-        show: (role) => can(role, "view_all_workforce") || can(role, "view_team") || role === "employee",
-      },
-      {
-        label: "Staffing planner",
-        to: "/staffing",
-        icon: TrendingUp,
-        show: (role) => can(role, "view_all_workforce") || can(role, "view_team"),
-      },
-      { label: "Skill graph", to: "/graph", icon: GitBranch, show: (role) => can(role, "explore_skill_graph") },
-    ],
-  },
-  {
-    label: "Talent",
-    links: [
-      { label: "Recruitment", to: "/recruitment", icon: Briefcase, show: (role) => can(role, "manage_recruitment") },
-      { label: "Onboarding", to: "/onboarding", icon: ListChecks, show: (role) => can(role, "view_onboarding") },
-    ],
-  },
-  {
-    label: "Actions",
-    links: [
-      { label: "Recommendation hub", to: "/hub", icon: Layers, show: (role) => can(role, "approve_recommendations") },
-    ],
-  },
-  {
-    label: "Governance",
-    links: [
-      { label: "Policy studio", to: "/policy", icon: MessageSquareText, show: (role) => can(role, "use_policy_studio") },
-      { label: "Access & users", to: "/admin/access", icon: UserCog, show: (role) => can(role, "manage_users") },
-    ],
-  },
+const NAV_LINKS: NavLinkDef[] = [
+  { label: "Overview", to: "/app", icon: ShieldCheck, show: () => true },
+  { label: "Recruitment", to: "/recruitment", icon: Briefcase, show: (role) => can(role, "manage_recruitment") },
+  { label: "Workforce review", to: "/workforce", icon: Users, show: (role) => can(role, "view_all_workforce") || can(role, "view_team") || role === "employee" },
+  { label: "Staffing planner", to: "/staffing", icon: TrendingUp, show: (role) => can(role, "view_all_workforce") || can(role, "view_team") },
+  { label: "Onboarding", to: "/onboarding", icon: ListChecks, show: (role) => can(role, "view_onboarding") },
+  { label: "Recommendation hub", to: "/hub", icon: Layers, show: (role) => can(role, "approve_recommendations") },
+  { label: "Skill graph", to: "/graph", icon: GitBranch, show: (role) => can(role, "explore_skill_graph") },
+  { label: "Policy studio", to: "/policy", icon: MessageSquareText, show: (role) => can(role, "use_policy_studio") },
+  { label: "Access & users", to: "/admin/access", icon: UserCog, show: (role) => can(role, "manage_users") },
+  { label: "System health", to: "/status", icon: Activity, show: (role) => can(role, "manage_users") },
+  { label: "Data quality", to: "/workforce/data-quality", icon: Database, show: (role) => can(role, "manage_users") },
 ];
 
-function visibleSections(role: Role): NavSection[] {
-  return NAV_SECTIONS.map((s) => ({
-    ...s,
-    links: s.links.filter((l) => l.show(role)),
-  })).filter((s) => s.links.length > 0);
+function visibleLinks(role: Role): NavLinkDef[] {
+  return NAV_LINKS.filter((l) => l.show(role));
 }
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -154,7 +115,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const sections = role ? visibleSections(role) : [];
+  const links = role ? visibleLinks(role) : [];
   const aiState = health.data
     ? health.data.model_ready
       ? "AI gateway: ready"
@@ -163,33 +124,26 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       ? "AI gateway: unreachable"
       : "AI gateway: checking…";
 
-  const renderSection = (s: NavSection, mobile = false) => (
-    <div key={s.label} className={mobile ? "flex flex-col" : "flex items-center gap-1"}>
-      <span className="px-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/70">{s.label}</span>
-      <div className={mobile ? "flex flex-col" : "flex items-center gap-1"}>
-        {s.links.map((l) => {
-          const active = location.pathname === l.to;
-          return (
-            <Link
-              key={l.to}
-              to={l.to}
-              className={
-                mobile
-                  ? "flex items-center gap-2 rounded-md px-3 py-2 text-sm font-semibold text-foreground transition-colors hover:bg-muted"
-                  : `flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-semibold transition-colors ${
-                      active ? "bg-muted text-foreground" : "text-foreground/80 hover:bg-muted hover:text-foreground"
-                    }`
-              }
-              aria-current={active ? "page" : undefined}
-            >
-              <l.icon className="h-4 w-4 text-primary" />
-              {l.label}
-            </Link>
-          );
-        })}
-      </div>
-    </div>
-  );
+  const renderLink = (l: NavLinkDef, mobile = false) => {
+    const active = location.pathname === l.to;
+    return (
+      <Link
+        key={l.to}
+        to={l.to}
+        className={
+          mobile
+            ? "flex items-center gap-2 rounded-md px-3 py-2 text-sm font-semibold text-foreground transition-colors hover:bg-muted"
+            : `flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-semibold transition-colors ${
+                active ? "bg-muted text-foreground" : "text-foreground/80 hover:bg-muted hover:text-foreground"
+              }`
+        }
+        aria-current={active ? "page" : undefined}
+      >
+        <l.icon className="h-4 w-4 text-primary" />
+        {l.label}
+      </Link>
+    );
+  };
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
@@ -227,7 +181,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 </span>
               )}
               {/* Mobile navigation */}
-              {sections.length > 0 && (
+              {links.length > 0 && (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button variant="secondary" size="sm" className="md:hidden" aria-label="Open navigation menu">
@@ -238,8 +192,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   <DropdownMenuContent align="end" className="w-64 max-h-[70vh] overflow-y-auto">
                     <DropdownMenuLabel>Navigate</DropdownMenuLabel>
                     <DropdownMenuSeparator />
-                    <div className="flex flex-col gap-3 px-2 pb-2 pt-1">
-                      {sections.map((s) => renderSection(s, true))}
+                    <div className="flex flex-col px-2 pb-2 pt-1">
+                      {links.map((l) => renderLink(l, true))}
                     </div>
                   </DropdownMenuContent>
                 </DropdownMenu>
@@ -286,13 +240,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </div>
           </div>
 
-          {/* Role-sectioned desktop nav */}
-          {sections.length > 0 && (
+          {/* Role-scoped desktop nav — one flat row of icon-backed tabs */}
+          {links.length > 0 && (
             <nav
               aria-label="Primary"
-              className="hidden flex-wrap items-center gap-x-5 gap-y-1 overflow-x-auto border-t border-border py-2 md:flex"
+              className="hidden flex-wrap items-center gap-x-1 gap-y-1 overflow-x-auto border-t border-border py-2 md:flex"
             >
-              {sections.map((s) => renderSection(s))}
+              {links.map((l) => renderLink(l))}
             </nav>
           )}
         </div>
