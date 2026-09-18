@@ -117,7 +117,7 @@ const STEP_LABELS: Record<number, { n: string; label: string }> = {
   4: { n: "5", label: "Final Verification" },
 };
 const stepFor = (level: number) =>
-  STEP_LABELS[level] ?? { n: String(level + 1), label: `Step ${level + 1}` };
+  STEP_LABELS[level] ?? { n: String(level + 1), label: `Additional Step ${level + 1}` };
 
 function TaskCard({
   task,
@@ -202,7 +202,7 @@ function TaskCard({
               </span>
               {task.non_waivable && (
                 <span className="rounded bg-destructive/10 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-destructive">
-                  Non-waivable
+                  Mandatory Security Requirement
                 </span>
               )}
             </div>
@@ -385,7 +385,7 @@ function TaskCard({
             <DialogTitle>Waive: {task.title}</DialogTitle>
             <DialogDescription>
               {task.non_waivable
-                ? "This task is non-waivable — an HR Executive waiver with a policy basis and reason is required."
+                ? "This is a mandatory security requirement — an HR Executive waiver with a policy basis and reason is required."
                 : "A reason is required. A policy basis citation is recommended."}
             </DialogDescription>
           </DialogHeader>
@@ -395,7 +395,7 @@ function TaskCard({
               <Textarea rows={2} value={waiveReason} onChange={(e) => setWaiveReason(e.target.value)} className="h-auto min-h-0 text-xs font-normal" />
             </label>
             <label className="flex flex-col gap-1 text-xs font-semibold text-foreground">
-              Policy basis (doc_code, optional unless non-waivable)
+              Policy basis (doc_code, optional unless mandatory)
               <Input value={waivePolicy} onChange={(e) => setWaivePolicy(e.target.value)} placeholder="e.g. POL-SEC" className="text-sm font-normal" />
             </label>
           </div>
@@ -454,6 +454,7 @@ export default function Onboarding() {
   const [selected, setSelected] = useState<string>("");
   const [busy, setBusy] = useState<string | null>(null);
   const [govOpen, setGovOpen] = useState(false);
+  const dagRef = useRef<HTMLDivElement>(null);
   // Tracks whether the user explicitly picked an employee from the dropdown —
   // the demo fallback never overrides an explicit choice.
   const userPickedRef = useRef(false);
@@ -877,10 +878,20 @@ export default function Onboarding() {
 
             {/* DAG view */}
             <div id="onboarding-dag" className="scroll-mt-24">
-              <h2 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                Dependency graph — step by step
-              </h2>
-              <div className="mt-4 flex flex-col gap-6 lg:flex-row lg:items-start">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                  Steps — scroll to explore
+                </h2>
+                <div className="flex gap-1">
+                  <Button size="sm" variant="outline" aria-label="Previous step" onClick={() => dagRef.current?.scrollBy({ left: -420, behavior: "smooth" })}>
+                    ‹ Prev
+                  </Button>
+                  <Button size="sm" variant="outline" aria-label="Next step" onClick={() => dagRef.current?.scrollBy({ left: 420, behavior: "smooth" })}>
+                    Next ›
+                  </Button>
+                </div>
+              </div>
+              <div ref={dagRef} className="mt-4 flex flex-col gap-6 overflow-x-auto pb-2 lg:flex-row lg:items-start">
                 {columns.map((col, level) => (
                   <div key={level} className="flex-1">
                     <div className="mb-2 flex items-center gap-2">

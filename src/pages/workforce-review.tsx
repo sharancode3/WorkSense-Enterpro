@@ -11,6 +11,7 @@ import {
   Info,
   Loader2,
   RefreshCw,
+  Search,
   ShieldAlert,
   Sparkles,
   TrendingDown,
@@ -104,6 +105,34 @@ export default function WorkforceReview() {
     return dash.data?.review_cases ?? [];
   }, [dash.data, isEmployee, me]);
 
+  // Phase 32: search + department + risk filters for the case list.
+  const [q, setQ] = useState("");
+  const [deptFilter, setDeptFilter] = useState("all");
+  const [riskFilter, setRiskFilter] = useState("all");
+  const members = useQuery({
+    queryKey: ["wr-members", me?.id ?? "anon"],
+    enabled: !isEmployee && !!me,
+    queryFn: async () => {
+      const { data } = await supabase.from("digital_twins").select("id, department");
+      return new Map((data ?? []).map((t) => [t.id, t.department ?? "—"]));
+    },
+  });
+  const riskBucket = (index: number) => (index >= 71 ? "high" : index >= 31 ? "medium" : "low");
+  const filteredCases = useMemo(() => {
+    const text = q.trim().toLowerCase();
+    return cases.filter((c) => {
+      if (text && !c.name.toLowerCase().includes(text)) return false;
+      if (deptFilter !== "all" && (members.data?.get(c.twin_id) ?? "—") !== deptFilter) return false;
+      if (riskFilter !== "all" && riskBucket(c.index) !== riskFilter) return false;
+      return true;
+    });
+  }, [cases, q, deptFilter, riskFilter, members.data]);
+  const departments = useMemo(() => {
+    const seen = new Set<string>();
+    for (const c of cases) seen.add(members.data?.get(c.twin_id) ?? "—");
+    return [...seen].sort();
+  }, [cases, members.data]);
+
   // Employees review only their own case; managers/HR get the scoped list.
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [perfForce, setPerfForce] = useState(false);
@@ -169,35 +198,81 @@ export default function WorkforceReview() {
         {/* List (HR / manager) */}
         {!isEmployee && (
           <div className="mt-8 overflow-hidden rounded-lg bg-white">
-            <div className="border-b border-border px-5 py-3 text-xs font-bold uppercase tracking-wider text-muted-foreground">
-              {dash.data?.scope === "team" ? "Your team" : "Org-wide"} · {cases.length} employees
+            <div className="flex flex-wrap items-center gap-2 border-b border-border px-5 py-3">
+              <label className="flex items-center gap-2 rounded-md bg-muted px-3 py-2">
+                <Search className="h-4 w-4 text-muted-foreground" />
+                <input
+                  value={q}
+                  onChange={(e) => setQ(e.target.value)}
+                  placeholder="Search employee name…"
+                  className="w-44 bg-transparent text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
+                  aria-label="Search employees"
+                />
+              </label>
+              <select
+                value={deptFilter}
+                onChange={(e) => setDeptFilter(e.target.value)}
+                aria-label="Filter by department"
+                className="h-9 rounded-md border border-border bg-white px-2 text-sm font-medium text-foreground focus:border-primary focus:outline-none"
+              >
+                <option value="all">All departments</option>
+                {departments.map((d) => (
+                  <option key={d} value={d}>{d}</option>
+                ))}
+              </select>
+              <select
+                value={riskFilter}
+                onChange={(e) => setRiskFilter(e.target.value)}
+                aria-label="Filter by risk level"
+                className="h-9 rounded-md border border-border bg-white px-2 text-sm font-medium text-foreground focus:border-primary focus:outline-none"
+              >
+                <option value="all">All risk levels</option>
+                <option value="high">High risk (71-100)</option>
+                <option value="medium">Moderate (31-70)</option>
+                <option value="low">Low (0-30)</option>
+              </select>
+              <span className="ml-auto text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                {dash.data?.scope === "team" ? "Your team" : "Org-wide"} · {filteredCases.length} of {cases.length} employees
+              </span>
             </div>
             <ul className="max-h-72 divide-y divide-border overflow-y-auto">
-              {cases.map((c) => (
-                <li key={c.twin_id}>
-                  <button
-                    onClick={() => setSelectedId(c.twin_id)}
-                    className={`flex w-full items-center justify-between gap-3 px-5 py-3 text-left transition-colors hover:bg-muted ${activeId === c.twin_id ? "bg-muted" : ""}`}
-                  >
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-bold text-foreground">{c.name}</p>
-                      <p className="text-xs text-muted-foreground">Completeness {Math.round(c.completeness * 100)}%</p>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-2">
-                      {c.seeking_growth && (
-                        <span className="flex items-center gap-1 rounded-md bg-secondary px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">
-                          <Sparkles className="h-3 w-3" /> growth interest
+              {filteredCases.map((c) => {
+                const bucket = riskBucket(c.index);
+                const gaugeCls = bucket === "high" ? "bg-destructive" : bucket === "medium" ? "bg-accent" : "bg-secondary";
+                const dept = members.data?.get(c.twin_id) ?? "—";
+                return (
+                  <li key={c.twin_id}>
+                    <button
+                      onClick={() => setSelectedId(c.twin_id)}
+                      className={`flex w-full items-center justify-between gap-3 px-5 py-3 text-left transition-colors hover:bg-muted ${activeId === c.twin_id ? "bg-muted" : ""}`}
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-bold text-foreground">{c.name}</p>
+                        <p className="text-xs text-muted-foreground">{dept} · Completeness {Math.round(c.completeness * 100)}%</p>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2">
+                        {c.seeking_growth && (
+                          <span className="flex items-center gap-1 rounded-md bg-secondary px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">
+                            <Sparkles className="h-3 w-3" /> growth interest
+                          </span>
+                        )}
+                        <span className={`rounded-md px-2.5 py-1 text-xs font-bold uppercase tracking-wider ${PRIORITY_CLS[c.priority] ?? "bg-muted text-foreground"}`}>
+                          {c.priority}
                         </span>
-                      )}
-                      <span className={`rounded-md px-2.5 py-1 text-xs font-bold uppercase tracking-wider ${PRIORITY_CLS[c.priority] ?? "bg-muted text-foreground"}`}>
-                        {c.priority}
-                      </span>
-                      <span className="w-12 text-right text-sm font-extrabold text-foreground">{c.index}/100</span>
-                    </div>
-                  </button>
-                </li>
-              ))}
-              {cases.length === 0 && <li className="px-5 py-4 text-sm text-muted-foreground">No employees in scope.</li>}
+                        <div className="flex w-24 items-center gap-2">
+                          <span className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
+                            <span className={`block h-full ${gaugeCls}`} style={{ width: `${c.index}%` }} />
+                          </span>
+                          <span className="w-12 text-right text-sm font-extrabold text-foreground">{c.index}</span>
+                        </div>
+                      </div>
+                    </button>
+                  </li>
+                );
+              })}
+              {filteredCases.length === 0 && (
+                <li className="px-5 py-4 text-sm text-muted-foreground">No employees match the current filters.</li>
+              )}
             </ul>
           </div>
         )}

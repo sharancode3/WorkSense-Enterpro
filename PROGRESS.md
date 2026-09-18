@@ -383,3 +383,11 @@ Bounded repair loop: max 3 attempts per external blocker, then stop + report evi
 ## 30. AppShell recursion bug fix (authed pages freeze / white screen)
 
 Root cause of the blank/frozen authed pages (landing rendered fine): the sidebar rewrite had matched the wrong `return (` anchor, so `renderLink` ended up containing the entire AppShell layout — when invoked it recursively re-rendered the sidebar (`renderLink → mainLinks.map(renderLink) → …`), and `AppShell` itself returned nothing. Rewrote `src/components/app-shell.tsx` cleanly: `renderLink` returns a single `<Link>`, and `AppShell` returns the fixed left sidebar (brand + role pill + gated nav + Governance section + health/email/reset/sign-out footer) + the scrollable content panel (demo-mode strip, mobile menu, account menu, main, footer). Verified structurally (1 layout div at component level, renderLink contains a plain Link) and via `pnpm check` 223/223 · `pnpm build` green.
+
+## 32. Module UX overhaul — part 1 (onboarding, workforce review, staffing)
+
+- **Onboarding**: fixed the `Step 4: Step 4` label bug (unknown levels now render "Additional Step N"); "non-waivable" chip + waiver dialog → "Mandatory Security Requirement"; the step columns got a carousel with ‹ Prev / Next › scroll buttons (smooth horizontal scroll).
+- **Workforce Review**: added a search bar (by name), a department dropdown, a risk-level filter (Low 0–30 / Moderate 31–70 / High 71–100), color-coded index gauges (green/yellow/red) in every case row, department labels, and a "N of M employees" count.
+- **Staffing Planner**: added an infographic KPI row — External fill rate (with bar), Coverage today (move), Fastest path to ready (best option + days), and Recommended path (hybrid coverage) — all derived from the live staffing payload.
+- Backend untouched. `pnpm check` 223/223 · `pnpm build` green.
+- **Deferred (documented)**: Recommendation Hub category grouping + plain-English rationale cards, and Skill Graph search + current-vs-target bars — larger page refactors, next turn.

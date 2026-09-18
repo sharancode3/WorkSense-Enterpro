@@ -177,6 +177,48 @@ export default function StaffingPlanner() {
               </div>
             </div>
 
+            {/* Phase 32: infographic KPI row */}
+            <div className="mt-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
+              {(() => {
+                const hire = comp.data.options.find((o) => o.id === "hire");
+                const move = comp.data.options.find((o) => o.id === "move");
+                const hybrid = comp.data.options.find((o) => o.id === "hybrid");
+                const fastest = [...comp.data.options].sort((a, b) => a.time_to_ready_days - b.time_to_ready_days)[0];
+                return (
+                  <>
+                    <div className="rounded-lg bg-white p-5">
+                      <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">External fill rate</p>
+                      <p className="mt-2 text-3xl font-extrabold text-foreground">{hire?.coverage_pct ?? 0}%</p>
+                      <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-muted">
+                        <div className="h-full bg-primary" style={{ width: `${hire?.coverage_pct ?? 0}%` }} />
+                      </div>
+                      <p className="mt-1 text-[11px] text-muted-foreground">best applicant match vs role bar</p>
+                    </div>
+                    <div className="rounded-lg bg-white p-5">
+                      <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Coverage today (move)</p>
+                      <p className="mt-2 text-3xl font-extrabold text-foreground">{move?.coverage_pct ?? 0}%</p>
+                      <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-muted">
+                        <div className="h-full bg-secondary" style={{ width: `${move?.coverage_pct ?? 0}%` }} />
+                      </div>
+                      <p className="mt-1 text-[11px] text-muted-foreground">best-fit employee verified skills</p>
+                    </div>
+                    <div className="rounded-lg bg-white p-5">
+                      <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Fastest path to ready</p>
+                      <p className="mt-2 text-3xl font-extrabold text-foreground">{fastest?.time_to_ready_days ?? "—"}d</p>
+                      <p className="mt-2 text-sm font-semibold capitalize text-secondary">{fastest?.id ?? ""}</p>
+                      <p className="mt-1 text-[11px] text-muted-foreground">within the {comp.data.scenario.deadline_days}-day window?</p>
+                    </div>
+                    <div className="rounded-lg bg-white p-5">
+                      <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Recommended path</p>
+                      <p className="mt-2 text-3xl font-extrabold text-foreground">{hybrid?.coverage_pct ?? 0}%</p>
+                      <p className="mt-2 text-sm font-semibold capitalize text-primary">{hybrid?.id ?? ""}</p>
+                      <p className="mt-1 text-[11px] text-muted-foreground">coverage if hire + upskill both execute</p>
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+
             {/* Options */}
             <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
               {comp.data.options.map((opt) => (
