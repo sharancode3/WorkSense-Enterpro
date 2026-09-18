@@ -982,11 +982,15 @@ export interface SessionQuestion {
   prompt: string;
   hint?: string;
   max_chars: number;
+  is_core?: boolean;
+  /** Reviewer view only — never returned to candidates. */
+  criteria?: string[];
+  answer_key?: string | null;
 }
 
 export interface AssessmentSessionView {
   id: string;
-  session_type: "work_sample" | "interview";
+  session_type: "work_sample" | "interview" | "knowledge_assessment";
   status: string;
   expires_at: string;
   time_policy: string;
@@ -1030,6 +1034,11 @@ export interface JudgmentItem {
   suggested_follow_up: string;
   note?: string;
   reason?: string;
+  override_from?: string;
+  /** Phase 5: separate correctness / reasoning / trade_offs / communication. */
+  dimensions?: Partial<Record<"correctness" | "reasoning" | "trade_offs" | "communication", string>>;
+  /** Server-computed: route to human confirmation before this may support evidence. */
+  review_required?: boolean;
 }
 
 export interface AssessmentEvaluation {
@@ -1047,7 +1056,15 @@ export interface AssessmentEvaluation {
     competency: string;
     code_execution: { available: boolean; note: string };
     ai: { judgments: JudgmentItem[]; summary: string; evaluated_at: string; evaluator: string; model: string };
-    reviewed: { determination: string; judgments: JudgmentItem[]; reason: string; by: string; at: string } | null;
+    review_required: boolean;
+    reviewed: {
+      determination: string;
+      judgments: JudgmentItem[];
+      reason: string;
+      overrides?: { competency: string; from: string | null; to: string; reason: string }[];
+      by: string;
+      at: string;
+    } | null;
   };
 }
 
@@ -1068,7 +1085,7 @@ export const assessmentSessionFetch = (body: { token?: string; session_id?: stri
 export const assessmentSessionCreate = (payload: {
   application_id: string;
   blueprint_id: string;
-  session_type: "work_sample" | "interview";
+  session_type: "work_sample" | "interview" | "knowledge_assessment";
   expires_in_hours?: number;
 }) =>
   invoke<{ ok: true; session: AssessmentSessionView; invitation_token: string; expires_at: string }>("assessment-session", {

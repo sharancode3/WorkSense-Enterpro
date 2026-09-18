@@ -69,14 +69,16 @@ async function loadApplication(supabase, applicationId: string) {
   return data;
 }
 
-/** Candidate-safe session view (never evaluation, rubrics, or reviewer data). */
+/** Candidate-safe session view (never evaluation, rubrics, reviewer data, or
+ *  answer keys). `criteria`/`answer_key` on questions are stripped so nothing
+ *  recruiter-authored leaks to the candidate. */
 function candidateView(session: unknown, blueprint: { artifact_spec?: Record<string, unknown> } | null) {
   const s = session as Record<string, unknown>;
   const spec = (blueprint?.artifact_spec ?? {}) as {
     title?: string;
     instructions?: string;
     time_policy?: string;
-    questions?: unknown[];
+    questions?: { key: string; prompt: string; hint?: string; max_chars: number; is_core?: boolean }[];
   };
   return {
     id: s.id,
@@ -93,7 +95,13 @@ function candidateView(session: unknown, blueprint: { artifact_spec?: Record<str
     blueprint: {
       title: spec.title ?? "",
       instructions: spec.instructions ?? "",
-      questions: spec.questions ?? [],
+      questions: (spec.questions ?? []).map((q) => ({
+        key: q.key,
+        prompt: q.prompt,
+        hint: q.hint,
+        max_chars: q.max_chars,
+        is_core: q.is_core,
+      })),
     },
   };
 }
@@ -134,8 +142,8 @@ Deno.serve(async (req) => {
     const applicationId = (body.application_id ?? "").trim();
     const blueprintId = (body.blueprint_id ?? "").trim();
     const sessionType = body.session_type ?? "";
-    if (!applicationId || !blueprintId || !["work_sample", "interview"].includes(sessionType)) {
-      return json({ error: "VALIDATION_ERROR", message: "application_id, blueprint_id and session_type (work_sample|interview) are required." }, 400);
+    if (!applicationId || !blueprintId || !["work_sample", "interview", "knowledge_assessment"].includes(sessionType)) {
+      return json({ error: "VALIDATION_ERROR", message: "application_id, blueprint_id and session_type (work_sample|interview|knowledge_assessment) are required." }, 400);
     }
 
     const application = await loadApplication(supabase, applicationId);
@@ -146,6 +154,13 @@ Deno.serve(async (req) => {
     const blueprint = await loadBlueprint(supabase, blueprintId);
     if (!blueprint || blueprint.org_id !== caller.org_id || blueprint.requisition_id !== application.requisition_id) {
       return json({ error: "VALIDATION_ERROR", message: "Blueprint does not belong to this application's requisition." }, 400);
+    }
+    const blueprintKind = (blueprint.artifact_spec as { kind?: string })?.kind ?? null;
+    if (blueprintKind && blueprintKind !== sessionType) {
+      return json({
+        error: "VALIDATION_ERROR",
+        message: `This blueprint is a ${blueprintKind} — it cannot be used for a ${sessionType} session. Pick a blueprint that matches the session type.`,
+      }, 400);
     }
 
     const hours = Math.min(24 * 7, Math.max(1, Number(body.expires_in_hours) || 72));
@@ -208,7 +223,10 @@ Deno.serve(async (req) => {
         .eq("org_id", caller.org_id)
         .eq("twin_id", session.twin_id)
         .eq("requisition_id", application?.requisition_id ?? "__none__");
-      const evaluation = (evals ?? []).find((a) => (a.result as { session_id?: string })?.session_id === session.id) ?? null;
+      const row = (evals ?? []).find((a) => (a.result as { session_id?: string })?.session_id === session.id) ?? null;
+      // Reviewer-facing evaluation = the result object (ai judgments, review
+      // status) plus the assessment id the review path writes back to.
+      const evaluation = row ? { ...(row.result as Record<string, unknown>), assessment_id: row.id } : null;
       const twin = application
         ? (await supabase.from("digital_twins").select("id, name, email").eq("id", session.twin_id).maybeSingle()).data
         : null;
@@ -219,6 +237,17 @@ Deno.serve(async (req) => {
           invitation_token: session.invitation_token,
           blueprint: {
             ...candidateView(session, blueprint).blueprint,
+            // Reviewer view: include the Q→criteria map and answer keys so
+            // reviewers can verify knowledge answers (candidates never see them).
+            questions: ((blueprint?.artifact_spec as { questions?: Record<string, unknown>[] })?.questions ?? []).map((q) => ({
+              key: q.key,
+              prompt: q.prompt,
+              hint: q.hint,
+              max_chars: q.max_chars,
+              is_core: q.is_core,
+              criteria: q.criteria ?? [],
+              answer_key: q.answer_key ?? null,
+            })),
             test_cases: blueprint?.test_cases ?? [],
           },
           candidate: twin,

@@ -35,9 +35,10 @@ Deno.serve(async (req) => {
     requisition_id?: string;
     competency?: string;
     title?: string;
+    kind?: string;
     instructions?: string;
     time_policy?: string;
-    questions?: { key: string; prompt: string; hint?: string; max_chars: number }[];
+    questions?: { key: string; prompt: string; hint?: string; max_chars: number; criteria?: string[]; answer_key?: string }[];
     test_cases?: { name: string; expected: string }[];
     rubrics?: {
       competency: string;
@@ -88,6 +89,7 @@ Deno.serve(async (req) => {
       org_id: caller.org_id,
       requisition_id: s.requisition_id,
       competency: s.competency,
+      kind: s.kind,
       version: s.version,
       artifact_spec: {
         title: s.title,
@@ -128,7 +130,7 @@ Deno.serve(async (req) => {
     const reqId = (body.requisition_id ?? "").trim();
     const { data: blueprints } = await supabase
       .from("assessment_blueprints")
-      .select("id, requisition_id, competency, version, artifact_spec, test_cases, prompt_adaptation_allowed, created_at")
+      .select("id, requisition_id, competency, kind, version, artifact_spec, test_cases, prompt_adaptation_allowed, created_at")
       .eq("org_id", caller.org_id)
       .eq("requisition_id", reqId ?? "__none__")
       .order("created_at");
@@ -143,8 +145,30 @@ Deno.serve(async (req) => {
     const reqId = (body.requisition_id ?? "").trim();
     const competency = (body.competency ?? "").trim();
     const title = (body.title ?? "").trim();
-    if (!reqId || !competency || !title || !Array.isArray(body.questions) || body.questions.length === 0 || !Array.isArray(body.rubrics) || body.rubrics.length === 0) {
-      return json({ error: "VALIDATION_ERROR", message: "requisition_id, competency, title, questions and rubrics are required." }, 400);
+    const kind = (body.kind ?? "").trim();
+    if (!reqId || !competency || !title || !["work_sample", "interview", "knowledge_assessment"].includes(kind)) {
+      return json({ error: "VALIDATION_ERROR", message: "requisition_id, competency, title and kind (work_sample|interview|knowledge_assessment) are required." }, 400);
+    }
+    if (!Array.isArray(body.questions) || body.questions.length === 0 || !Array.isArray(body.rubrics) || body.rubrics.length === 0) {
+      return json({ error: "VALIDATION_ERROR", message: "questions and rubrics are required." }, 400);
+    }
+    const rubricComps = new Set(body.rubrics.map((r) => r.competency.trim().toLowerCase()));
+    for (const q of body.questions) {
+      const criteria = q.criteria ?? [];
+      if (criteria.length === 0) {
+        return json({ error: "VALIDATION_ERROR", message: `Question "${q.key}" must map to at least one rubric competency (criteria).` }, 400);
+      }
+      for (const c of criteria) {
+        if (!rubricComps.has(c.trim().toLowerCase())) {
+          return json({ error: "VALIDATION_ERROR", message: `Question "${q.key}" maps to competency "${c}" which is not in the rubric.` }, 400);
+        }
+      }
+    }
+    if (kind === "knowledge_assessment" && body.questions.some((q) => !q.answer_key)) {
+      return json({ error: "VALIDATION_ERROR", message: "Every knowledge-assessment question needs an answer_key." }, 400);
+    }
+    if (kind !== "knowledge_assessment" && body.questions.some((q) => q.answer_key)) {
+      return json({ error: "VALIDATION_ERROR", message: "answer_key is only allowed on knowledge_assessment questions." }, 400);
     }
     const { data: reqRow } = await supabase
       .from("job_requisitions")
@@ -159,6 +183,7 @@ Deno.serve(async (req) => {
       .eq("org_id", caller.org_id)
       .eq("requisition_id", reqId)
       .eq("competency", competency)
+      .eq("kind", kind)
       .order("version", { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -170,8 +195,15 @@ Deno.serve(async (req) => {
         org_id: caller.org_id,
         requisition_id: reqId,
         competency,
+        kind,
         version,
-        artifact_spec: { title, kind: body.questions[0]?.max_chars ? "work_sample" : "work_sample", instructions: body.instructions ?? "", time_policy: body.time_policy ?? "", questions: body.questions },
+        artifact_spec: {
+          title,
+          kind,
+          instructions: body.instructions ?? "",
+          time_policy: body.time_policy ?? "",
+          questions: body.questions,
+        },
         test_cases: body.test_cases ?? [],
         prompt_adaptation_allowed: true,
         created_by: caller.id,

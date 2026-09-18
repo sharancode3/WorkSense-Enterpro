@@ -117,7 +117,7 @@ export function AssessmentReviewPanel({ open, onOpenChange, application, candida
   const [saving, setSaving] = useState(false);
   const [reviewDrafts, setReviewDrafts] = useState<Record<string, ReviewDraft>>({});
   const [newSessionOpen, setNewSessionOpen] = useState(false);
-  const [newType, setNewType] = useState<"work_sample" | "interview">("work_sample");
+  const [newType, setNewType] = useState<"work_sample" | "interview" | "knowledge_assessment">("work_sample");
   const [newBlueprint, setNewBlueprint] = useState<string>("");
   const [creating, setCreating] = useState(false);
   const [jobPolling, setJobPolling] = useState(false);
@@ -237,8 +237,11 @@ export function AssessmentReviewPanel({ open, onOpenChange, application, candida
 
   const sendFollowUps = async () => {
     if (!detail || !detail.evaluation) return;
+    // Adaptive follow-ups target the unresolved evidence first: highest model
+    // uncertainty, with a suggested follow-up, capped at 2.
     const candidates = detail.evaluation.ai.judgments
       .filter((j) => j.suggested_follow_up && j.suggested_follow_up.trim().length > 0)
+      .sort((a, b) => (b.uncertainty ?? 0) - (a.uncertainty ?? 0))
       .slice(0, 2)
       .map((j) => ({ key: j.competency, prompt: j.suggested_follow_up }));
     if (candidates.length === 0) {
@@ -331,7 +334,14 @@ export function AssessmentReviewPanel({ open, onOpenChange, application, candida
                 ))}
               </div>
               {blueprints.length > 0 && (
-                <Button size="sm" className="mt-2 w-full" onClick={() => { setNewSessionOpen(true); setNewBlueprint(blueprints[0]?.id ?? ""); }}>
+                <Button
+                  size="sm"
+                  className="mt-2 w-full"
+                  onClick={() => {
+                    setNewSessionOpen(true);
+                    setNewBlueprint(blueprints.find((b) => b.artifact_spec.kind === "work_sample")?.id ?? blueprints[0]?.id ?? "");
+                  }}
+                >
                   <Send className="h-4 w-4" /> New invitation
                 </Button>
               )}
@@ -459,6 +469,14 @@ export function AssessmentReviewPanel({ open, onOpenChange, application, candida
                                       AI {ai.judgment}
                                     </span>
                                   )}
+                                  {ai?.review_required && !detail.evaluation!.reviewed && (
+                                    <span
+                                      className="rounded-md bg-amber-500 px-2 py-0.5 text-xs font-bold uppercase tracking-wider text-white"
+                                      title="The model is uncertain or its dimension scores contradict the anchor — a human must confirm before this supports evidence."
+                                    >
+                                      Needs confirmation
+                                    </span>
+                                  )}
                                   {reviewed && (
                                     <span className="rounded-md bg-secondary px-2 py-0.5 text-xs font-bold uppercase tracking-wider text-white">
                                       {reviewed.judgment} {reviewed.judgment !== ai?.judgment ? "(overridden)" : ""}
@@ -466,6 +484,15 @@ export function AssessmentReviewPanel({ open, onOpenChange, application, candida
                                   )}
                                 </div>
                               </div>
+                              {ai && ai.dimensions && (
+                                <div className="mt-2 flex flex-wrap gap-1.5" aria-label={`Dimension scores for ${r.competency}`}>
+                                  {Object.entries(ai.dimensions).map(([dim, v]) => (
+                                    <span key={dim} className="rounded bg-white/70 px-1.5 py-0.5 text-[11px] font-semibold text-muted-foreground">
+                                      {dim.replace(/_/g, " ")}: {v === "NA" ? "n/a" : v}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
                               {ai && ai.evidence_quotes.length > 0 && (
                                 <ul className="mt-2 flex flex-col gap-1">
                                   {ai.evidence_quotes.map((q, i) => (
@@ -530,6 +557,17 @@ export function AssessmentReviewPanel({ open, onOpenChange, application, candida
                             Reviewed by {detail.evaluation.reviewed.by} · {new Date(detail.evaluation.reviewed.at).toLocaleString()}
                           </p>
                           {detail.evaluation.reviewed.reason && <p className="mt-1">{detail.evaluation.reviewed.reason}</p>}
+                          {detail.evaluation.reviewed.overrides && detail.evaluation.reviewed.overrides.length > 0 && (
+                            <ul className="mt-2 flex flex-col gap-1 rounded bg-white/70 p-2">
+                              <p className="font-bold text-foreground">Override audit</p>
+                              {detail.evaluation.reviewed.overrides.map((o) => (
+                                <li key={o.competency}>
+                                  {o.competency}: {o.from ?? "—"} → <b>{o.to}</b>
+                                  {o.reason ? ` — ${o.reason}` : ""}
+                                </li>
+                              ))}
+                            </ul>
+                          )}
                           <p className="mt-1">The AI suggestion is preserved alongside the human determination.</p>
                         </div>
                       )}
@@ -547,29 +585,39 @@ export function AssessmentReviewPanel({ open, onOpenChange, application, candida
               <h3 className="text-lg font-extrabold text-foreground">New assessment invitation</h3>
               <div className="mt-4 flex flex-col gap-3">
                 <label className="flex flex-col gap-1 text-sm">
+                  <span className="font-semibold text-muted-foreground">Session type</span>
+                  <select
+                    value={newType}
+                    onChange={(e) => {
+                      const t = e.target.value as typeof newType;
+                      setNewType(t);
+                      setNewBlueprint(blueprints.find((b) => b.artifact_spec.kind === t)?.id ?? newBlueprint);
+                    }}
+                    className="h-11 rounded-md bg-muted px-3 text-sm font-medium text-foreground focus:outline-none"
+                  >
+                    <option value="work_sample">Work sample</option>
+                    <option value="interview">Interview session</option>
+                    <option value="knowledge_assessment">Knowledge assessment</option>
+                  </select>
+                </label>
+                <label className="flex flex-col gap-1 text-sm">
                   <span className="font-semibold text-muted-foreground">Blueprint</span>
                   <select
                     value={newBlueprint}
                     onChange={(e) => setNewBlueprint(e.target.value)}
                     className="h-11 rounded-md bg-muted px-3 text-sm font-medium text-foreground focus:outline-none"
                   >
-                    {blueprints.map((b) => (
-                      <option key={b.id} value={b.id}>
-                        {b.artifact_spec.title}
-                      </option>
-                    ))}
+                    {blueprints
+                      .filter((b) => b.artifact_spec.kind === newType)
+                      .map((b) => (
+                        <option key={b.id} value={b.id}>
+                          {b.artifact_spec.title}
+                        </option>
+                      ))}
                   </select>
-                </label>
-                <label className="flex flex-col gap-1 text-sm">
-                  <span className="font-semibold text-muted-foreground">Session type</span>
-                  <select
-                    value={newType}
-                    onChange={(e) => setNewType(e.target.value as "work_sample" | "interview")}
-                    className="h-11 rounded-md bg-muted px-3 text-sm font-medium text-foreground focus:outline-none"
-                  >
-                    <option value="work_sample">Work sample</option>
-                    <option value="interview">Interview session</option>
-                  </select>
+                  <p className="text-xs text-muted-foreground">
+                    Only {newType === "work_sample" ? "work sample" : newType === "interview" ? "interview" : "knowledge assessment"} blueprints are offered here — each format uses its own blueprint.
+                  </p>
                 </label>
                 <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
                   <Clock className="h-3.5 w-3.5" /> The invitation expires in 72 hours by default.

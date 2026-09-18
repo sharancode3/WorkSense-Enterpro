@@ -794,6 +794,20 @@ export function validateAssessmentJudgment(d: unknown): ValidationResult {
       if (j.suggested_follow_up !== undefined && j.suggested_follow_up !== null && !isStr(j.suggested_follow_up)) {
         errors.push("suggested_follow_up must be a string");
       }
+      // Phase 5: dimension scores (correctness/reasoning/trade_offs/communication).
+      const dimScores = ["1", "2", "3", "4", "5", "NA"];
+      if (j.dimensions !== undefined && j.dimensions !== null) {
+        if (!isObj(j.dimensions)) errors.push("dimensions must be an object");
+        else {
+          for (const [name, v] of Object.entries(j.dimensions as Record<string, unknown>)) {
+            if (!["correctness", "reasoning", "trade_offs", "communication"].includes(name)) {
+              errors.push(`dimensions.${name} is not a supported dimension`);
+            } else if (typeof v !== "string" || !dimScores.includes(v)) {
+              errors.push(`dimensions.${name} must be one of ${dimScores.join("|")}`);
+            }
+          }
+        }
+      }
     }
   }
   if (!isStr(d.summary) || d.summary.trim().length === 0) errors.push("summary missing");

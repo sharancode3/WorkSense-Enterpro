@@ -1,0 +1,27 @@
+-- Phase 5: three genuinely different assessment formats. The session_type
+-- check is widened to admit knowledge_assessment alongside work_sample and
+-- interview. No column changes: blueprint kind, Q→criteria mapping and
+-- answer keys live in assessment_blueprints.artifact_spec; dimension scores,
+-- review_required routing and override audits live in assessments.result.
+alter table public.candidate_sessions drop constraint candidate_sessions_session_type_check;
+alter table public.candidate_sessions
+  add constraint candidate_sessions_session_type_check
+  check (session_type in ('work_sample','interview','knowledge_assessment'));
+
+alter table public.assessments drop constraint assessments_type_check;
+alter table public.assessments
+  add constraint assessments_type_check
+  check (type in ('interview','work_sample','assessment','knowledge_assessment'));
+
+-- A requisition may host one blueprint per format (work_sample / interview /
+-- knowledge_assessment), each independently versioned. The previous uniqueness
+-- (org, requisition, competency, version) only allowed one blueprint per
+-- requisition+competency; kind now discriminates the three formats.
+alter table public.assessment_blueprints
+  add column kind text not null default 'work_sample'
+  check (kind in ('work_sample','interview','knowledge_assessment'));
+alter table public.assessment_blueprints
+  drop constraint assessment_blueprints_org_id_requisition_id_competency_vers_key;
+alter table public.assessment_blueprints
+  add constraint assessment_blueprints_org_req_comp_kind_version_uniq
+  unique (org_id, requisition_id, competency, kind, version);

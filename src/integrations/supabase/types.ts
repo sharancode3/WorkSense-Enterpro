@@ -3641,6 +3641,7 @@ export type Database = {
           created_at: string
           created_by: string | null
           id: string
+          kind: string
           org_id: string
           prompt_adaptation_allowed: boolean
           requisition_id: string
@@ -3653,6 +3654,7 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           id?: string
+          kind?: string
           org_id: string
           prompt_adaptation_allowed?: boolean
           requisition_id: string
@@ -3665,6 +3667,7 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           id?: string
+          kind?: string
           org_id?: string
           prompt_adaptation_allowed?: boolean
           requisition_id?: string

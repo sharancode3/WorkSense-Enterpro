@@ -246,6 +246,8 @@ const ALEX_REQ_ID = "33333333-3333-3333-3333-333333333301";
 const JORDAN_TWIN_ID = "22222222-2222-2222-2222-222222222202";
 const DANA_TWIN_ID = "22222222-2222-2222-2222-222222222201";
 const ELENA_TWIN_ID = "22222222-2222-2222-2222-222222222210";
+// Phase 5 disposable candidate — isolated from shared demo candidates.
+const DISPOSABLE_TWIN_ID = "22222222-2222-2222-2222-222222222299";
 export const SEED_FIXTURE_CLOCK = "2026-09-15T09:00:00Z";
 
 async function seedPhase8Plan(supabase, orgId: string, clock: string) {
@@ -400,6 +402,32 @@ async function reseed(supabase, authIds: Record<string, string>) {
     ...fx.employees.map((p) => twinRow(p, DEMO_ORG_ID, authIds)),
     ...fx.candidates.map((p) => twinRow(p, DEMO_ORG_ID, authIds)),
     {
+      // Phase 5: a dedicated disposable candidate so acceptance test sessions
+      // never touch the shared demo candidates (Priya stays pristine). Clearly
+      // labeled; reset-demo restores it to "invited" on every reset.
+      id: DISPOSABLE_TWIN_ID,
+      org_id: DEMO_ORG_ID,
+      auth_user_id: null,
+      role: "candidate",
+      status: "candidate",
+      name: "Test Candidate (disposable)",
+      email: "disposable@worksense.demo",
+      department: "Candidate",
+      job_title: "Senior Backend Engineer applicant",
+      manager_id: null,
+      tenure_months: 0,
+      seniority_level: 3,
+      promotion_lag_months: 0,
+      attendance: { baseline: 0, recent: 0 },
+      delivery: { missed: 0, total: 0 },
+      verified_skills: [],
+      interview_rubrics: [],
+      performance_history: [],
+      signals: [],
+      computed_fits: [],
+      audit_events: [{ actor: "system", action: "created", note: "Disposable test candidate (Phase 5 acceptance sandbox).", timestamp: fx.clock }],
+    },
+    {
       id: ELENA_TWIN_ID,
       org_id: DEMO_ORG_ID,
       auth_user_id: authIds["elena@worksense.demo"] ?? null,
@@ -477,6 +505,7 @@ async function reseed(supabase, authIds: Record<string, string>) {
       org_id: DEMO_ORG_ID,
       requisition_id: s.requisition_id,
       competency: s.competency,
+      kind: s.kind,
       version: s.version,
       artifact_spec: { title: s.title, kind: s.kind, instructions: s.instructions, time_policy: s.time_policy, questions: s.questions },
       test_cases: s.test_cases,
@@ -712,54 +741,93 @@ async function reseed(supabase, authIds: Record<string, string>) {
   // (access blocker reported by IT, provisioning/learning/verification tasks).
   await seedPhase8Plan(supabase, DEMO_ORG_ID, fx.clock);
 
-  // 9b) Candidate sessions (Phase 6): Priya has an open work-sample and an
-  // interview session on the Senior Backend Engineer blueprint — this is the
-  // demo path the completion gate exercises end-to-end.
+  // 9b) Candidate sessions (Phase 6 + Phase 5): Priya gets one session per
+  // format — work_sample (payments service design), interview (production
+  // incident interview), knowledge_assessment (core backend knowledge) — each on
+  // its own genuinely-different blueprint. The disposable candidate mirrors the
+  // three sessions for isolated acceptance runs.
   const priyaId = "22222222-2222-2222-2222-222222222205";
-  const backendBlueprint = ASSESSMENT_SEEDS.find((s) => s.id === "66666666-6666-6666-6666-666666666601");
+  const workBlueprint = ASSESSMENT_SEEDS.find((s) => s.id === "66666666-6666-6666-6666-666666666601");
+  const interviewBlueprint = ASSESSMENT_SEEDS.find((s) => s.id === "66666666-6666-6666-6666-666666666604");
+  const knowledgeBlueprint = ASSESSMENT_SEEDS.find((s) => s.id === "66666666-6666-6666-6666-666666666605");
+  if (!workBlueprint || !interviewBlueprint || !knowledgeBlueprint) {
+    throw new Error("sessions seed: a Phase 5 blueprint is missing from ASSESSMENT_SEEDS");
+  }
   const { data: priyaApp } = await supabase
     .from("applications")
     .select("id")
     .eq("candidate_twin_id", priyaId)
-    .eq("requisition_id", backendBlueprint?.requisition_id ?? "")
+    .eq("requisition_id", workBlueprint.requisition_id)
     .maybeSingle();
-  if (!backendBlueprint || !priyaApp) throw new Error("sessions seed: backend blueprint or Priya application missing");
+  if (!priyaApp) throw new Error("sessions seed: Priya application missing");
+
+  // Disposable candidate application (isolated acceptance sandbox).
+  const { data: disposableApp, error: discAppErr } = await supabase
+    .from("applications")
+    .insert({
+      org_id: DEMO_ORG_ID,
+      candidate_twin_id: DISPOSABLE_TWIN_ID,
+      requisition_id: workBlueprint.requisition_id,
+      stage: "screening",
+      application_code: "WS-DISPOSABLE-2026",
+      applied_at: "2026-09-10T09:00:00Z",
+    })
+    .select("id")
+    .single();
+  if (discAppErr) throw new Error(`disposable application insert: ${discAppErr.message}`);
+  const { data: backendReq } = await supabase
+    .from("job_requisitions")
+    .select("applicants")
+    .eq("id", workBlueprint.requisition_id)
+    .eq("org_id", DEMO_ORG_ID)
+    .maybeSingle();
+  if (backendReq) {
+    const applicants = backendReq.applicants ?? [];
+    if (!applicants.some((a: { application_code?: string }) => a.application_code === "WS-DISPOSABLE-2026")) {
+      await supabase
+        .from("job_requisitions")
+        .update({
+          applicants: [
+            ...applicants,
+            { twin_id: DISPOSABLE_TWIN_ID, stage: "screening", application_code: "WS-DISPOSABLE-2026", applied_at: "2026-09-10T09:00:00Z", match_score: 0.5 },
+          ],
+        })
+        .eq("id", workBlueprint.requisition_id);
+    }
+  }
+
   const expiresAt = new Date(new Date(fx.clock).getTime() + 30 * 86400000).toISOString();
+  const sessionRow = (
+    id: string,
+    appId: string,
+    twinId: string,
+    blueprint: typeof workBlueprint,
+    sessionType: string,
+    token: string
+  ) => ({
+    id,
+    org_id: DEMO_ORG_ID,
+    application_id: appId,
+    twin_id: twinId,
+    blueprint_id: blueprint.id,
+    rubric_id: null,
+    session_type: sessionType,
+    invitation_token: token,
+    status: "invited",
+    expires_at: expiresAt,
+    time_policy: blueprint.time_policy,
+    accommodation: {},
+    answers: {},
+    drafts: {},
+    follow_ups: [],
+  });
   const { error: sessErr } = await supabase.from("candidate_sessions").insert([
-    {
-      id: "77777777-7777-7777-7777-777777777701",
-      org_id: DEMO_ORG_ID,
-      application_id: priyaApp.id,
-      twin_id: priyaId,
-      blueprint_id: backendBlueprint.id,
-      rubric_id: null,
-      session_type: "work_sample",
-      invitation_token: "ws-demo-priya-work-2026",
-      status: "invited",
-      expires_at: expiresAt,
-      time_policy: backendBlueprint.time_policy,
-      accommodation: {},
-      answers: {},
-      drafts: {},
-      follow_ups: [],
-    },
-    {
-      id: "77777777-7777-7777-7777-777777777702",
-      org_id: DEMO_ORG_ID,
-      application_id: priyaApp.id,
-      twin_id: priyaId,
-      blueprint_id: backendBlueprint.id,
-      rubric_id: null,
-      session_type: "interview",
-      invitation_token: "ws-demo-priya-interview-2026",
-      status: "invited",
-      expires_at: expiresAt,
-      time_policy: backendBlueprint.time_policy,
-      accommodation: {},
-      answers: {},
-      drafts: {},
-      follow_ups: [],
-    },
+    sessionRow("77777777-7777-7777-7777-777777777701", priyaApp.id, priyaId, workBlueprint, "work_sample", "ws-demo-priya-work-2026"),
+    sessionRow("77777777-7777-7777-7777-777777777702", priyaApp.id, priyaId, interviewBlueprint, "interview", "ws-demo-priya-interview-2026"),
+    sessionRow("77777777-7777-7777-7777-777777777703", priyaApp.id, priyaId, knowledgeBlueprint, "knowledge_assessment", "ws-demo-priya-knowledge-2026"),
+    sessionRow("77777777-7777-7777-7777-777777777704", disposableApp.id, DISPOSABLE_TWIN_ID, workBlueprint, "work_sample", "ws-demo-disc-work-2026"),
+    sessionRow("77777777-7777-7777-7777-777777777705", disposableApp.id, DISPOSABLE_TWIN_ID, interviewBlueprint, "interview", "ws-demo-disc-interview-2026"),
+    sessionRow("77777777-7777-7777-7777-777777777706", disposableApp.id, DISPOSABLE_TWIN_ID, knowledgeBlueprint, "knowledge_assessment", "ws-demo-disc-knowledge-2026"),
   ]);
   if (sessErr) throw new Error(`sessions insert: ${sessErr.message}`);
 
@@ -985,7 +1053,7 @@ Deno.serve(async (req) => {
       created_users: created,
       seeded: {
         organizations: 2,
-        digital_twins: fx.employees.length + fx.candidates.length + 1 + fx.org2.employees.length,
+        digital_twins: fx.employees.length + fx.candidates.length + 2 + fx.org2.employees.length,
         skill_graph: fx.skills.length + fx.org2.skills.length,
         job_requisitions: fx.requisitions.length + 2,
         policy_documents: fx.policies.length + POLICY_ADDITIONS.length,
@@ -993,10 +1061,10 @@ Deno.serve(async (req) => {
         recommendations: RECOMMENDATIONS.length,
         assessment_blueprints: ASSESSMENT_SEEDS.length,
         assessment_rubrics: ASSESSMENT_SEEDS.reduce((n, s) => n + s.rubrics.length, 0),
-        candidate_sessions: 2,
+        candidate_sessions: 6,
         evidence_items: fx.employees.reduce((n, e) => n + (e.assertions ?? []).length, 0) + fx.candidates.reduce((n, c) => n + (c.assertions ?? []).length, 0) + fx.org2.employees.reduce((n, e) => n + (e.assertions ?? []).length, 0),
         skill_assertions: fx.employees.reduce((n, e) => n + (e.assertions ?? []).length, 0) + fx.candidates.reduce((n, c) => n + (c.assertions ?? []).length, 0) + fx.org2.employees.reduce((n, e) => n + (e.assertions ?? []).length, 0),
-        applications: fx.requisitions.reduce((n, r) => n + (r.applicants ?? []).length, 0),
+        applications: fx.requisitions.reduce((n, r) => n + (r.applicants ?? []).length, 0) + 1,
         workforce_observations: fx.observations.length,
         workforce_review_cases: fx.employees.filter((p) => p.role === "employee" || p.role === "manager").length,
       },

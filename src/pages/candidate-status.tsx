@@ -4,7 +4,6 @@ import { toast } from "sonner";
 import { ArrowLeft, CheckCircle2, ClipboardList, ExternalLink, Loader2, Lock, Search } from "lucide-react";
 import { ApiError, fetchCandidateStatus, type CandidateStatusResult } from "@/lib/api";
 import { DEMO_CANDIDATE_CODE } from "@/lib/demo-accounts";
-import { forbiddenIncludes } from "@/lib/security";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -12,7 +11,6 @@ type ViewState =
   | { kind: "idle" }
   | { kind: "loading" }
   | { kind: "success"; data: CandidateStatusResult }
-  | { kind: "forbidden"; fields: string[]; message: string }
   | { kind: "error"; message: string };
 
 const STAGE_BADGE: Record<string, string> = {
@@ -36,25 +34,18 @@ export default function CandidateStatus() {
   const [code, setCode] = useState(searchParams.get("code") ?? DEMO_CANDIDATE_CODE);
   const [view, setView] = useState<ViewState>({ kind: "idle" });
 
-  const check = async (include?: string[]) => {
+  const check = async () => {
     if (!code.trim()) {
       toast.error("Enter your application code.");
       return;
     }
     setView({ kind: "loading" });
     try {
-      const data = await fetchCandidateStatus(code.trim(), include);
+      const data = await fetchCandidateStatus(code.trim());
       setView({ kind: "success", data });
     } catch (err) {
-      if (err instanceof ApiError) {
-        if (err.code === "FORBIDDEN" || err.code === "FORBIDDEN_FIELD" || /scores, rubrics|not available to candidates/i.test(err.message)) {
-          setView({ kind: "forbidden", fields: forbiddenIncludes(include), message: err.message });
-          return;
-        }
-        setView({ kind: "error", message: err.message });
-        return;
-      }
-      setView({ kind: "error", message: "Unexpected error" });
+      const msg = err instanceof ApiError ? err.message : "Unexpected error";
+      setView({ kind: "error", message: msg });
     }
   };
 
@@ -212,26 +203,6 @@ export default function CandidateStatus() {
                   )}
                 </div>
               </div>
-
-              <Button
-                variant="outline"
-                size="xl"
-                onClick={() => void check(["score", "rubric", "notes"])}
-              >
-                <Lock className="h-5 w-5" /> Request full evaluation (score / rubric / notes)
-              </Button>
-            </div>
-          )}
-
-          {view.kind === "forbidden" && (
-            <div className="mt-6 rounded-lg bg-destructive p-6 text-white">
-              <p className="flex items-center gap-2 text-base font-bold">
-                <Lock className="h-5 w-5" /> 403 — FORBIDDEN_FIELD
-              </p>
-              <p className="mt-2 text-sm leading-relaxed text-white/90">{view.message}</p>
-              <p className="mt-3 rounded-md bg-white/15 px-3 py-2 text-xs font-mono text-white/90">
-                requested: {view.fields.length > 0 ? view.fields.join(", ") : "protected fields"}
-              </p>
             </div>
           )}
 

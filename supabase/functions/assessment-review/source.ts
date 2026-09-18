@@ -3,8 +3,10 @@ import { computeFit } from "../_shared/skill-graph-engine.ts";
 import { loadAssertions, resolveSkillClaims, resolveSkillId } from "../_shared/evidence.ts";
 import {
   answerFor,
+  answersBlob,
   isJudgmentValue,
   normalizeJudgment,
+  questionsForCompetency,
   quoteExists,
   type JudgmentItem,
 } from "../_shared/assessment.ts";
@@ -118,6 +120,7 @@ Deno.serve(async (req) => {
   const inputByComp = new Map((body.judgments ?? []).map((j) => [j.competency.trim().toLowerCase(), j]));
   const reviewedJudgments: (JudgmentItem & { reason?: string })[] = [];
   const validationErrors: string[] = [];
+  const aiByComp = new Map((result.ai?.judgments ?? []).map((j) => [j.competency.trim().toLowerCase(), j]));
 
   for (let i = 0; i < rubrics.length; i++) {
     const rubric = rubrics[i];
@@ -126,6 +129,7 @@ Deno.serve(async (req) => {
       validationErrors.push(`No review judgment provided for competency "${rubric.competency}".`);
       continue;
     }
+    const ai = aiByComp.get(rubric.competency.toLowerCase());
     const judgment = normalizeJudgment(input.judgment);
     if (judgment === "NOT_ASSESSED" || judgment === "INSUFFICIENT_EVIDENCE") {
       reviewedJudgments.push({
@@ -135,6 +139,8 @@ Deno.serve(async (req) => {
         anchor_ref: "",
         uncertainty: 0,
         suggested_follow_up: "",
+        dimensions: ai?.dimensions,
+        review_required: false,
         reason: input.reason,
       });
       continue;
@@ -144,8 +150,16 @@ Deno.serve(async (req) => {
     if (quotes.length === 0) {
       validationErrors.push(`Provide at least one quoted passage from the candidate's answer for "${rubric.competency}".`);
     } else {
-      const question = questions[i];
-      const blob = question ? answerFor(answers, question.key) : "";
+      // Quote provenance follows the Q→criteria mapping (a competency may be
+      // evidenced by more than one question), plus any follow-up round that
+      // targeted this competency's unresolved evidence.
+      const keys = questionsForCompetency(questions, rubric.competency, i);
+      const round2Keys = (session.follow_ups ?? [])
+        .filter((f: { source?: string }) => String(f.source ?? "").toLowerCase() === rubric.competency.toLowerCase())
+        .map((f: { key: string }) => f.key);
+      const blob = [...keys, ...round2Keys].length > 0
+        ? [...keys, ...round2Keys].map((k) => answerFor(answers, k)).join("\n")
+        : answersBlob(answers);
       for (const q of quotes) {
         if (!quoteExists(q, blob)) validationErrors.push(`Quote not found in the answer for "${rubric.competency}": "${q.slice(0, 80)}"`);
       }
@@ -160,6 +174,8 @@ Deno.serve(async (req) => {
       anchor_ref: judgment,
       uncertainty: 0,
       suggested_follow_up: "",
+      dimensions: ai?.dimensions,
+      review_required: false,
       reason: input.reason,
     });
   }
@@ -177,10 +193,22 @@ Deno.serve(async (req) => {
 
   // --- Persist the human determination (preserving the AI suggestion) --------
   const now = new Date().toISOString();
+  const overrides = reviewedJudgments
+    .filter((j) => {
+      const ai = aiByComp.get(j.competency.toLowerCase());
+      return ai && ai.judgment !== j.judgment;
+    })
+    .map((j) => ({
+      competency: j.competency,
+      from: aiByComp.get(j.competency.toLowerCase())?.judgment ?? null,
+      to: j.judgment,
+      reason: (j.reason ?? "").trim() || (body.reason ?? "").trim(),
+    }));
   const reviewed = {
     determination,
     judgments: reviewedJudgments,
     reason: (body.reason ?? "").trim(),
+    overrides,
     by: caller.email ?? uid,
     by_twin_id: caller.id,
     at: now,
@@ -188,7 +216,7 @@ Deno.serve(async (req) => {
   const { error: updErr } = await supabase
     .from("assessments")
     .update({
-      result: { ...result, reviewed },
+      result: { ...result, reviewed, review_required: false },
       reviewed_by: caller.id,
       reviewed_at: now,
     })
