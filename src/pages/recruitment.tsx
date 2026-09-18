@@ -98,7 +98,8 @@ export default function Recruitment() {
   const qc = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const [recoveredJob, setRecoveredJob] = useState<{ id: string; status: string; task: string; error_message?: string | null } | null>(null);
-  const [selected, setSelected] = useState<string>("");
+  // ?req=<id> deep-links from the "My work" feed to a specific requisition.
+  const [selected, setSelected] = useState<string>(searchParams.get("req") ?? "");
   const [creating, setCreating] = useState(false);
 
   // Refresh recovery: re-read a completed generation job from the URL.

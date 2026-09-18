@@ -1,5 +1,6 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { Link, useSearchParams } from "react-router-dom";
 import {
   Activity,
   AlertTriangle,
@@ -18,7 +19,6 @@ import {
   UserCheck,
   Users,
 } from "lucide-react";
-import { Link } from "react-router-dom";
 import { AppShell } from "@/components/app-shell";
 import { useAuth } from "@/contexts/auth-context";
 import { can } from "@/lib/rbac";
@@ -133,9 +133,20 @@ export default function WorkforceReview() {
   }, [cases, members.data]);
 
   // Employees review only their own case; managers/HR get the scoped list.
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // ?twin=<id> deep-links to a specific case from the "My work" feed.
+  const [searchParams] = useSearchParams();
+  const urlTwin = searchParams.get("twin");
+  const caseListRef = useRef<HTMLUListElement>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(urlTwin ?? null);
   const [perfForce, setPerfForce] = useState(false);
   const activeId = isEmployee ? (me?.id ?? null) : selectedId ?? cases[0]?.twin_id ?? null;
+
+  // Deep link: bring the referenced case into view when the list has loaded.
+  useEffect(() => {
+    if (!urlTwin) return;
+    const el = caseListRef.current?.querySelector(`[data-case="${urlTwin}"]`);
+    el?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [urlTwin, cases.length]);
 
   const caseQuery = useQuery({
     queryKey: ["review-case", me?.id ?? "anon", activeId],
@@ -234,16 +245,16 @@ export default function WorkforceReview() {
                 {dash.data?.scope === "team" ? "Your team" : "Org-wide"} · {filteredCases.length} of {cases.length} employees
               </span>
             </div>
-            <ul className="max-h-72 divide-y divide-border overflow-y-auto">
+            <ul ref={caseListRef} className="max-h-72 divide-y divide-border overflow-y-auto">
               {filteredCases.map((c) => {
                 const bucket = riskBucket(c.index);
                 const gaugeCls = bucket === "high" ? "bg-destructive" : bucket === "medium" ? "bg-accent" : "bg-secondary";
                 const dept = members.data?.get(c.twin_id) ?? "—";
                 return (
-                  <li key={c.twin_id}>
+                  <li key={c.twin_id} data-case={c.twin_id}>
                     <button
                       onClick={() => setSelectedId(c.twin_id)}
-                      className={`flex w-full items-center justify-between gap-3 px-5 py-3 text-left transition-colors hover:bg-muted ${activeId === c.twin_id ? "bg-muted" : ""}`}
+                      className={`flex w-full items-center justify-between gap-3 px-5 py-3 text-left transition-colors hover:bg-muted ${activeId === c.twin_id ? "bg-primary/10 ring-1 ring-inset ring-primary/30" : ""}`}
                     >
                       <div className="min-w-0">
                         <p className="truncate text-sm font-bold text-foreground">{c.name}</p>

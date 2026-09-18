@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import {
   AlertTriangle,
@@ -446,7 +447,9 @@ function TaskCard({
 export default function Onboarding() {
   const { role, twin, user } = useAuth();
   const qc = useQueryClient();
-  const [selected, setSelected] = useState<string>("");
+  const [searchParams] = useSearchParams();
+  const urlTwin = searchParams.get("twin");
+  const [selected, setSelected] = useState<string>(urlTwin ?? "");
   const [busy, setBusy] = useState<string | null>(null);
   const [govOpen, setGovOpen] = useState(false);
   const dagRef = useRef<HTMLDivElement>(null);
@@ -507,8 +510,21 @@ export default function Onboarding() {
   // not explicitly picked someone, fall back to that default.
   useEffect(() => {
     if (!canView) return;
-    if (role === "employee" || role === "it_security") {
+    // Deep link: ?twin=<id> selects a specific employee and counts as a pick.
+    if (urlTwin) {
+      if (selected !== urlTwin) setSelected(urlTwin);
+      userPickedRef.current = true;
+      return;
+    }
+    if (role === "employee") {
       if (twin && !selected) setSelected(twin.id);
+      return;
+    }
+    if (role === "it_security") {
+      // Service view: land on an employee WITH an active plan (provisioning
+      // work), never on the IT twin's own (nonexistent) journey.
+      const fallback = planOwners.data?.find((id) => (employees.data ?? []).some((e) => e.id === id)) ?? null;
+      if (fallback && !selected) setSelected(fallback);
       return;
     }
     if (!["manager", "hr_executive", "hr_partner"].includes(role ?? "")) return;
@@ -529,7 +545,7 @@ export default function Onboarding() {
     ) {
       setSelected(fallback);
     }
-  }, [role, twin, selected, canView, user, employees.data, planOwners.data, plan.data]);
+  }, [role, twin, selected, canView, user, urlTwin, employees.data, planOwners.data, plan.data]);
 
   const tasks = useQuery({
     queryKey: ["plan-tasks", user?.id ?? "anon", plan.data?.id ?? "none"],
@@ -653,7 +669,10 @@ export default function Onboarding() {
   const isOwner = selected === twin?.id;
   const canApprove =
     role === "manager" || role === "hr_executive";
-  const canRegen = role === "manager" || role === "hr_executive" || role === "it_security";
+  // Regenerating a plan restructures it from the approved role relationship —
+  // an HR/manager decision, never an IT service action. IT executes and
+  // resolves the service-owned tasks instead.
+  const canRegen = role === "manager" || role === "hr_executive";
 
   if (!canView) {
     return (
@@ -710,7 +729,7 @@ export default function Onboarding() {
                 </option>
               ))}
             </select>
-            {selected && !planData && (
+            {selected && !planData && role !== "it_security" && (
               <Button onClick={() => void build(false)} disabled={busy === "gen"}>
                 {busy === "gen" ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
                 Build plan from approved role
@@ -976,7 +995,17 @@ export default function Onboarding() {
           </div>
         )}
 
-        {selected && !planData && role !== "employee" && (
+        {selected && !planData && role === "it_security" && (
+          <div className="mt-8 flex flex-col items-center gap-3 rounded-lg bg-muted px-6 py-16 text-center">
+            <KeyRound className="h-8 w-8 text-muted-foreground" strokeWidth={2} />
+            <p className="text-sm text-muted-foreground">
+              No adaptive plan yet for this employee. Plans are created from an approved role — IT
+              executes the provisioning and access tasks once a plan exists.
+            </p>
+          </div>
+        )}
+
+        {selected && !planData && role !== "employee" && role !== "it_security" && (
           <div className="mt-8 flex flex-col items-center gap-3 rounded-lg bg-muted px-6 py-16 text-center">
             <XCircle className="h-8 w-8 text-muted-foreground" strokeWidth={2} />
             <p className="text-sm text-muted-foreground">

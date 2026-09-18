@@ -14,23 +14,25 @@ import {
   ShieldCheck,
   UserCheck,
   UserCog,
-  Users,
   XCircle,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/auth-context";
 import { AppShell } from "@/components/app-shell";
 import { ExecutiveDashboard } from "@/components/executive-dashboard";
+import { MyWorkFeed } from "@/components/my-work-feed";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { can, ROLE_LABEL, type Role } from "@/lib/rbac";
-import { actionTaskUpdate, type ActionTaskRow, type Twin } from "@/lib/api";
+import { actionTaskUpdate, fetchMyWork, type ActionTaskRow, type Twin } from "@/lib/api";
 import { decode, planTaskViewSchema, planViewSchema, requisitionRowSchema, type RequisitionRow } from "@/lib/contracts";
 import { nextActionTask, derivePlanCounts, TASK_STATE_META } from "@/lib/onboarding-progress";
 
 // My Action Tasks: tasks assigned to me from dispatched recommendations
 // (Phase 11). Owners act on their own tasks with evidence + rationale.
+// Empty state renders only after a SUCCESSFUL empty query — never under
+// loading, never under populated tasks, and never when the query failed.
 const MY_TASK_ACTIONS: Record<string, { action: string; label: string; variant?: "outline" | "secondary" | "default" }[]> = {
   open: [{ action: "start", label: "Start" }],
   in_progress: [
@@ -101,10 +103,24 @@ function MyActionTasks({ twinId }: { twinId: string }) {
     }
   };
 
+  if (tasks.isLoading) {
+    return <div className="h-20 animate-pulse rounded-lg bg-muted" role="status" aria-label="Loading action tasks" />;
+  }
+  if (tasks.isError) {
+    return (
+      <div className="flex items-center gap-3 rounded-lg bg-destructive/10 px-4 py-3 text-sm text-destructive">
+        <ShieldAlert className="h-5 w-5 shrink-0" />
+        <span className="flex-1">Action tasks are unavailable right now.</span>
+        <Button size="sm" variant="outline" onClick={() => void qc.invalidateQueries({ queryKey: ["my-tasks", user?.id ?? "anon", twinId] })}>
+          Retry
+        </Button>
+      </div>
+    );
+  }
   if (tasks.data && tasks.data.length === 0) return null;
 
   return (
-    <div className="rounded-lg bg-white p-6">
+    <div id="action-tasks" className="scroll-mt-24 rounded-lg bg-white p-6 shadow-card">
       <h2 className="flex items-center gap-2 text-lg font-extrabold tracking-tight text-foreground">
         <UserCheck className="h-5 w-5 text-primary" strokeWidth={2.5} /> My action tasks
       </h2>
@@ -174,22 +190,6 @@ function MyActionTasks({ twinId }: { twinId: string }) {
       </Dialog>
     </div>
   );
-}
-
-interface RecRow {
-  id: string;
-  category: string;
-  urgency: string;
-  status: string;
-  required_signoff_role: string | null;
-  proposed_action: { title?: string } | null;
-}
-
-function signalValue(twin: Twin, type: string): number | null {
-  const s = (twin.signals ?? []).find((x: { type?: string }) => x.type === type) as
-    | { value?: number }
-    | undefined;
-  return typeof s?.value === "number" ? s.value : null;
 }
 
 function StatBlock({
@@ -329,6 +329,14 @@ export default function RoleHome() {
     },
   });
 
+  // Unified "My work" feed — server-authorized, per-role assigned work.
+  const myWork = useQuery({
+    queryKey: ["my-work", user?.id ?? "anon"],
+    enabled: !!user,
+    queryFn: fetchMyWork,
+    retry: false,
+  });
+
   // Employee home onboarding facts read the SAME canonical adaptive plan the
   // onboarding center reads (onboarding_plans + onboarding_tasks) — never the
   // legacy journey. Counts therefore derive from identical rows and rules.
@@ -362,8 +370,6 @@ export default function RoleHome() {
         .order("topological_level", { ascending: true });
       if (error) throw error;
       return (data ?? []).map((t) => {
-        // onboarding_tasks has no blocked_reasons column; the contract needs
-        // it, so normalize like the onboarding center does.
         const row = { ...t, blocked_reasons: (t as { blocked_reasons?: unknown }).blocked_reasons ?? [] };
         return decode(planTaskViewSchema, row, "plan-task-row");
       });
@@ -387,6 +393,8 @@ export default function RoleHome() {
     },
   });
 
+  // Recruiter pipeline — applicants are SORTED by match score (highest first)
+  // and the label says so; no unsorted list is ever called a ranking.
   const recruiterData = useQuery({
     queryKey: ["recruiter", twin?.id ?? "anon"],
     enabled: role === "recruiter",
@@ -397,7 +405,9 @@ export default function RoleHome() {
       ]);
       const reqs = (reqsRes.data ?? []).map((r) => decode(requisitionRowSchema, r, "requisition-row"));
       const candidates = (candidatesRes.data ?? []) as { id: string; name: string }[];
-      const openReqs = reqs.filter((r) => r.status === "open");
+      const openReqs = reqs
+        .filter((r) => r.status === "open")
+        .map((r) => ({ ...r, applicants: [...(r.applicants ?? [])].sort((a, b) => (b.match_score ?? 0) - (a.match_score ?? 0)) }));
       const applicants = openReqs.flatMap((r) => r.applicants ?? []);
       const finalRound = applicants.filter((a) => a.stage === "final_round").length;
       const scored = applicants.filter((a) => typeof a.match_score === "number");
@@ -435,14 +445,32 @@ export default function RoleHome() {
           </p>
         </div>
 
+        {/* Unified assigned-work feed — what needs attention / can do / next */}
+        <section aria-label="My work" className="mt-8">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">My work</h2>
+            {myWork.data && myWork.data.items.length > 0 && (
+              <span className="text-xs text-muted-foreground">Updated {new Date(myWork.data.generated_at).toLocaleTimeString()}</span>
+            )}
+          </div>
+          <div className="mt-3">
+            <MyWorkFeed
+              feed={myWork.data ?? null}
+              loading={myWork.isLoading}
+              error={myWork.isError ? (myWork.error as Error) : null}
+              onRetry={() => void myWork.refetch()}
+            />
+          </div>
+        </section>
+
         {["hr_executive", "hr_partner", "manager"].includes(role) ? (
-          <div className="mt-8">
+          <div className="mt-10">
             <ExecutiveDashboard />
           </div>
         ) : (
           <>
             {/* Role-scoped stats */}
-            <div className="mt-8 grid grid-cols-2 gap-4 lg:grid-cols-4">
+            <div className="mt-10 grid grid-cols-2 gap-4 lg:grid-cols-4">
               {role === "recruiter" && (
                 <>
                   <StatBlock
@@ -477,16 +505,16 @@ export default function RoleHome() {
                   />
                   <StatBlock label="Verified skills" value={twin.verified_skills.length} tone="dark" definition="Skills with high/medium-rigor evidence on your profile." />
                   <StatBlock
-                    label="Workforce review index"
-                    value={signalValue(twin, "workforce_review_index") !== null ? `${signalValue(twin, "workforce_review_index")}/100` : null}
+                    label="Development progress"
+                    value={readiness ? `${readiness.satisfied}/${readiness.total}` : null}
                     tone="subtle"
-                    definition="Interpretable decision support — not a probability of leaving."
+                    definition="Satisfied onboarding tasks — learning and verification live in your onboarding center."
                   />
                 </>
               )}
             </div>
 
-            {/* Phase 11: task owners act on their assigned tasks here */}
+            {/* Task owners act on their assigned action tasks here */}
             {(role === "employee" || role === "recruiter") && (
               <div className="mt-8">
                 <MyActionTasks twinId={twin.id} />
@@ -496,10 +524,10 @@ export default function RoleHome() {
             {/* Main panels */}
             <div className="mt-10 grid grid-cols-1 gap-6 lg:grid-cols-3">
               {role === "recruiter" && (
-                <div className="rounded-lg bg-white p-6 lg:col-span-2">
+                <div className="rounded-lg bg-white p-6 shadow-card lg:col-span-2">
                   <h2 className="text-lg font-extrabold text-foreground">Recruitment pipeline</h2>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    Candidates ranked by the Skill Intelligence Graph match score, on open requisitions.
+                    Applicants on open requisitions, sorted by Skill Graph match score (highest first).
                   </p>
                   {recruiterData.data && recruiterData.data.openReqs.length > 0 ? (
                     <div className="mt-4 flex flex-col gap-5">
@@ -519,7 +547,7 @@ export default function RoleHome() {
                                         ? "bg-secondary text-white"
                                         : a.stage === "technical_interview"
                                           ? "bg-primary text-white"
-                                          : "bg-accent text-foreground"
+                                          : "bg-muted text-foreground"
                                     }`}
                                   >
                                     {a.stage.replace(/_/g, " ")}
@@ -553,7 +581,7 @@ export default function RoleHome() {
               )}
 
               {role === "employee" && (
-                <div className="rounded-lg bg-white p-6 lg:col-span-2">
+                <div className="rounded-lg bg-white p-6 shadow-card lg:col-span-2">
                   <h2 className="text-lg font-extrabold text-foreground">Your onboarding journey</h2>
                   {readiness && journeyTasks.length > 0 ? (
                     <div className="mt-4">
@@ -599,47 +627,26 @@ export default function RoleHome() {
                 </div>
               )}
 
-              <div className="flex flex-col gap-3">
-                <div className="rounded-lg bg-foreground p-6 text-white">
-                  <Activity className="h-6 w-6 text-secondary" strokeWidth={2.5} />
-                  <h3 className="mt-3 text-base font-bold">Why this screen matters</h3>
-                  <p className="mt-2 text-sm leading-relaxed text-white/80">
-                    Every number here is read live through role-based access control — this is the
-                    enforcement, not a mock.
+              {role === "it_security" && (
+                <div className="rounded-lg bg-muted p-6">
+                  <ShieldCheck className="h-6 w-6 text-primary" strokeWidth={2.5} />
+                  <h3 className="mt-3 text-base font-bold text-foreground">Provisioning service</h3>
+                  <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+                    Laptop, SSO, and access tasks across authorized new hires appear in your work feed —
+                    complete them with evidence in the onboarding center.
                   </p>
                 </div>
-                <div className="flex items-center gap-3 rounded-lg bg-muted p-6">
-                  <Users className="h-8 w-8 text-primary" strokeWidth={2.5} />
-                  <p className="text-sm leading-relaxed text-foreground">
-                    The Workforce Review Index is interpretable decision support (0–100) — it flags
-                    when a review conversation is warranted, never a probability of leaving.
-                  </p>
-                </div>
-              </div>
+              )}
             </div>
           </>
         )}
 
-        {/* Phase 27: administrators get the governance panel; everyone else sees
-            their live action-tasks feed — no duplicate module shortcuts. */}
-        <div className="mt-14">
-          {role === "hr_executive" ? (
+        {/* Administrators: governance console stays available below the work feed. */}
+        {role === "hr_executive" && (
+          <div className="mt-12">
             <AdminGovernancePanel />
-          ) : (
-            <div>
-              <h2 className="text-xl font-extrabold tracking-tight text-foreground">Action tasks & review feed</h2>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Tasks assigned to you from approved recommendations appear here — complete them with evidence and a rationale.
-              </p>
-              <div className="mt-6">
-                <MyActionTasks twinId={twin.id} />
-                <p className="rounded-lg bg-muted p-4 text-sm text-muted-foreground">
-                  No assigned action tasks right now — approved recommendations dispatch tasks here automatically.
-                </p>
-              </div>
-            </div>
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </AppShell>
   );

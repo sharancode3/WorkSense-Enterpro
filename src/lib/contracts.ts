@@ -11,6 +11,7 @@ import type {
   HealthView,
   InterviewKit,
   MeResult,
+  MyWorkResult,
   PlanTaskView,
   PlanView,
   RecommendationRow,
@@ -306,3 +307,44 @@ export const staffingComparisonSchema = z.object({
   }),
   options: z.array(staffingOptionSchema),
   planning_note: z.string()}) as z.ZodType<StaffingComparison>;
+
+// ---------------------------------------------------------------------------
+// Unified "My work" feed contract (Phase 3).
+// ---------------------------------------------------------------------------
+
+const workItemSchema = z.object({
+  id: z.string(),
+  type: z.enum([
+    "onboarding_task",
+    "provisioning_request",
+    "recommendation_task",
+    "approval_request",
+    "review_case",
+    "candidate_next_step",
+    "assessment_session",
+    "requisition_attention",
+    "data_quality_alert",
+    "policy_escalation",
+  ]),
+  title: z.string(),
+  subject: z.string(),
+  subject_id: z.string(),
+  owner: z.string(),
+  owner_label: z.string(),
+  authorized_actions: z.array(z.string()),
+  group: z.enum(["attention", "ready", "waiting"]),
+  status_label: z.string(),
+  due_at: z.string().nullable(),
+  priority_reason: z.string().nullable(),
+  blocker: z.string().nullable(),
+  source: z.object({ workflow: z.string(), version: z.number().nullable(), ref_id: z.string() }),
+  deep_link: z.string(),
+});
+
+export const myWorkSchema = z.object({
+  ok: z.literal(true),
+  role: z.string(),
+  summary: z.object({ attention: z.number(), ready: z.number(), waiting: z.number() }),
+  items: z.array(workItemSchema),
+  generated_at: z.string(),
+}) as z.ZodType<MyWorkResult>;

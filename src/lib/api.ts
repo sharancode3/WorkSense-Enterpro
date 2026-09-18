@@ -5,6 +5,7 @@ import {
   healthViewSchema,
   interviewKitSchema,
   meResultSchema,
+  myWorkSchema,
   staffingComparisonSchema,
 } from "./contracts";
 import type { z } from "zod";
@@ -732,6 +733,50 @@ export interface HealthView {
 export const fetchModelJob = (jobId: string) => invoke<{ ok: true; job: ModelJobView }>("model-job", { job_id: jobId });
 
 export const fetchHealth = () => invoke<HealthView>("health", {}, healthViewSchema, "health");
+
+// ---- Phase 3: unified "My work" feed ----
+
+export type WorkItemType =
+  | "onboarding_task"
+  | "provisioning_request"
+  | "recommendation_task"
+  | "approval_request"
+  | "review_case"
+  | "candidate_next_step"
+  | "assessment_session"
+  | "requisition_attention"
+  | "data_quality_alert"
+  | "policy_escalation";
+
+export type WorkGroup = "attention" | "ready" | "waiting";
+
+export interface WorkItem {
+  id: string;
+  type: WorkItemType;
+  title: string;
+  subject: string;
+  subject_id: string;
+  owner: string;
+  owner_label: string;
+  authorized_actions: string[];
+  group: WorkGroup;
+  status_label: string;
+  due_at: string | null;
+  priority_reason: string | null;
+  blocker: string | null;
+  source: { workflow: string; version: number | null; ref_id: string };
+  deep_link: string;
+}
+
+export interface MyWorkResult {
+  ok: true;
+  role: string;
+  summary: { attention: number; ready: number; waiting: number };
+  items: WorkItem[];
+  generated_at: string;
+}
+
+export const fetchMyWork = () => invoke<MyWorkResult>("my-work", {}, myWorkSchema, "my-work");
 
 // ---- Phase 4: file-based resume ingestion & evidence review ----
 

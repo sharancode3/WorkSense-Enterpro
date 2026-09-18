@@ -26,6 +26,7 @@ const onboardingV2 = stripAllImports(read("supabase/functions/_shared/onboarding
 const qwen = stripAllImports(read("supabase/functions/_shared/qwen.ts"));
 const policy = stripAllImports(read("supabase/functions/_shared/policy-retrieval.ts"));
 const reviewIndex = stripAllImports(read("supabase/functions/_shared/workforce-review-index.ts"));
+const myWorkEngine = stripAllImports(read("supabase/functions/_shared/my-work-engine.ts"));
 const performance = stripAllImports(read("supabase/functions/_shared/performance-intelligence.ts"));
 const recEngine = stripAllImports(read("supabase/functions/_shared/recommendation-engine.ts"));
 const workflow = stripAllImports(read("supabase/functions/_shared/workflow-engine.ts"));
@@ -44,7 +45,7 @@ const leave = stripAllImports(read("supabase/functions/_shared/leave-calc.ts"));
 const llmcache = stripAllImports(read("supabase/functions/_shared/llm-cache.ts"));
 const policyseed = stripAllImports(read("supabase/functions/_shared/policy-seed.ts"));
 
-const SHARED = { engine, onboarding, onboardingV2, qwen, policy, reviewIndex, performance, recEngine, workflow, jobs, validate, evidence, resume, generated, journey, fixtures, seed, stageEngine, assessment, pcontext, leave, policyseed, llmcache };
+const SHARED = { engine, onboarding, onboardingV2, qwen, policy, reviewIndex, performance, recEngine, workflow, jobs, validate, evidence, resume, generated, journey, fixtures, seed, stageEngine, assessment, pcontext, leave, policyseed, llmcache, myWorkEngine };
 
 // Function -> shared dependencies (in import order) it needs inlined.
 const FNS = {
@@ -70,6 +71,7 @@ const FNS = {
   "action-task-update": ["workflow"],
   "recommendation-scan": ["engine", "recEngine", "reviewIndex", "workflow", "qwen", "validate"],
   "dashboard": ["engine", "reviewIndex"],
+  "my-work": ["reviewIndex", "myWorkEngine"],
   "staffing-comparison": ["engine"],
   "admin-access": [],
   "model-job": ["jobs"],
