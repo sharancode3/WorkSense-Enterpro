@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -76,6 +77,7 @@ const ACTION_LABEL: Record<string, string> = {
 export default function AdminAccess() {
   const { role, twin } = useAuth();
   const qc = useQueryClient();
+  const [searchParams] = useSearchParams();
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -97,6 +99,10 @@ export default function AdminAccess() {
   const [busySuspend, setBusySuspend] = useState(false);
 
   const [auditOpen, setAuditOpen] = useState(false);
+  // Deep link from the governance panel: /admin/access?tab=audit
+  useEffect(() => {
+    if (searchParams.get("tab") === "audit") setAuditOpen(true);
+  }, [searchParams]);
   const [inviteToken, setInviteToken] = useState<string | null>(null);
   const [invitedEmail, setInvitedEmail] = useState<string | null>(null);
 

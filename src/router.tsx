@@ -11,6 +11,8 @@ import RecommendationHub from "./pages/recommendation-hub";
 import WorkforceReview from "./pages/workforce-review";
 import StaffingPlanner from "./pages/staffing";
 import AdminAccess from "./pages/admin-access";
+import SystemStatus from "./pages/status";
+import DataQuality from "./pages/data-quality";
 import NotFound from "./pages/NotFound";
 import { ProtectedRoute } from "./components/protected-route";
 
@@ -113,6 +115,24 @@ export const routers = [
     element: (
       <ProtectedRoute>
         <AdminAccess />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: "/status",
+    name: "system-status",
+    element: (
+      <ProtectedRoute>
+        <SystemStatus />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: "/workforce/data-quality",
+    name: "data-quality",
+    element: (
+      <ProtectedRoute>
+        <DataQuality />
       </ProtectedRoute>
     ),
   },
