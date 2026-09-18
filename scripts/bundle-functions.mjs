@@ -41,15 +41,16 @@ const stageEngine = stripAllImports(read("supabase/functions/_shared/stage-engin
 const assessment = stripAllImports(read("supabase/functions/_shared/assessment.ts"));
 const pcontext = stripAllImports(read("supabase/functions/_shared/policy-context.ts"));
 const leave = stripAllImports(read("supabase/functions/_shared/leave-calc.ts"));
+const llmcache = stripAllImports(read("supabase/functions/_shared/llm-cache.ts"));
 const policyseed = stripAllImports(read("supabase/functions/_shared/policy-seed.ts"));
 
-const SHARED = { engine, onboarding, onboardingV2, qwen, policy, reviewIndex, performance, recEngine, workflow, jobs, validate, evidence, resume, generated, journey, fixtures, seed, stageEngine, assessment, pcontext, leave, policyseed };
+const SHARED = { engine, onboarding, onboardingV2, qwen, policy, reviewIndex, performance, recEngine, workflow, jobs, validate, evidence, resume, generated, journey, fixtures, seed, stageEngine, assessment, pcontext, leave, policyseed, llmcache };
 
 // Function -> shared dependencies (in import order) it needs inlined.
 const FNS = {
   "reset-demo": ["generated", "journey", "seed", "fixtures", "assessment", "policyseed", "onboardingV2", "reviewIndex"],
   "skill-match": ["engine", "evidence"],
-  "extract-resume": ["engine", "qwen", "jobs", "validate", "evidence"],
+  "extract-resume": ["engine", "qwen", "jobs", "validate", "evidence", "llmcache"],
   "rubric": ["qwen", "validate"],
   "interview-kit": ["engine", "qwen", "jobs", "validate"],
   "evaluate-interview": ["qwen", "validate"],
@@ -58,7 +59,7 @@ const FNS = {
   "onboarding-plan": ["engine", "onboardingV2"],
   "onboarding-approve": [],
   "onboarding-task": ["onboardingV2"],
-  "policy-qa": ["qwen", "policy", "validate", "pcontext", "leave", "policyseed"],
+  "policy-qa": ["qwen", "policy", "validate", "pcontext", "leave", "policyseed", "llmcache"],
   "escalate": [],
   "workforce-signal": ["reviewIndex"],
   "workforce-review-index": ["reviewIndex"],
@@ -70,6 +71,7 @@ const FNS = {
   "recommendation-scan": ["engine", "recEngine", "reviewIndex", "workflow", "qwen", "validate"],
   "dashboard": ["engine", "reviewIndex"],
   "staffing-comparison": ["engine"],
+  "admin-access": [],
   "model-job": ["jobs"],
   "health": ["qwen"],
   "resume-import": ["qwen", "jobs", "validate", "resume"],

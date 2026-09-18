@@ -1099,7 +1099,44 @@ export async function resolveSkillId(supabase, orgId: string, skillName: string)
 }
 
 
+// ---------------------------------------------------------------------------
+// Phase 15 — LLM response cache (API credit conservation).
+// Deterministic key = (org, task, input_hash, model). Functions check the
+// cache before calling the model and store validated outputs after a
+// successful generation. Staleness trade-off: cached policy answers assume
+// the policy corpus is unchanged — acceptable for the demo corpus, documented.
+// ---------------------------------------------------------------------------
+
+/** djb2-style deterministic hash (unique name to avoid flat-bundle collisions). */
+export function cacheKeyHash(input: string): string {
+  let h = 5381;
+  for (let i = 0; i < input.length; i++) {
+    h = ((h * 33) ^ input.charCodeAt(i)) >>> 0;
+  }
+  return h.toString(36);
+}
+
+export async function cacheGet(supabase, orgId: string, task: string, inputHash: string, model: string): Promise<unknown | null> {
+  const { data } = await supabase
+    .from("llm_cache")
+    .select("output")
+    .eq("org_id", orgId)
+    .eq("task", task)
+    .eq("input_hash", inputHash)
+    .eq("model", model)
+    .maybeSingle();
+  return (data?.output as unknown) ?? null;
+}
+
+export async function cacheSet(supabase, orgId: string, task: string, inputHash: string, model: string, output: unknown): Promise<void> {
+  await supabase
+    .from("llm_cache")
+    .upsert({ org_id: orgId, task, input_hash: inputHash, model, output }, { onConflict: "org_id,task,input_hash" });
+}
+
+
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
+
 
 
 
@@ -1209,7 +1246,10 @@ Deno.serve(async (req) => {
   const wrapped = wrapUntrusted(sanitized);
   const inputHash = hashInput(sanitized);
 
-  // Durable job lifecycle: dedup open duplicates -> queued -> running -> done.
+  // Phase 15: LLM response cache — a previously validated extraction for the
+  // same (org, task, input hash) skips the model call entirely (credit
+  // conservation). On a cache hit we still re-run the deterministic evidence
+  // writes and fit, so the snapshot stays consistent with the twin's records.
   const open = await findOpenJob(supabase, caller.org_id, caller.id, "resume_extraction", inputHash);
   if (open) {
     return json({ error: "CONFLICT", message: "A generation for this exact resume is already in progress.", job_id: open.id }, 409);
@@ -1221,20 +1261,24 @@ Deno.serve(async (req) => {
   await markJobRunning(supabase, job.id);
   const startedAt = Date.now();
 
-  let parsed: unknown;
-  try {
-    parsed = await callQwen({
-      json: true,
-      temperature: 0.1,
-      system: EXTRACTION_SYSTEM,
-      user: `Resume:\n${wrapped}`,
-      task: "resume_extraction",
-      timeoutMs: 120_000, // local 4B is slow on longer resumes; don't abort mid-generation
-    });
-  } catch (err) {
-    const code = err instanceof QwenError ? err.code : "INTERNAL";
-    await finishJob(supabase, job.id, { status: "failed", errorCode: code, errorMessage: err instanceof Error ? err.message : "unknown", latencyMs: Date.now() - startedAt });
-    return json({ error: code, message: err instanceof Error ? err.message : "unknown", job_id: job.id }, code === "MODEL_OUTPUT_INVALID" ? 422 : 503);
+  let fromCache = true;
+  let parsed: unknown = await cacheGet(supabase, caller.org_id, "resume_extraction", inputHash, QWEN_MODEL);
+  if (parsed == null) {
+    fromCache = false;
+    try {
+      parsed = await callQwen({
+        json: true,
+        temperature: 0.1,
+        system: EXTRACTION_SYSTEM,
+        user: `Resume:\n${wrapped}`,
+        task: "resume_extraction",
+        timeoutMs: 120_000, // local 4B is slow on longer resumes; don't abort mid-generation
+      });
+    } catch (err) {
+      const code = err instanceof QwenError ? err.code : "INTERNAL";
+      await finishJob(supabase, job.id, { status: "failed", errorCode: code, errorMessage: err instanceof Error ? err.message : "unknown", latencyMs: Date.now() - startedAt });
+      return json({ error: code, message: err instanceof Error ? err.message : "unknown", job_id: job.id }, code === "MODEL_OUTPUT_INVALID" ? 422 : 503);
+    }
   }
 
   // Normalize human-friendly tier words before schema validation. Track which
@@ -1397,7 +1441,11 @@ Deno.serve(async (req) => {
     tier_warnings: tierWarnings,
   };
 
-  await finishJob(supabase, job.id, { status: "succeeded", output: result, latencyMs: Date.now() - startedAt });
+  if (!fromCache) {
+    await cacheSet(supabase, caller.org_id, "resume_extraction", inputHash, QWEN_MODEL, parsed as Record<string, unknown>);
+  }
 
-  return json({ ok: true, job_id: job.id, status: "succeeded", ...result });
+  await finishJob(supabase, job.id, { status: "succeeded", output: result, latencyMs: Date.now() - startedAt, cache_hit: fromCache });
+
+  return json({ ok: true, job_id: job.id, status: "succeeded", from_cache: fromCache, ...result });
 });

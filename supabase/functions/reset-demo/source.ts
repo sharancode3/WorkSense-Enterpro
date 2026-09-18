@@ -109,6 +109,8 @@ async function tearDownDemo(supabase, authIds: Record<string, string>) {
   for (const orgId of orgs) {
     await supabase.from("action_tasks").delete().eq("org_id", orgId);
     await supabase.from("workflow_events").delete().eq("org_id", orgId);
+    await supabase.from("admin_actions").delete().eq("org_id", orgId);
+    await supabase.from("llm_cache").delete().eq("org_id", orgId);
     await supabase.from("workforce_observations").delete().eq("org_id", orgId);
     await supabase.from("performance_summaries").delete().eq("org_id", orgId);
     await supabase.from("workforce_review_cases").delete().eq("org_id", orgId);

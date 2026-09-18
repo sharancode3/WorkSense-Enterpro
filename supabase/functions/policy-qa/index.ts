@@ -1019,7 +1019,44 @@ export const TWIN_CONTEXT_OVERRIDES: Record<string, { work_location: string; wor
 export const US_PUBLIC_HOLIDAYS_2026 = ["2026-01-01", "2026-05-25", "2026-07-03", "2026-09-07", "2026-11-26", "2026-12-25", "2027-01-01"];
 
 
+// ---------------------------------------------------------------------------
+// Phase 15 — LLM response cache (API credit conservation).
+// Deterministic key = (org, task, input_hash, model). Functions check the
+// cache before calling the model and store validated outputs after a
+// successful generation. Staleness trade-off: cached policy answers assume
+// the policy corpus is unchanged — acceptable for the demo corpus, documented.
+// ---------------------------------------------------------------------------
+
+/** djb2-style deterministic hash (unique name to avoid flat-bundle collisions). */
+export function cacheKeyHash(input: string): string {
+  let h = 5381;
+  for (let i = 0; i < input.length; i++) {
+    h = ((h * 33) ^ input.charCodeAt(i)) >>> 0;
+  }
+  return h.toString(36);
+}
+
+export async function cacheGet(supabase, orgId: string, task: string, inputHash: string, model: string): Promise<unknown | null> {
+  const { data } = await supabase
+    .from("llm_cache")
+    .select("output")
+    .eq("org_id", orgId)
+    .eq("task", task)
+    .eq("input_hash", inputHash)
+    .eq("model", model)
+    .maybeSingle();
+  return (data?.output as unknown) ?? null;
+}
+
+export async function cacheSet(supabase, orgId: string, task: string, inputHash: string, model: string, output: unknown): Promise<void> {
+  await supabase
+    .from("llm_cache")
+    .upsert({ org_id: orgId, task, input_hash: inputHash, model, output }, { onConflict: "org_id,task,input_hash" });
+}
+
+
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
+
 
 
 
@@ -1377,23 +1414,35 @@ Deno.serve(async (req) => {
 
     let typed: { status?: string; answer?: string; citations?: { doc_code?: string; version?: number; section?: string; exact_quote?: string }[] } | null = null;
     let modelNote = "";
-    try {
-      typed = await attempt(false);
-      const { droppedCount } = validateCitations(typed.citations, fullRetrieval);
-      if (typed.status === "grounded_response" && droppedCount > 0) {
-        typed = await attempt(true);
-      }
-    } catch (err) {
-      if (err instanceof QwenError && err.code === "MODEL_OUTPUT_INVALID") {
-        // Repair once; if the repair also fails, abstain honestly.
-        try {
+
+    // Phase 15: LLM response cache — a repeated question with identical
+    // retrieval skips the model call entirely (credit conservation). Keyed on
+    // (org, question, retrieval, computed facts). Assumes the policy corpus is
+    // unchanged; acceptable for the demo corpus, documented in llm-cache.ts.
+    const cacheKey = cacheKeyHash(`${question}|${chunksText}|${factsBlock}`);
+    let fromCache = true;
+    typed = (await cacheGet(supabase, caller.org_id, "policy_qa", cacheKey, QWEN_MODEL)) as { status?: string; answer?: string; citations?: { doc_code?: string; version?: number; section?: string; exact_quote?: string }[] } | null;
+    if (typed == null) {
+      fromCache = false;
+      try {
+        typed = await attempt(false);
+        const { droppedCount } = validateCitations(typed.citations, fullRetrieval);
+        if (typed.status === "grounded_response" && droppedCount > 0) {
           typed = await attempt(true);
-        } catch {
-          modelNote = "The model could not produce a schema-valid grounded answer; the question was not answered.";
         }
-      } else {
-        throw err;
+      } catch (err) {
+        if (err instanceof QwenError && err.code === "MODEL_OUTPUT_INVALID") {
+          // Repair once; if the repair also fails, abstain honestly.
+          try {
+            typed = await attempt(true);
+          } catch {
+            modelNote = "The model could not produce a schema-valid grounded answer; the question was not answered.";
+          }
+        } else {
+          throw err;
+        }
       }
+      if (typed) await cacheSet(supabase, caller.org_id, "policy_qa", cacheKey, QWEN_MODEL, typed as Record<string, unknown>);
     }
 
     if (!typed) {

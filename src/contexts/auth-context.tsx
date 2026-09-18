@@ -55,6 +55,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             .then((me) => {
               // Only apply if the user is still the one who initiated this call.
               if (currentUidRef.current === uid) {
+                // Phase 15: suspended accounts are refused at the app boundary.
+                if (me.twin?.status === "suspended") {
+                  setTwin(null);
+                  setUser(null);
+                  setSession(null);
+                  currentUidRef.current = null;
+                  void supabase.auth.signOut();
+                  console.warn("auth: suspended account signed out");
+                  return;
+                }
                 setTwin(me.twin);
               }
             })

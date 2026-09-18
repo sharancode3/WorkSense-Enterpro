@@ -3460,6 +3460,64 @@ export type Database = {
           },
         ]
       }
+      admin_actions: {
+        Row: {
+          action: string
+          actor_twin_id: string
+          after_data: Json
+          before_data: Json
+          created_at: string
+          id: string
+          org_id: string
+          reason: string | null
+          target_email: string | null
+          target_twin_id: string | null
+        }
+        Insert: {
+          action: string
+          actor_twin_id: string
+          after_data?: Json
+          before_data?: Json
+          created_at?: string
+          id?: string
+          org_id: string
+          reason?: string | null
+          target_email?: string | null
+          target_twin_id?: string | null
+        }
+        Update: {
+          action?: string
+          actor_twin_id?: string
+          after_data?: Json
+          before_data?: Json
+          created_at?: string
+          id?: string
+          org_id?: string
+          reason?: string | null
+          target_email?: string | null
+          target_twin_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "admin_actions_actor_twin_id_fkey"
+            columns: ["actor_twin_id"]
+            referencedRelation: "digital_twins"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "admin_actions_org_id_fkey"
+            columns: ["org_id"]
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "admin_actions_target_twin_id_fkey"
+            columns: ["target_twin_id"]
+            referencedRelation: "digital_twins"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       application_stage_events: {
         Row: {
           actor_twin_id: string
@@ -4072,6 +4130,43 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "job_requisitions_org_id_fkey"
+            columns: ["org_id"]
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      llm_cache: {
+        Row: {
+          created_at: string
+          id: string
+          input_hash: string
+          model: string
+          org_id: string
+          output: Json
+          task: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          input_hash: string
+          model: string
+          org_id: string
+          output: Json
+          task: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          input_hash?: string
+          model?: string
+          org_id?: string
+          output?: Json
+          task?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "llm_cache_org_id_fkey"
             columns: ["org_id"]
             referencedRelation: "organizations"
             referencedColumns: ["id"]

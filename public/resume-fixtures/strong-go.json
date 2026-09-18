@@ -1,0 +1,115 @@
+{
+  "low_text": false,
+  "extracted_text": "Arjun Mehta\nSenior Backend Engineer\narjun.mehta@example.com | +1 (555) 010-1234 | San Francisco, CA\nSUMMARY\nGo backend engineer with 8 years building distributed services.\nPrimary language: Go. Deep PostgreSQL schema and performance work.\nProduction Docker deployments and Kubernetes-orchestrated services.\nSKILLS\nGo, PostgreSQL, Docker, Kubernetes, REST APIs, Distributed Systems",
+  "warnings": {
+    "conflicts": [],
+    "overlaps": []
+  },
+  "review": {
+    "full_name": "Arjun Mehta",
+    "contact": {
+      "email": "arjun.mehta@example.com",
+      "phone": "+1 (555) 010-1234",
+      "location": "San Francisco, CA"
+    },
+    "roles": [
+      {
+        "title": "Senior Backend Engineer",
+        "company": "Meridian Systems",
+        "start": "2020-01",
+        "years_claimed": 6,
+        "quote": "Lead a payments platform in Go serving 40M requests/day."
+      },
+      {
+        "title": "Backend Engineer",
+        "company": "Coral Health",
+        "start": "2017-03",
+        "end": "2019-12",
+        "years_claimed": 3,
+        "quote": "Built Go microservices for a patient-messaging platform."
+      }
+    ],
+    "education": [
+      {
+        "institution": "University of Washington",
+        "degree": "BSc Computer Science",
+        "year": "2016",
+        "quote": "BSc Computer Science, University of Washington (2013-2016)"
+      }
+    ],
+    "certifications": [
+      {
+        "name": "Certified Kubernetes Administrator (CKA)",
+        "issuer": "CNCF",
+        "year": "2022",
+        "quote": "Certified Kubernetes Administrator (CKA, 2022)"
+      }
+    ],
+    "projects": [
+      {
+        "name": "Payments platform (production)",
+        "role": "Lead Backend Engineer",
+        "tech_stack": [
+          "Go",
+          "PostgreSQL",
+          "Docker",
+          "Kubernetes"
+        ],
+        "impact_metric": "40M requests/day; p99 -38%",
+        "quote": "Redesigned PostgreSQL schemas cutting p99 latency by 38%."
+      }
+    ],
+    "skill_claims": [
+      {
+        "skill": "Go",
+        "years": 8,
+        "proficiency_tier": "EXPERT",
+        "association": "explicit",
+        "quote": "Go backend engineer with 8 years building distributed services."
+      },
+      {
+        "skill": "PostgreSQL",
+        "years": 8,
+        "proficiency_tier": "ADVANCED",
+        "association": "explicit",
+        "quote": "Deep PostgreSQL schema and performance work."
+      },
+      {
+        "skill": "Docker",
+        "years": 6,
+        "proficiency_tier": "ADVANCED",
+        "association": "explicit",
+        "quote": "Migrated 30 services to Docker and Kubernetes."
+      },
+      {
+        "skill": "Kubernetes",
+        "years": 4,
+        "proficiency_tier": "ADVANCED",
+        "association": "explicit",
+        "quote": "Certified Kubernetes Administrator (CKA, 2022)."
+      },
+      {
+        "skill": "REST APIs",
+        "years": 8,
+        "proficiency_tier": "ADVANCED",
+        "association": "explicit",
+        "quote": "Owned PostgreSQL migrations and REST API contracts."
+      },
+      {
+        "skill": "Distributed Systems",
+        "years": 8,
+        "proficiency_tier": "ADVANCED",
+        "association": "inferred",
+        "quote": "8 years building distributed services."
+      }
+    ],
+    "ambiguities": [],
+    "conflicts": [],
+    "computed": {
+      "total_years_deduped": 8,
+      "roles_merged": 0,
+      "overlap_warnings": [],
+      "claims_unsupported": 0
+    }
+  }
+}

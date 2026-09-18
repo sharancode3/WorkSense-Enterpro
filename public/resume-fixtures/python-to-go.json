@@ -1,0 +1,108 @@
+{
+  "low_text": false,
+  "extracted_text": "Nina Kowalski\nBackend Engineer\nnina.kowalski@example.com | Berlin, DE\nSUMMARY\nPython engineer (7 years) moving toward Go services.\nStrong async systems, event pipelines and REST API design.\nSKILLS\nPython, FastAPI, SQL, PostgreSQL, Docker, REST APIs, Kafka\nLearning: Go (6 months, small production service)",
+  "warnings": {
+    "conflicts": [],
+    "overlaps": []
+  },
+  "review": {
+    "full_name": "Nina Kowalski",
+    "contact": {
+      "email": "nina.kowalski@example.com",
+      "location": "Berlin, DE"
+    },
+    "roles": [
+      {
+        "title": "Senior Data Engineer",
+        "company": "Quantex",
+        "start": "2021-02",
+        "years_claimed": 5,
+        "quote": "Built Python data pipelines moving 2TB/day."
+      },
+      {
+        "title": "Data Engineer",
+        "company": "Brite Labs",
+        "start": "2018-04",
+        "end": "2021-01",
+        "years_claimed": 3,
+        "quote": "Python ETL jobs and SQL analytics for product growth."
+      }
+    ],
+    "education": [
+      {
+        "institution": "TU Munich",
+        "degree": "MSc Data Science",
+        "year": "2018",
+        "quote": "MSc Data Science, TU Munich (2016-2018)"
+      }
+    ],
+    "certifications": [],
+    "projects": [
+      {
+        "name": "Data pipelines",
+        "role": "Engineer",
+        "tech_stack": [
+          "Python",
+          "Docker",
+          "Kafka"
+        ],
+        "impact_metric": "2TB/day; 12 teams",
+        "quote": "Designed REST APIs consumed by 12 internal teams."
+      }
+    ],
+    "skill_claims": [
+      {
+        "skill": "Python",
+        "years": 7,
+        "proficiency_tier": "EXPERT",
+        "association": "explicit",
+        "quote": "Python engineer (7 years) moving toward Go services."
+      },
+      {
+        "skill": "PostgreSQL",
+        "years": 5,
+        "proficiency_tier": "ADVANCED",
+        "association": "explicit",
+        "quote": "SQL, PostgreSQL, Docker, REST APIs, Kafka"
+      },
+      {
+        "skill": "Docker",
+        "years": 4,
+        "proficiency_tier": "ADVANCED",
+        "association": "explicit",
+        "quote": "Containerized services with Docker; deployed on AWS EKS."
+      },
+      {
+        "skill": "REST APIs",
+        "years": 5,
+        "proficiency_tier": "ADVANCED",
+        "association": "explicit",
+        "quote": "Designed REST APIs consumed by 12 internal teams."
+      },
+      {
+        "skill": "Kafka",
+        "years": 3,
+        "proficiency_tier": "INTERMEDIATE",
+        "association": "explicit",
+        "quote": "Strong async systems, event pipelines and REST API design."
+      },
+      {
+        "skill": "Go",
+        "years": 0.5,
+        "proficiency_tier": "FOUNDATIONAL",
+        "association": "explicit",
+        "quote": "Learning: Go (6 months, small production service)"
+      }
+    ],
+    "ambiguities": [
+      "Go is explicitly a 6-month learning item \u2014 foundational, not a backend-ready claim."
+    ],
+    "conflicts": [],
+    "computed": {
+      "total_years_deduped": 7,
+      "roles_merged": 0,
+      "overlap_warnings": [],
+      "claims_unsupported": 0
+    }
+  }
+}

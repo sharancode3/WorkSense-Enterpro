@@ -10,6 +10,7 @@ import PolicyStudio from "./pages/policy-studio";
 import RecommendationHub from "./pages/recommendation-hub";
 import WorkforceReview from "./pages/workforce-review";
 import StaffingPlanner from "./pages/staffing";
+import AdminAccess from "./pages/admin-access";
 import NotFound from "./pages/NotFound";
 import { ProtectedRoute } from "./components/protected-route";
 
@@ -103,6 +104,15 @@ export const routers = [
     element: (
       <ProtectedRoute>
         <StaffingPlanner />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: "/admin/access",
+    name: "admin-access",
+    element: (
+      <ProtectedRoute>
+        <AdminAccess />
       </ProtectedRoute>
     ),
   },

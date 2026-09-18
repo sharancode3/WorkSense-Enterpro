@@ -76,7 +76,47 @@ export function ResumeReviewFlow({ twin, reqId, onSaved, onManualImport }: Props
     void listDemoResumes().then(setDemos).catch(() => setDemos([]));
   }, []);
 
-  const runUpload = async (file: File) => {
+  // Phase 15: zero-crash intake — if the backend is unreachable (401/503/non-2xx),
+  // preset resumes fall back to the static offline fixture in public/resume-fixtures
+  // and populate the review state instantly. Custom uploads show an inline alert.
+  const loadOffline = async (demo: DemoResumeFixture): Promise<boolean> => {
+    try {
+      const jsonPath = demo.file.replace(/\.(pdf|docx)$/i, ".json");
+      const res = await fetch(`${import.meta.env.BASE_URL ?? "/"}resume-fixtures/${jsonPath}`);
+      if (!res.ok) throw new Error(`Offline fixture missing: ${jsonPath}`);
+      const fixture = (await res.json()) as {
+        low_text?: boolean;
+        extracted_text?: string;
+        warnings?: { conflicts?: string[]; overlaps?: string[] };
+        review?: ResumeReviewPayload | null;
+      };
+      const base: ResumeImportResult = {
+        ok: true,
+        document_id: `offline:${demo.file}`,
+        file_name: demo.file,
+        status: fixture.low_text ? "low_text" : "review",
+        low_text: fixture.low_text === true,
+        ocr_available: false,
+        page_count: null,
+        extracted_text: fixture.extracted_text ?? "",
+        warnings: fixture.warnings,
+      };
+      setResult(base);
+      if (base.low_text) {
+        setStage("lowtext");
+      } else {
+        setReview(structuredClone(fixture.review ?? { full_name: twin.name, roles: [], education: [], certifications: [], projects: [], skill_claims: [], ambiguities: [], conflicts: [] }));
+        setStage("review");
+      }
+      toast.success(`Loaded ${demo.label} in offline demo mode.`);
+      return true;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Offline fallback failed");
+      return false;
+    }
+  };
+
+  const runUpload = async (file: File, demo?: DemoResumeFixture) => {
     if (file.size === 0) {
       toast.error("The file is empty.");
       return;
@@ -104,8 +144,14 @@ export function ResumeReviewFlow({ twin, reqId, onSaved, onManualImport }: Props
       setStage("review");
       if (res.job_id) toast.success(`Extraction done (job ${res.job_id.slice(0, 8)}).`);
     } catch (err) {
+      // Preset resume + unreachable AI engine -> offline fixture, never a crash.
+      if (demo) {
+        const ok = await loadOffline(demo);
+        if (!ok) setStage("error");
+        return;
+      }
       setStage("error");
-      setError(err instanceof Error ? err.message : "Import failed");
+      setError("AI Engine unreachable. Use a preset resume or paste text manually below.");
     }
   };
 
@@ -114,10 +160,12 @@ export function ResumeReviewFlow({ twin, reqId, onSaved, onManualImport }: Props
       const res = await fetch(`${import.meta.env.BASE_URL ?? "/"}resume-fixtures/${demo.file}`);
       if (!res.ok) throw new Error("Could not load the demo resume.");
       const blob = await res.blob();
-      await runUpload(new File([blob], demo.file, { type: demo.file.endsWith(".pdf") ? "application/pdf" : "application/vnd.openxmlformats-officedocument.wordprocessingml.document" }));
+      await runUpload(new File([blob], demo.file, { type: demo.file.endsWith(".pdf") ? "application/pdf" : "application/vnd.openxmlformats-officedocument.wordprocessingml.document" }), demo);
     } catch (err) {
-      setStage("error");
-      setError(err instanceof Error ? err.message : "Demo resume failed");
+      // The preset file itself could not be fetched — fall back to the offline fixture.
+      setStage("importing");
+      const ok = await loadOffline(demo);
+      if (!ok) setStage("error");
     }
   };
 
@@ -230,12 +278,22 @@ export function ResumeReviewFlow({ twin, reqId, onSaved, onManualImport }: Props
 
   if (stage === "error") {
     return (
-      <div className="flex flex-col items-center gap-4 py-10 text-center">
-        <ShieldAlert className="h-8 w-8 text-destructive" />
-        <p className="max-w-md text-sm text-foreground">{error ?? "Import failed."}</p>
-        <Button variant="secondary" onClick={() => setStage("upload")}>
-          Try again
-        </Button>
+      <div className="flex flex-col gap-4 py-4">
+        <div className="flex flex-col items-center gap-3 rounded-lg border-2 border-dashed border-destructive/40 bg-destructive/5 p-6 text-center">
+          <ShieldAlert className="h-8 w-8 text-destructive" />
+          <p className="max-w-md text-sm font-semibold text-foreground">
+            AI Engine unreachable. Use a preset resume or paste text manually below.
+          </p>
+          <p className="max-w-md text-xs text-muted-foreground">{error ?? "Import failed."}</p>
+        </div>
+        <div className="flex flex-wrap justify-center gap-2">
+          <Button variant="secondary" onClick={onManualImport}>
+            <FileText className="h-4 w-4" /> Paste text manually
+          </Button>
+          <Button variant="outline" onClick={() => setStage("upload")}>
+            Try again
+          </Button>
+        </div>
       </div>
     );
   }

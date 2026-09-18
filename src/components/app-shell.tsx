@@ -14,6 +14,7 @@ import {
   Settings,
   ShieldCheck,
   TrendingUp,
+  UserCog,
   Users,
 } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
@@ -113,6 +114,7 @@ const NAV_SECTIONS: NavSection[] = [
     label: "Governance",
     links: [
       { label: "Policy studio", to: "/policy", icon: MessageSquareText, show: (role) => can(role, "use_policy_studio") },
+      { label: "Access & users", to: "/admin/access", icon: UserCog, show: (role) => can(role, "manage_users") },
     ],
   },
 ];

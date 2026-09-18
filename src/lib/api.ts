@@ -544,6 +544,36 @@ export interface DashboardData {
 export const fetchDashboard = (filters?: DashboardFilters) =>
   invoke<DashboardData>("dashboard", { ...filters });
 
+// ---- Phase 15: Access administration console ----
+
+export type AdminActionName = "invite" | "update_role" | "suspend" | "reactivate";
+
+export interface AdminActionRow {
+  id: string;
+  action: AdminActionName;
+  actor_twin_id: string;
+  target_twin_id: string | null;
+  target_email: string | null;
+  before_data: Record<string, unknown>;
+  after_data: Record<string, unknown>;
+  reason: string | null;
+  created_at: string;
+}
+
+export const ADMIN_ASSIGNABLE_ROLES = ["hr_executive", "manager", "recruiter", "employee"] as const;
+
+export const adminAccessInvite = (email: string, role: string, name: string, reason?: string) =>
+  invoke<{ ok: true; twin_id: string; role: string; email: string }>("admin-access", { action: "invite", email, role, name, reason });
+
+export const adminAccessUpdateRole = (targetTwinId: string, role: string, reason: string) =>
+  invoke<{ ok: true; twin_id: string; before: { role: string }; after: { role: string } }>("admin-access", { action: "update_role", target_twin_id: targetTwinId, role, reason });
+
+export const adminAccessSuspend = (targetTwinId: string, reason: string) =>
+  invoke<{ ok: true; twin_id: string; status: "suspended" }>("admin-access", { action: "suspend", target_twin_id: targetTwinId, reason });
+
+export const adminAccessReactivate = (targetTwinId: string, reason: string) =>
+  invoke<{ ok: true; twin_id: string; status: "active" }>("admin-access", { action: "reactivate", target_twin_id: targetTwinId, reason });
+
 // ---- Phase 14: Staffing planner (Hire / Move / Upskill / Hybrid) ----
 
 export interface StaffingOption {

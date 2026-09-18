@@ -4,6 +4,7 @@ import { computeFit } from "../_shared/skill-graph-engine.ts";
 import { createJob, findOpenJob, finishJob, hashInput, markJobRunning } from "../_shared/jobs.ts";
 import { validateResumeExtraction } from "../_shared/validate.ts";
 import { resolveSkillClaims, resolveSkillId } from "../_shared/evidence.ts";
+import { cacheGet, cacheSet } from "../_shared/llm-cache.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -108,7 +109,10 @@ Deno.serve(async (req) => {
   const wrapped = wrapUntrusted(sanitized);
   const inputHash = hashInput(sanitized);
 
-  // Durable job lifecycle: dedup open duplicates -> queued -> running -> done.
+  // Phase 15: LLM response cache — a previously validated extraction for the
+  // same (org, task, input hash) skips the model call entirely (credit
+  // conservation). On a cache hit we still re-run the deterministic evidence
+  // writes and fit, so the snapshot stays consistent with the twin's records.
   const open = await findOpenJob(supabase, caller.org_id, caller.id, "resume_extraction", inputHash);
   if (open) {
     return json({ error: "CONFLICT", message: "A generation for this exact resume is already in progress.", job_id: open.id }, 409);
@@ -120,20 +124,24 @@ Deno.serve(async (req) => {
   await markJobRunning(supabase, job.id);
   const startedAt = Date.now();
 
-  let parsed: unknown;
-  try {
-    parsed = await callQwen({
-      json: true,
-      temperature: 0.1,
-      system: EXTRACTION_SYSTEM,
-      user: `Resume:\n${wrapped}`,
-      task: "resume_extraction",
-      timeoutMs: 120_000, // local 4B is slow on longer resumes; don't abort mid-generation
-    });
-  } catch (err) {
-    const code = err instanceof QwenError ? err.code : "INTERNAL";
-    await finishJob(supabase, job.id, { status: "failed", errorCode: code, errorMessage: err instanceof Error ? err.message : "unknown", latencyMs: Date.now() - startedAt });
-    return json({ error: code, message: err instanceof Error ? err.message : "unknown", job_id: job.id }, code === "MODEL_OUTPUT_INVALID" ? 422 : 503);
+  let fromCache = true;
+  let parsed: unknown = await cacheGet(supabase, caller.org_id, "resume_extraction", inputHash, QWEN_MODEL);
+  if (parsed == null) {
+    fromCache = false;
+    try {
+      parsed = await callQwen({
+        json: true,
+        temperature: 0.1,
+        system: EXTRACTION_SYSTEM,
+        user: `Resume:\n${wrapped}`,
+        task: "resume_extraction",
+        timeoutMs: 120_000, // local 4B is slow on longer resumes; don't abort mid-generation
+      });
+    } catch (err) {
+      const code = err instanceof QwenError ? err.code : "INTERNAL";
+      await finishJob(supabase, job.id, { status: "failed", errorCode: code, errorMessage: err instanceof Error ? err.message : "unknown", latencyMs: Date.now() - startedAt });
+      return json({ error: code, message: err instanceof Error ? err.message : "unknown", job_id: job.id }, code === "MODEL_OUTPUT_INVALID" ? 422 : 503);
+    }
   }
 
   // Normalize human-friendly tier words before schema validation. Track which
@@ -296,7 +304,11 @@ Deno.serve(async (req) => {
     tier_warnings: tierWarnings,
   };
 
-  await finishJob(supabase, job.id, { status: "succeeded", output: result, latencyMs: Date.now() - startedAt });
+  if (!fromCache) {
+    await cacheSet(supabase, caller.org_id, "resume_extraction", inputHash, QWEN_MODEL, parsed as Record<string, unknown>);
+  }
 
-  return json({ ok: true, job_id: job.id, status: "succeeded", ...result });
+  await finishJob(supabase, job.id, { status: "succeeded", output: result, latencyMs: Date.now() - startedAt, cache_hit: fromCache });
+
+  return json({ ok: true, job_id: job.id, status: "succeeded", from_cache: fromCache, ...result });
 });

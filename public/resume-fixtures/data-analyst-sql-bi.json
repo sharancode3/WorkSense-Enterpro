@@ -1,0 +1,98 @@
+{
+  "low_text": false,
+  "extracted_text": "Maya Iyer\nData Analyst\nmaya.iyer@example.com | Chicago, IL\nSUMMARY\nData analyst (4 years) with SQL-first evidence and BI dashboards.\nSKILLS\nSQL, Tableau, Python, Excel, Data Modeling, A/B Testing",
+  "warnings": {
+    "conflicts": [],
+    "overlaps": []
+  },
+  "review": {
+    "full_name": "Maya Iyer",
+    "contact": {
+      "email": "maya.iyer@example.com",
+      "location": "Chicago, IL"
+    },
+    "roles": [
+      {
+        "title": "Data Analyst",
+        "company": "RetailCorp",
+        "start": "2022-01",
+        "years_claimed": 4,
+        "quote": "Wrote SQL models underpinning the weekly executive dashboard."
+      },
+      {
+        "title": "Analyst",
+        "company": "FinEdge",
+        "start": "2020-06",
+        "end": "2021-12",
+        "years_claimed": 2,
+        "quote": "Python + SQL cohort analysis for retention."
+      }
+    ],
+    "education": [
+      {
+        "institution": "Northwestern University",
+        "degree": "BA Economics",
+        "year": "2020",
+        "quote": "BA Economics, Northwestern University (2016-2020)"
+      }
+    ],
+    "certifications": [],
+    "projects": [
+      {
+        "name": "Executive reporting suite",
+        "role": "Owner",
+        "tech_stack": [
+          "SQL",
+          "Tableau"
+        ],
+        "impact_metric": "30+ stakeholders",
+        "quote": "Built Tableau dashboards tracked by 30+ stakeholders."
+      }
+    ],
+    "skill_claims": [
+      {
+        "skill": "SQL",
+        "years": 4,
+        "proficiency_tier": "ADVANCED",
+        "association": "explicit",
+        "quote": "SQL-first evidence and BI dashboards."
+      },
+      {
+        "skill": "Tableau",
+        "years": 4,
+        "proficiency_tier": "ADVANCED",
+        "association": "explicit",
+        "quote": "Built Tableau dashboards tracked by 30+ stakeholders."
+      },
+      {
+        "skill": "Python",
+        "years": 3,
+        "proficiency_tier": "INTERMEDIATE",
+        "association": "explicit",
+        "quote": "Python + SQL cohort analysis for retention."
+      },
+      {
+        "skill": "Data Modeling",
+        "years": 3,
+        "proficiency_tier": "INTERMEDIATE",
+        "association": "explicit",
+        "quote": "Wrote SQL models underpinning the weekly executive dashboard."
+      },
+      {
+        "skill": "A/B Testing",
+        "years": 2,
+        "proficiency_tier": "INTERMEDIATE",
+        "association": "explicit",
+        "quote": "SQL, Tableau, Python, Excel, Data Modeling, A/B Testing"
+      }
+    ],
+    "ambiguities": [],
+    "conflicts": [],
+    "computed": {
+      "total_years_deduped": 4,
+      "roles_merged": 0,
+      "overlap_warnings": [],
+      "claims_unsupported": 0
+    }
+  }
+}

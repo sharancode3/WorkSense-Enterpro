@@ -282,6 +282,13 @@ const MODULES: ModuleDef[] = [
     to: "/staffing",
     show: (role) => can(role, "view_all_workforce") || can(role, "view_team"),
   },
+  {
+    title: "Access & users",
+    desc: "Invite members, manage roles, and audit access changes.",
+    icon: UserCheck,
+    to: "/admin/access",
+    show: (role) => can(role, "manage_users"),
+  },
 ];
 
 function ModuleGrid({ role }: { role: Role }) {

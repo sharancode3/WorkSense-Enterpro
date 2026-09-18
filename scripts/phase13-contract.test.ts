@@ -126,3 +126,19 @@ describe("Phase 13 contract: candidate data stays behind the candidate-status fu
     }
   });
 });
+
+describe("Phase 15 contract: governance + caching tables ship secured", () => {
+  it("admin_actions has RLS and an org-scoped read policy", () => {
+    expect(allSql).toMatch(/alter table public\.admin_actions enable row level security/);
+    expect(allSql).toMatch(/create policy admin_actions_read on public\.admin_actions for select using \(\s*exists \(select 1 from public\.current_twin\(\) ct where ct\.org_id = public\.admin_actions\.org_id\)/);
+  });
+  it("llm_cache has RLS and an org-scoped read policy", () => {
+    expect(allSql).toMatch(/alter table public\.llm_cache enable row level security/);
+    expect(allSql).toMatch(/create policy llm_cache_read on public\.llm_cache for select using \(\s*exists \(select 1 from public\.current_twin\(\) ct where ct\.org_id = public\.llm_cache\.org_id\)/);
+  });
+  it("digital_twins status check allows 'suspended'", () => {
+    const last = [...allSql.matchAll(/add constraint digital_twins_status_check check \([\s\S]*?\);/gi)];
+    const policy = last.length ? last[last.length - 1][0] : "";
+    expect(policy).toMatch(/'suspended'/);
+  });
+});

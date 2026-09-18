@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
-import { callQwen, QwenError, sanitizeUntrusted, wrapUntrusted } from "../_shared/qwen.ts";
+import { callQwen, QwenError, QWEN_MODEL, sanitizeUntrusted, wrapUntrusted } from "../_shared/qwen.ts";
+import { cacheGet, cacheKeyHash, cacheSet } from "../_shared/llm-cache.ts";
 import {
   ABSTENTION_THRESHOLD,
   applicabilityOk,
@@ -367,23 +368,35 @@ Deno.serve(async (req) => {
 
     let typed: { status?: string; answer?: string; citations?: { doc_code?: string; version?: number; section?: string; exact_quote?: string }[] } | null = null;
     let modelNote = "";
-    try {
-      typed = await attempt(false);
-      const { droppedCount } = validateCitations(typed.citations, fullRetrieval);
-      if (typed.status === "grounded_response" && droppedCount > 0) {
-        typed = await attempt(true);
-      }
-    } catch (err) {
-      if (err instanceof QwenError && err.code === "MODEL_OUTPUT_INVALID") {
-        // Repair once; if the repair also fails, abstain honestly.
-        try {
+
+    // Phase 15: LLM response cache — a repeated question with identical
+    // retrieval skips the model call entirely (credit conservation). Keyed on
+    // (org, question, retrieval, computed facts). Assumes the policy corpus is
+    // unchanged; acceptable for the demo corpus, documented in llm-cache.ts.
+    const cacheKey = cacheKeyHash(`${question}|${chunksText}|${factsBlock}`);
+    let fromCache = true;
+    typed = (await cacheGet(supabase, caller.org_id, "policy_qa", cacheKey, QWEN_MODEL)) as { status?: string; answer?: string; citations?: { doc_code?: string; version?: number; section?: string; exact_quote?: string }[] } | null;
+    if (typed == null) {
+      fromCache = false;
+      try {
+        typed = await attempt(false);
+        const { droppedCount } = validateCitations(typed.citations, fullRetrieval);
+        if (typed.status === "grounded_response" && droppedCount > 0) {
           typed = await attempt(true);
-        } catch {
-          modelNote = "The model could not produce a schema-valid grounded answer; the question was not answered.";
         }
-      } else {
-        throw err;
+      } catch (err) {
+        if (err instanceof QwenError && err.code === "MODEL_OUTPUT_INVALID") {
+          // Repair once; if the repair also fails, abstain honestly.
+          try {
+            typed = await attempt(true);
+          } catch {
+            modelNote = "The model could not produce a schema-valid grounded answer; the question was not answered.";
+          }
+        } else {
+          throw err;
+        }
       }
+      if (typed) await cacheSet(supabase, caller.org_id, "policy_qa", cacheKey, QWEN_MODEL, typed as Record<string, unknown>);
     }
 
     if (!typed) {
