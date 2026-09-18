@@ -1,0 +1,424 @@
+-- Phase 8: adaptive onboarding with ownership, dependencies, versioned approvals.
+-- 1) Extend the role enum for the IT service owner persona.
+alter table public.digital_twins drop constraint digital_twins_role_check;
+alter table public.digital_twins add constraint digital_twins_role_check check (
+  role in ('hr_executive','hr_partner','manager','recruiter','employee','candidate','it_security')
+);
+-- 2) Versioned plan definition + hash-bound approval record.
+create table public.onboarding_plans (
+  id uuid primary key default gen_random_uuid(),
+  org_id uuid not null references public.organizations(id) on delete cascade,
+  twin_id uuid not null references public.digital_twins(id) on delete cascade,
+  application_id uuid references public.applications(id) on delete set null,
+  version integer not null default 1,
+  plan_hash text not null,
+  status text not null default 'pending_approval' check (status in ('draft','pending_approval','approved','completed','superseded')),
+  manager_approval jsonb,
+  hr_approval jsonb,
+  start_date timestamptz not null,
+  generated_at timestamptz not null default now(),
+  readiness jsonb not null default '{}'::jsonb,
+  carryover jsonb not null default '[]'::jsonb,
+  audit_events jsonb not null default '[]'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index onboarding_plans_twin_idx on public.onboarding_plans (org_id, twin_id, version desc);
+-- 3) Task definition + execution state (separate column groups, one row).
+create table public.onboarding_tasks (
+  id uuid primary key default gen_random_uuid(),
+  org_id uuid not null references public.organizations(id) on delete cascade,
+  plan_id uuid not null references public.onboarding_plans(id) on delete cascade,
+  version integer not null default 1,
+  task_code text not null,
+  title text not null,
+  task_type text not null check (task_type in ('learning','verification','provisioning','policy','access','onboarding_admin')),
+  owner_role text not null check (owner_role in ('employee','manager','hr','it_security')),
+  required boolean not null default true,
+  non_waivable boolean not null default false,
+  depends_on jsonb not null default '[]'::jsonb,
+  duration_days numeric not null default 1,
+  due_date timestamptz,
+  topological_level integer not null default 0,
+  why_evidence jsonb not null default '{}'::jsonb,
+  evidence_requirements jsonb not null default '[]'::jsonb,
+  state text not null default 'pending' check (state in ('pending','blocked','ready','in_progress','done','waived','failed')),
+  completion_record jsonb,
+  blockers jsonb not null default '[]'::jsonb,
+  waiver jsonb,
+  adaptation jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (plan_id, task_code)
+);
+create index onboarding_tasks_plan_idx on public.onboarding_tasks (org_id, plan_id);
+-- 4) Execution audit log with attempt-hash dedup.
+create table public.onboarding_task_events (
+  id uuid primary key default gen_random_uuid(),
+  org_id uuid not null references public.organizations(id) on delete cascade,
+  plan_id uuid not null references public.onboarding_plans(id) on delete cascade,
+  task_code text not null,
+  actor_twin_id uuid references public.digital_twins(id),
+  action text not null check (action in ('complete','block','resolve','waive','adapt','fail')),
+  attempt_hash text not null,
+  result text not null check (result in ('applied','rejected')),
+  note text,
+  evidence jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  unique (plan_id, task_code, action, attempt_hash)
+);
+create index onboarding_events_plan_idx on public.onboarding_task_events (org_id, plan_id);
+-- RLS: reads-only, org-scoped, in the SAME migration.
+alter table public.onboarding_plans enable row level security;
+alter table public.onboarding_tasks enable row level security;
+alter table public.onboarding_task_events enable row level security;
+create policy onboarding_plans_read on public.onboarding_plans for select using (
+  exists (select 1 from public.current_twin() ct where ct.org_id = public.onboarding_plans.org_id)
+);
+create policy onboarding_tasks_read on public.onboarding_tasks for select using (
+  exists (select 1 from public.current_twin() ct where ct.org_id = public.onboarding_tasks.org_id)
+);
+create policy onboarding_events_read on public.onboarding_task_events for select using (
+  exists (select 1 from public.current_twin() ct where ct.org_id = public.onboarding_task_events.org_id)
+);
+create trigger onboarding_plans_set_updated_at before update on public.onboarding_plans for each row execute function public.set_updated_at();
+create trigger onboarding_tasks_set_updated_at before update on public.onboarding_tasks for each row execute function public.set_updated_at();
+-- Phase 9: longitudinal workforce review + versioned performance summaries.
+create table public.workforce_review_cases (
+  id uuid primary key default gen_random_uuid(),
+  org_id uuid not null references public.organizations(id) on delete cascade,
+  twin_id uuid not null references public.digital_twins(id) on delete cascade,
+  period_start date not null,
+  period_end date not null,
+  index integer not null check (index between 0 and 100),
+  priority text not null check (priority in ('low','medium','high','review')),
+  factors jsonb not null default '{}'::jsonb,
+  trend jsonb not null default '[]'::jsonb,
+  data_completeness numeric not null default 0 check (data_completeness between 0 and 1),
+  missing_data jsonb not null default '[]'::jsonb,
+  fact_finding jsonb not null default '[]'::jsonb,
+  seeking_growth boolean not null default false,
+  sensitivity jsonb not null default '{}'::jsonb,
+  limitations jsonb not null default '[]'::jsonb,
+  priority_gate jsonb not null default '{}'::jsonb,
+  source_version_hash text not null,
+  computed_at timestamptz not null default now(),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (twin_id, period_start, period_end)
+);
+create index review_cases_org_idx on public.workforce_review_cases (org_id, twin_id, period_start desc);
+create table public.performance_summaries (
+  id uuid primary key default gen_random_uuid(),
+  org_id uuid not null references public.organizations(id) on delete cascade,
+  twin_id uuid not null references public.digital_twins(id) on delete cascade,
+  period text not null,
+  narrative text not null default '',
+  source_facts jsonb not null default '[]'::jsonb,
+  inferred_themes jsonb not null default '[]'::jsonb,
+  contradictions jsonb not null default '[]'::jsonb,
+  sparse_evidence jsonb not null default '{}'::jsonb,
+  goal_stats jsonb not null default '{}'::jsonb,
+  feedback_stats jsonb not null default '{}'::jsonb,
+  evidence_summary jsonb not null default '[]'::jsonb,
+  source_version_hash text not null,
+  model_note text not null default '',
+  from_cache boolean not null default false,
+  generated_at timestamptz not null default now(),
+  reviewed_by uuid references public.digital_twins(id) on delete set null,
+  reviewed_at timestamptz,
+  unique (twin_id, period)
+);
+create index perf_summaries_org_idx on public.performance_summaries (org_id, twin_id);
+alter table public.workforce_review_cases enable row level security;
+alter table public.performance_summaries enable row level security;
+create policy review_cases_read on public.workforce_review_cases for select using (
+  exists (select 1 from public.current_twin() ct where ct.org_id = public.workforce_review_cases.org_id)
+);
+create policy performance_summaries_read on public.performance_summaries for select using (
+  exists (select 1 from public.current_twin() ct where ct.org_id = public.performance_summaries.org_id)
+);
+update public.digital_twins
+set performance_history = performance_history || jsonb_build_array(jsonb_build_object('cycle','2026-H2','rating','Needs Improvement','goals_met',55,'feedback', jsonb_build_array(jsonb_build_object('sentiment','negative','text','Missed two milestone deadlines under a heavy cross-team workload.')), 'summary','Delivery slipped under load.'))
+where id = '22222222-2222-2222-2222-222222222204';
+create or replace function public.workflow_recommendation_transition(
+  p_org_id uuid, p_rec_id uuid, p_action text, p_actor_twin_id uuid,
+  p_actor_role text, p_reason text, p_request_id text,
+  p_source_version text, p_payload jsonb
+) returns jsonb
+language plpgsql security definer set search_path = public
+as $$
+declare
+  v_rec public.recommendations%rowtype;
+  v_action_map jsonb := jsonb_build_object(
+    'submit',      jsonb_build_object('from', jsonb_build_array('suggested'), 'to', 'needs_review'),
+    'approve',     jsonb_build_object('from', jsonb_build_array('needs_review','stale'), 'to', 'approved'),
+    'reject',      jsonb_build_object('from', jsonb_build_array('suggested','needs_review','stale','approved'), 'to', 'rejected'),
+    'dispatch',    jsonb_build_object('from', jsonb_build_array('approved'), 'to', 'execution_pending'),
+    'start',       jsonb_build_object('from', jsonb_build_array('execution_pending','failed'), 'to', 'in_progress'),
+    'complete',    jsonb_build_object('from', jsonb_build_array('in_progress','execution_pending'), 'to', 'completed'),
+    'fail',        jsonb_build_object('from', jsonb_build_array('in_progress','execution_pending'), 'to', 'failed'),
+    'cancel',      jsonb_build_object('from', jsonb_build_array('needs_review','approved','execution_pending','in_progress','failed'), 'to', 'cancelled'),
+    'mark_stale',  jsonb_build_object('from', jsonb_build_array('needs_review','approved','execution_pending','in_progress','failed'), 'to', 'stale'),
+    're_review',   jsonb_build_object('from', jsonb_build_array('stale'), 'to', 'needs_review')
+  );
+  v_allowed jsonb;
+  v_from jsonb;
+  v_to text;
+  v_prior text;
+  v_existing uuid;
+  v_created_tasks int := 0;
+  v_effect text := null;
+begin
+  select * into v_rec from public.recommendations where id = p_rec_id and org_id = p_org_id;
+  if not found then
+    return jsonb_build_object('ok', false, 'error', 'NOT_FOUND');
+  end if;
+  v_allowed := v_action_map -> p_action;
+  if v_allowed is null then
+    return jsonb_build_object('ok', false, 'error', 'VALIDATION_ERROR', 'message', 'Unknown action ' || p_action);
+  end if;
+  v_from := v_allowed -> 'from';
+  v_to := v_allowed ->> 'to';
+  if not (v_rec.status = any (array(select jsonb_array_elements_text(v_from)))) then
+    return jsonb_build_object('ok', false, 'error', 'CONFLICT', 'message', 'Cannot ' || p_action || ' a recommendation in state ' || v_rec.status || ' (allowed transitions are enforced, not arbitrary status assignment).');
+  end if;
+  select id into v_existing from public.workflow_events where resource_type = 'recommendation' and resource_id = p_rec_id and request_id = p_request_id limit 1;
+  if v_existing is not null then
+    return jsonb_build_object('ok', true, 'idempotent', true, 'prior_status', v_rec.status, 'new_status', v_rec.status);
+  end if;
+  v_prior := v_rec.status;
+  update public.recommendations
+     set status = v_to,
+         version = version + 1,
+         stale = case when p_action = 'mark_stale' then true else stale end,
+         stale_reason = case when p_action = 'mark_stale' then p_reason else stale_reason end,
+         superseded_by = case when (p_payload->>'superseded_by') is not null and p_payload->>'superseded_by' <> '' then (p_payload->>'superseded_by')::uuid else superseded_by end,
+         approved_at = case when p_action = 'approve' then now() else approved_at end,
+         last_reviewed_at = case when p_action in ('approve','reject','re_review','submit') then now() else last_reviewed_at end,
+         outcomes = case when p_action = 'complete' then jsonb_build_object('completed_at', now(), 'time_to_ready_days', round(extract(epoch from (now() - coalesce(approved_at, created_at))) / 86400.0)::int, 'reviewer_feedback', coalesce(p_payload->>'reviewer_feedback', p_reason), 'note', case when v_rec.category in ('workforce_review','development_support','mobility','upskilling') then 'Post-intervention observation recorded; correlation only, no causality claimed.' else null end) else outcomes end,
+         updated_at = now()
+   where id = p_rec_id and status = v_rec.status;
+  if not found then
+    return jsonb_build_object('ok', false, 'error', 'CONFLICT', 'message', 'Stale snapshot: the recommendation changed while you were reviewing it. Re-read before acting.');
+  end if;
+  if p_action = 'dispatch' and jsonb_typeof(p_payload -> 'tasks') = 'array' then
+    insert into public.action_tasks (org_id, recommendation_id, owner_twin_id, owner_role, task_code, title, instructions, resource_link, required_evidence, depends_on, outcome_measure, due_at, created_by_request_id)
+    select p_org_id, p_rec_id, (t->>'owner_twin_id')::uuid, coalesce(t->>'owner_role', 'employee'), t->>'task_code', t->>'title', t->>'instructions', t->>'resource_link', coalesce(t->'required_evidence', '[]'::jsonb), coalesce(t->'depends_on', '[]'::jsonb), coalesce(t->'outcome_measure', '{}'::jsonb), case when (t->>'due_days') is not null then now() + ((t->>'due_days')::int * interval '1 day') else null end, p_request_id
+    from jsonb_array_elements(p_payload -> 'tasks') as t
+    on conflict (recommendation_id, task_code) do nothing;
+    get diagnostics v_created_tasks = row_count;
+    v_effect := 'Created ' || v_created_tasks || ' reviewed task(s) in the same transaction as the state change.';
+  end if;
+  insert into public.workflow_events (org_id, resource_type, resource_id, actor_twin_id, actor_role, resource, prior_status, new_status, reason, source_version, request_id, payload)
+  values (p_org_id, 'recommendation', p_rec_id, p_actor_twin_id, p_actor_role, 'recommendation:' || v_rec.category, v_prior, v_to, p_reason, p_source_version, p_request_id, p_payload)
+  on conflict do nothing;
+  return jsonb_build_object('ok', true, 'prior_status', v_prior, 'new_status', v_to, 'created_tasks', v_created_tasks, 'effect', v_effect);
+end;
+$$;
+create or replace function public.workflow_action_task_transition(
+  p_org_id uuid, p_task_id uuid, p_action text, p_actor_twin_id uuid,
+  p_actor_role text, p_reason text, p_request_id text,
+  p_evidence jsonb, p_outcome jsonb
+) returns jsonb
+language plpgsql security definer set search_path = public
+as $$
+declare
+  v_task public.action_tasks%rowtype;
+  v_rec public.recommendations%rowtype;
+  v_map jsonb := jsonb_build_object(
+    'start',    jsonb_build_array('open'),
+    'complete', jsonb_build_array('in_progress','blocked'),
+    'block',    jsonb_build_array('in_progress'),
+    'fail',     jsonb_build_array('in_progress','blocked'),
+    'cancel',   jsonb_build_array('open','in_progress','blocked','failed'),
+    'retry',    jsonb_build_array('failed')
+  );
+  v_to text;
+  v_existing uuid;
+  v_prior text;
+  v_total int; v_done int; v_failed int; v_cancelled int; v_open int;
+  v_rec_update text := null;
+begin
+  select * into v_task from public.action_tasks where id = p_task_id and org_id = p_org_id;
+  if not found then return jsonb_build_object('ok', false, 'error', 'NOT_FOUND'); end if;
+  v_to := case p_action when 'start' then 'in_progress' when 'complete' then 'completed' when 'block' then 'blocked' when 'fail' then 'failed' when 'cancel' then 'cancelled' when 'retry' then 'in_progress' else null end;
+  if v_to is null then return jsonb_build_object('ok', false, 'error', 'VALIDATION_ERROR', 'message', 'Unknown action ' || p_action); end if;
+  if not (v_task.status = any (array(select jsonb_array_elements_text(v_map -> p_action)))) then
+    return jsonb_build_object('ok', false, 'error', 'CONFLICT', 'message', 'Cannot ' || p_action || ' a task in state ' || v_task.status || ' (allowed transitions enforced).');
+  end if;
+  select id into v_existing from public.workflow_events where resource_type = 'action_task' and resource_id = p_task_id and request_id = p_request_id limit 1;
+  if v_existing is not null then return jsonb_build_object('ok', true, 'idempotent', true); end if;
+  v_prior := v_task.status;
+  update public.action_tasks
+     set status = v_to,
+         version = version + 1,
+         started_at = case when p_action in ('start','retry') then now() else started_at end,
+         completed_at = case when p_action = 'complete' then now() else completed_at end,
+         outcome = case when p_action in ('complete','fail','cancel') then coalesce(p_outcome, outcome) else outcome end,
+         verification = case when p_action = 'complete' then jsonb_build_object('evidence', coalesce(p_evidence, '[]'::jsonb), 'completed_by', p_actor_twin_id, 'at', now(), 'note', p_reason) else verification end,
+         last_error = case when p_action in ('fail','block') then p_reason else null end,
+         retry_count = case when p_action = 'retry' then retry_count + 1 else retry_count end,
+         updated_at = now()
+   where id = p_task_id and status = v_task.status;
+  if not found then return jsonb_build_object('ok', false, 'error', 'CONFLICT', 'message', 'Task changed while you were acting on it.'); end if;
+  select * into v_rec from public.recommendations where id = v_task.recommendation_id;
+  if found and v_rec.org_id = p_org_id then
+    select count(*), count(*) filter (where status = 'completed'), count(*) filter (where status = 'failed'), count(*) filter (where status = 'cancelled'), count(*) filter (where status in ('open','in_progress','blocked'))
+      into v_total, v_done, v_failed, v_cancelled, v_open
+      from public.action_tasks where recommendation_id = v_rec.id;
+    if v_total > 0 and v_done = v_total then v_rec_update := 'completed';
+    elsif v_failed > 0 and v_open = 0 then v_rec_update := 'failed';
+    elsif v_done + v_failed + v_cancelled > 0 then v_rec_update := 'in_progress';
+    end if;
+    if v_rec_update is not null and v_rec.status <> v_rec_update then
+      update public.recommendations set status = v_rec_update, version = version + 1, outcomes = jsonb_build_object('completed_at', now(), 'time_to_ready_days', round(extract(epoch from (now() - coalesce(approved_at, created_at))) / 86400.0)::int, 'task_summary', jsonb_build_object('total', v_total, 'completed', v_done, 'failed', v_failed, 'cancelled', v_cancelled), 'reviewer_feedback', p_reason), updated_at = now()
+       where id = v_rec.id and status = v_rec.status;
+    end if;
+  end if;
+  insert into public.workflow_events (org_id, resource_type, resource_id, actor_twin_id, actor_role, resource, prior_status, new_status, reason, source_version, request_id, payload)
+  values (p_org_id, 'action_task', p_task_id, p_actor_twin_id, p_actor_role, 'action_task', v_prior, v_to, p_reason, null, p_request_id, jsonb_build_object('evidence', coalesce(p_evidence, '[]'::jsonb), 'outcome', coalesce(p_outcome, '{}'::jsonb)));
+  return jsonb_build_object('ok', true, 'prior_status', v_prior, 'new_status', v_to, 'rec_update', v_rec_update);
+end;
+$$;
+revoke all on function public.workflow_recommendation_transition(uuid,uuid,text,uuid,text,text,text,text,jsonb) from public, anon, authenticated;
+revoke all on function public.workflow_action_task_transition(uuid,uuid,text,uuid,text,text,text,jsonb,jsonb) from public, anon, authenticated;
+alter table public.action_tasks add column updated_at timestamptz not null default now();
+create or replace function public.workflow_recommendation_transition(
+  p_org_id uuid, p_rec_id uuid, p_action text, p_actor_twin_id uuid,
+  p_actor_role text, p_reason text, p_request_id text,
+  p_source_version text, p_payload jsonb
+) returns jsonb
+language plpgsql security definer set search_path = public
+as $$
+declare
+  v_rec public.recommendations%rowtype;
+  v_action_map jsonb := jsonb_build_object(
+    'submit',      jsonb_build_object('from', jsonb_build_array('suggested'), 'to', 'needs_review'),
+    'approve',     jsonb_build_object('from', jsonb_build_array('needs_review','stale'), 'to', 'approved'),
+    'reject',      jsonb_build_object('from', jsonb_build_array('suggested','needs_review','stale','approved'), 'to', 'rejected'),
+    'dispatch',    jsonb_build_object('from', jsonb_build_array('approved'), 'to', 'execution_pending'),
+    'start',       jsonb_build_object('from', jsonb_build_array('execution_pending','failed'), 'to', 'in_progress'),
+    'complete',    jsonb_build_object('from', jsonb_build_array('in_progress','execution_pending'), 'to', 'completed'),
+    'fail',        jsonb_build_object('from', jsonb_build_array('in_progress','execution_pending'), 'to', 'failed'),
+    'cancel',      jsonb_build_object('from', jsonb_build_array('needs_review','approved','execution_pending','in_progress','failed'), 'to', 'cancelled'),
+    'mark_stale',  jsonb_build_object('from', jsonb_build_array('needs_review','approved','execution_pending','in_progress','failed'), 'to', 'stale'),
+    're_review',   jsonb_build_object('from', jsonb_build_array('stale'), 'to', 'needs_review')
+  );
+  v_allowed jsonb;
+  v_from jsonb;
+  v_to text;
+  v_prior text;
+  v_existing uuid;
+  v_created_tasks int := 0;
+  v_effect text := null;
+begin
+  select * into v_rec from public.recommendations where id = p_rec_id and org_id = p_org_id;
+  if not found then return jsonb_build_object('ok', false, 'error', 'NOT_FOUND'); end if;
+  v_allowed := v_action_map -> p_action;
+  if v_allowed is null then return jsonb_build_object('ok', false, 'error', 'VALIDATION_ERROR', 'message', 'Unknown action ' || p_action); end if;
+  -- Idempotency FIRST: a replayed request_id returns the stored result even when the current status no longer matches the action's from-set.
+  select id into v_existing from public.workflow_events
+    where resource_type = 'recommendation' and resource_id = p_rec_id and request_id = p_request_id
+    limit 1;
+  if v_existing is not null then return jsonb_build_object('ok', true, 'idempotent', true, 'prior_status', v_rec.status, 'new_status', v_rec.status); end if;
+  v_from := v_allowed -> 'from';
+  v_to := v_allowed ->> 'to';
+  if not (v_rec.status = any (array(select jsonb_array_elements_text(v_from)))) then
+    return jsonb_build_object('ok', false, 'error', 'CONFLICT', 'message', 'Cannot ' || p_action || ' a recommendation in state ' || v_rec.status || ' (allowed transitions are enforced, not arbitrary status assignment).');
+  end if;
+  v_prior := v_rec.status;
+  update public.recommendations
+     set status = v_to,
+         version = version + 1,
+         stale = case when p_action = 'mark_stale' then true else stale end,
+         stale_reason = case when p_action = 'mark_stale' then p_reason else stale_reason end,
+         superseded_by = case when (p_payload->>'superseded_by') is not null and p_payload->>'superseded_by' <> '' then (p_payload->>'superseded_by')::uuid else superseded_by end,
+         approved_at = case when p_action = 'approve' then now() else approved_at end,
+         last_reviewed_at = case when p_action in ('approve','reject','re_review','submit') then now() else last_reviewed_at end,
+         outcomes = case when p_action = 'complete' then jsonb_build_object('completed_at', now(), 'time_to_ready_days', round(extract(epoch from (now() - coalesce(approved_at, created_at))) / 86400.0)::int, 'reviewer_feedback', coalesce(p_payload->>'reviewer_feedback', p_reason), 'note', case when v_rec.category in ('workforce_review','development_support','mobility','upskilling') then 'Post-intervention observation recorded; correlation only, no causality claimed.' else null end) else outcomes end,
+         updated_at = now()
+   where id = p_rec_id and status = v_rec.status;
+  if not found then return jsonb_build_object('ok', false, 'error', 'CONFLICT', 'message', 'Stale snapshot: the recommendation changed while you were reviewing it. Re-read before acting.'); end if;
+  if p_action = 'dispatch' and jsonb_typeof(p_payload -> 'tasks') = 'array' then
+    insert into public.action_tasks (org_id, recommendation_id, owner_twin_id, owner_role, task_code, title, instructions, resource_link, required_evidence, depends_on, outcome_measure, due_at, created_by_request_id)
+    select p_org_id, p_rec_id, (t->>'owner_twin_id')::uuid, coalesce(t->>'owner_role', 'employee'), t->>'task_code', t->>'title', t->>'instructions', t->>'resource_link', coalesce(t->'required_evidence', '[]'::jsonb), coalesce(t->'depends_on', '[]'::jsonb), coalesce(t->'outcome_measure', '{}'::jsonb), case when (t->>'due_days') is not null then now() + ((t->>'due_days')::int * interval '1 day') else null end, p_request_id
+    from jsonb_array_elements(p_payload -> 'tasks') as t
+    on conflict (recommendation_id, task_code) do nothing;
+    get diagnostics v_created_tasks = row_count;
+    v_effect := 'Created ' || v_created_tasks || ' reviewed task(s) in the same transaction as the state change.';
+  end if;
+  insert into public.workflow_events (org_id, resource_type, resource_id, actor_twin_id, actor_role, resource, prior_status, new_status, reason, source_version, request_id, payload)
+  values (p_org_id, 'recommendation', p_rec_id, p_actor_twin_id, p_actor_role, 'recommendation:' || v_rec.category, v_prior, v_to, p_reason, p_source_version, p_request_id, p_payload)
+  on conflict do nothing;
+  return jsonb_build_object('ok', true, 'prior_status', v_prior, 'new_status', v_to, 'created_tasks', v_created_tasks, 'effect', v_effect);
+end;
+$$;
+create or replace function public.workflow_action_task_transition(
+  p_org_id uuid, p_task_id uuid, p_action text, p_actor_twin_id uuid,
+  p_actor_role text, p_reason text, p_request_id text,
+  p_evidence jsonb, p_outcome jsonb
+) returns jsonb
+language plpgsql security definer set search_path = public
+as $$
+declare
+  v_task public.action_tasks%rowtype;
+  v_rec public.recommendations%rowtype;
+  v_map jsonb := jsonb_build_object(
+    'start',    jsonb_build_array('open'),
+    'complete', jsonb_build_array('in_progress','blocked'),
+    'block',    jsonb_build_array('in_progress'),
+    'fail',     jsonb_build_array('in_progress','blocked'),
+    'cancel',   jsonb_build_array('open','in_progress','blocked','failed'),
+    'retry',    jsonb_build_array('failed')
+  );
+  v_to text;
+  v_existing uuid;
+  v_prior text;
+  v_total int; v_done int; v_failed int; v_cancelled int; v_open int;
+  v_rec_update text := null;
+begin
+  select * into v_task from public.action_tasks where id = p_task_id and org_id = p_org_id;
+  if not found then return jsonb_build_object('ok', false, 'error', 'NOT_FOUND'); end if;
+  v_to := case p_action when 'start' then 'in_progress' when 'complete' then 'completed' when 'block' then 'blocked' when 'fail' then 'failed' when 'cancel' then 'cancelled' when 'retry' then 'in_progress' else null end;
+  if v_to is null then return jsonb_build_object('ok', false, 'error', 'VALIDATION_ERROR', 'message', 'Unknown action ' || p_action); end if;
+  -- Idempotency FIRST (see recommendation RPC).
+  select id into v_existing from public.workflow_events where resource_type = 'action_task' and resource_id = p_task_id and request_id = p_request_id limit 1;
+  if v_existing is not null then return jsonb_build_object('ok', true, 'idempotent', true); end if;
+  if not (v_task.status = any (array(select jsonb_array_elements_text(v_map -> p_action)))) then
+    return jsonb_build_object('ok', false, 'error', 'CONFLICT', 'message', 'Cannot ' || p_action || ' a task in state ' || v_task.status || ' (allowed transitions enforced).');
+  end if;
+  v_prior := v_task.status;
+  update public.action_tasks
+     set status = v_to,
+         version = version + 1,
+         started_at = case when p_action in ('start','retry') then now() else started_at end,
+         completed_at = case when p_action = 'complete' then now() else completed_at end,
+         outcome = case when p_action in ('complete','fail','cancel') then coalesce(p_outcome, outcome) else outcome end,
+         verification = case when p_action = 'complete' then jsonb_build_object('evidence', coalesce(p_evidence, '[]'::jsonb), 'completed_by', p_actor_twin_id, 'at', now(), 'note', p_reason) else verification end,
+         last_error = case when p_action in ('fail','block') then p_reason else null end,
+         retry_count = case when p_action = 'retry' then retry_count + 1 else retry_count end,
+         updated_at = now()
+   where id = p_task_id and status = v_task.status;
+  if not found then return jsonb_build_object('ok', false, 'error', 'CONFLICT', 'message', 'Task changed while you were acting on it.'); end if;
+  select * into v_rec from public.recommendations where id = v_task.recommendation_id;
+  if found and v_rec.org_id = p_org_id then
+    select count(*), count(*) filter (where status = 'completed'), count(*) filter (where status = 'failed'), count(*) filter (where status = 'cancelled'), count(*) filter (where status in ('open','in_progress','blocked'))
+      into v_total, v_done, v_failed, v_cancelled, v_open
+      from public.action_tasks where recommendation_id = v_rec.id;
+    if v_total > 0 and v_done = v_total then v_rec_update := 'completed';
+    elsif v_failed > 0 and v_open = 0 then v_rec_update := 'failed';
+    elsif v_done + v_failed + v_cancelled > 0 then v_rec_update := 'in_progress';
+    end if;
+    if v_rec_update is not null and v_rec.status <> v_rec_update then
+      update public.recommendations set status = v_rec_update, version = version + 1, outcomes = jsonb_build_object('completed_at', now(), 'time_to_ready_days', round(extract(epoch from (now() - coalesce(approved_at, created_at))) / 86400.0)::int, 'task_summary', jsonb_build_object('total', v_total, 'completed', v_done, 'failed', v_failed, 'cancelled', v_cancelled), 'reviewer_feedback', p_reason), updated_at = now()
+       where id = v_rec.id and status = v_rec.status;
+    end if;
+  end if;
+  insert into public.workflow_events (org_id, resource_type, resource_id, actor_twin_id, actor_role, resource, prior_status, new_status, reason, source_version, request_id, payload)
+  values (p_org_id, 'action_task', p_task_id, p_actor_twin_id, p_actor_role, 'action_task', v_prior, v_to, p_reason, null, p_request_id, jsonb_build_object('evidence', coalesce(p_evidence, '[]'::jsonb), 'outcome', coalesce(p_outcome, '{}'::jsonb)));
+  return jsonb_build_object('ok', true, 'prior_status', v_prior, 'new_status', v_to, 'rec_update', v_rec_update);
+end;
+$$;
+revoke all on function public.workflow_recommendation_transition(uuid,uuid,text,uuid,text,text,text,text,jsonb) from public, anon, authenticated;
+revoke all on function public.workflow_action_task_transition(uuid,uuid,text,uuid,text,text,text,jsonb,jsonb) from public, anon, authenticated;
