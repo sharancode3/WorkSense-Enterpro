@@ -249,6 +249,11 @@ async function reseedLegacy(supabase, authIds: Record<string, string>) {
     verified_skills: [
       { name: "Identity & Access Management", proficiency: 4, evidence_source: "certification", verification_rigor: "high" },
       { name: "Incident Response", proficiency: 3, evidence_source: "project", verification_rigor: "medium" },
+      { name: "Kubernetes", proficiency: 3, evidence_source: "certification", verification_rigor: "medium" },
+      { name: "CI/CD", proficiency: 3, evidence_source: "project", verification_rigor: "medium" },
+      { name: "Monitoring", proficiency: 3, evidence_source: "project", verification_rigor: "medium" },
+      { name: "AWS", proficiency: 2, evidence_source: "certification", verification_rigor: "medium" },
+      { name: "Linux Administration", proficiency: 3, evidence_source: "certification", verification_rigor: "medium" },
     ],
     interview_rubrics: [],
     performance_history: [
@@ -720,6 +725,11 @@ async function reseed(supabase, authIds: Record<string, string>) {
       verified_skills: [
         { name: "Identity & Access Management", proficiency: 4, evidence_source: "certification", verification_rigor: "high" },
         { name: "Incident Response", proficiency: 3, evidence_source: "project", verification_rigor: "medium" },
+        { name: "Kubernetes", proficiency: 3, evidence_source: "certification", verification_rigor: "medium" },
+        { name: "CI/CD", proficiency: 3, evidence_source: "project", verification_rigor: "medium" },
+        { name: "Monitoring", proficiency: 3, evidence_source: "project", verification_rigor: "medium" },
+        { name: "AWS", proficiency: 2, evidence_source: "certification", verification_rigor: "medium" },
+        { name: "Linux Administration", proficiency: 3, evidence_source: "certification", verification_rigor: "medium" },
       ],
       interview_rubrics: [],
       performance_history: [
@@ -2135,6 +2145,27 @@ async function seedMyDay(supabase, orgId: string) {
     // Elena Voss (it_security) — access review + provisioning handoff.
     { owner_twin_id: "22222222-2222-2222-2222-222222222210", title: "Ship the Q3 access review packet", due_at: dayIso(0, 15), status: "todo", module: "access", action: "audit", link: "/admin/access" },
     { owner_twin_id: "22222222-2222-2222-2222-222222222210", title: "Provision laptop for the Data Analyst starter", due_at: dayIso(0, 9), status: "done", completed_at: dayIso(0, 8), evidence: "Handed to IT admin", module: "access", action: "provision", link: "/onboarding?twin=22222222-2222-2222-2222-222222222204" },
+    { owner_twin_id: "22222222-2222-2222-2222-222222222210", title: "Rotate the SSO service-account keys", due_at: dayIso(0, 16), status: "todo", module: "access", action: "audit", link: "/admin/access" },
+    { owner_twin_id: "22222222-2222-2222-2222-222222222210", title: "Finalize laptop order for the next cohort", due_at: dayIso(1, 11), status: "todo", module: "access", action: "provision", link: "/onboarding" },
+    // Dana Whitmore — governance rhythm + weekly routines.
+    { owner_twin_id: "22222222-2222-2222-2222-222222222201", title: "Review the Data team staffing proposal", due_at: dayIso(0, 13), status: "todo", module: "staffing", action: "review", link: "/staffing" },
+    { owner_twin_id: "22222222-2222-2222-2222-222222222201", title: "Prep the monthly people metrics pack", due_at: dayIso(1, 10), status: "todo", module: "admin", action: "review", link: "/workforce" },
+    { owner_twin_id: "22222222-2222-2222-2222-222222222201", title: "Weekly governance review", due_at: dayIso(0, 9), status: "todo", recurrence: { freq: "weekly", weekdays: [1], day_time: "09:00" } },
+    { owner_twin_id: "22222222-2222-2222-2222-222222222201", title: "Data-quality claims review", due_at: dayIso(-1, 11), status: "done", completed_at: dayIso(-1, 12), evidence: "Reviewed 12 claims", module: "skill_data", action: "review", link: "/workforce/data-quality" },
+    // Riley Morgan — lifecycle + policies.
+    { owner_twin_id: "22222222-2222-2222-2222-222222222208", title: "Schedule the 30-day check-in for the new Data Analyst", due_at: dayIso(1, 9), status: "todo", module: "onboarding", action: "review", link: "/onboarding?twin=22222222-2222-2222-2222-222222222204" },
+    { owner_twin_id: "22222222-2222-2222-2222-222222222208", title: "Verify policy citations in the L&D guidance", due_at: dayIso(0, 14), status: "todo", module: "policies", action: "review", link: "/policy" },
+    // Jordan Reyes — team ops.
+    { owner_twin_id: "22222222-2222-2222-2222-222222222202", title: "Book interview slots for the Backend requisition", due_at: dayIso(0, 12), status: "todo", module: "recruitment", action: "review", link: "/recruitment?req=33333333-3333-3333-3333-333333333301" },
+    { owner_twin_id: "22222222-2222-2222-2222-222222222202", title: "Weekly 1:1 rhythm with the team", due_at: dayIso(0, 9), status: "todo", recurrence: { freq: "weekly", weekdays: [3], day_time: "09:30" } },
+    // Chris Okafor — pipeline hygiene.
+    { owner_twin_id: "22222222-2222-2222-2222-222222222209", title: "Screen the new backend applicants", due_at: dayIso(0, 11), status: "todo", module: "recruitment", action: "review", link: "/recruitment" },
+    { owner_twin_id: "22222222-2222-2222-2222-222222222209", title: "Update requisition scorecards before Friday", due_at: dayIso(1, 15), status: "todo", module: "recruitment", action: "review", link: "/recruitment" },
+    { owner_twin_id: "22222222-2222-2222-2222-222222222209", title: "Pipeline hygiene pass", due_at: dayIso(-1, 10), status: "done", completed_at: dayIso(-1, 11), evidence: "Closed 2 stale reqs", module: "recruitment", action: "review", link: "/recruitment" },
+    // Alex Chen — onboarding + development.
+    { owner_twin_id: "22222222-2222-2222-2222-222222222203", title: "Stand-up prep", due_at: dayIso(0, 8), status: "todo", recurrence: { freq: "daily", weekdays: [], day_time: "08:30" } },
+    { owner_twin_id: "22222222-2222-2222-2222-222222222203", title: "Complete the Kubernetes intro module", due_at: dayIso(1, 17), status: "todo", module: "skill_data", action: "complete", link: "/graph" },
+    { owner_twin_id: "22222222-2222-2222-2222-222222222203", title: "Set up the local dev environment", due_at: dayIso(-1, 9), status: "done", completed_at: dayIso(-1, 10), evidence: "Repo + toolchain ready" },
   ];
   const { error } = await supabase.from("myday_personal_tasks").insert(
     rows.map((r) => ({
@@ -2235,7 +2266,7 @@ Deno.serve(async (req) => {
         applications: fx.requisitions.reduce((n, r) => n + (r.applicants ?? []).length, 0) + 6,
         workforce_observations: fx.observations.length,
         workforce_review_cases: fx.employees.filter((p) => p.role === "employee" || p.role === "manager").length,
-        myday_personal_tasks: 16,
+        myday_personal_tasks: 32,
       },
     });
   } catch (err) {
