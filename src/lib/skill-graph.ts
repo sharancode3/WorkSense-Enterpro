@@ -101,4 +101,4 @@ export function fitBand(score: number): "high" | "mid" | "low" {
 
 // Batch E (E1/E2): pure helpers live in a client-free module (unit-testable);
 // re-exported here so the page keeps a single import path.
-export { coverageBreakdown, futureRequirementDiff } from "./skill-graph-metrics";
+export { coverageBreakdown, futureRequirementDiff, projectedFutureReadiness } from "./skill-graph-metrics";
