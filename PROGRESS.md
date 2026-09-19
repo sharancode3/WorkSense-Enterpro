@@ -630,3 +630,20 @@ The reviewer spec's 6.6 said "Approval creates supported owned tasks" — but pr
 **Honest boundary:** the evidence→proposal *staleness cascade* (proposal-to-candidate linkage) stays deferred in the coverage matrix; this batch adds the decision loop and version-bound follow-up task, not that cascade.
 
 **Remaining:** none implementable. Concrete blockers: none.
+
+## 50. Browser persona verification (completes the last unverified item)
+
+The previously "untested" item — authenticated persona screens at 768/1440 — is now verified in a real browser. No code change was needed to enable it: the login page already exposes a deep-linkable persona (`/login?as=<role>&to=<path>`), so the preview's real JWT + RLS session could be captured directly.
+
+**Screens captured (real authenticated sessions):**
+- **1440:** Administrator (Dana) · HR skill graph (Riley) · People Manager (Jordan) · IT Provisioning (Elena) · Recruiter (Chris, /recruitment) · Employee (Alex).
+- **768:** the same six, plus the public landing/login/candidate portal at 1280 and the landing at 390.
+- **1280:** public landing, login, candidate-status portal.
+
+**Result — every sidebar matched the exact per-role navigation contract** (`navigation.test.ts`): Administrator 11 items incl. Administration; HR partner 7 (no recruitment/admin); Manager 7 (no recruitment/admin); Recruiter 4 (no workforce review/staffing/admin); Employee 5 (self scope); IT 2 (`/app`, `/onboarding`). Role badges read Administrator / HR Business Partner / People Manager / Technical Recruiter / Employee / IT Provisioning. Home content was role-appropriate everywhere (admin attention queue, HR org scope, manager team scope + "waiting on others", recruiter requisition workspace, employee onboarding 1/12 + "Waiting on others", IT provisioning workspace with 5 canonical tasks). **The reviewer's original defect — HR reaching Skill graph and getting an authorization-denial screen — is fixed and confirmed in-browser at both 1440 and 768** (graph renders real skill data, no denial).
+
+**Defect found and fixed (real, from the 768 capture):** in the IT provisioning panel and the onboarding provisioning queue, the search input shared the filter row with `min-w-0 flex-1` and was squeezed at tablet width, clipping its placeholder to "Se". Both rows are now `flex-col` on mobile and `sm:flex-row sm:flex-wrap`, with the search input `shrink-0 sm:w-56` — so pills never wrap and the search placeholder is always readable. Verified in-browser at 768 (all five pills on one line, search below, placeholder fully readable) and unchanged at 1440 (page height identical at 1842px before/after). Files: `src/pages/role-home.tsx`, `src/pages/onboarding.tsx`.
+
+**Also confirmed:** the earlier `useAuth must be used within <AuthProvider>` + blank-preview console errors were **transient mid-edit HMR** during Batch 10 (already fixed); the current build renders clean at every captured width with no runtime errors. Live suites re-run this turn: batch-1..8 + 10 = **124 checks green**; demo pristine (9 sessions, 0 proposals). Gate: lint 0 errors, all tsc green, 45 bundles, **414 tests / 41 files**, build green.
+
+**Remaining:** none. Concrete blockers: none.

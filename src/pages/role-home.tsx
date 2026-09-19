@@ -464,7 +464,7 @@ function ItProvisioningPanel({ queue }: { queue: OnboardingQueue | null }) {
           <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Provisioning & access tasks</p>
           <span className="rounded-md bg-foreground px-2 py-0.5 text-[10px] font-bold text-white">{items.length}</span>
         </div>
-        <div className="mt-3 flex flex-wrap items-center gap-2">
+        <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
           <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filter provisioning tasks">
             {FILTERS.map((f) => (
               <button
@@ -484,7 +484,7 @@ function ItProvisioningPanel({ queue }: { queue: OnboardingQueue | null }) {
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search employee or task…"
             aria-label="Search provisioning tasks by employee or task"
-            className="h-9 w-full min-w-0 flex-1 rounded-md border border-border bg-white px-3 text-sm font-medium text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30 sm:w-56"
+            className="h-9 w-full shrink-0 rounded-md border border-border bg-white px-3 text-sm font-medium text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30 sm:w-56"
           />
         </div>
         {visible.length === 0 ? (

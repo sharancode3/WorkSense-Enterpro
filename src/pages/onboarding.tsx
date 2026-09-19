@@ -763,7 +763,7 @@ function ProvisioningQueue({
       </div>
       {/* Batch 4 (4.1): operational filters — Ready / Blocked / Overdue /
           Completed — plus employee & task-title search. */}
-      <div className="mt-3 flex flex-wrap items-center gap-2">
+      <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
         <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filter provisioning queue">
           {FILTERS.map((f) => (
             <button
@@ -783,7 +783,7 @@ function ProvisioningQueue({
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search employee or task…"
           aria-label="Search provisioning queue by employee or task"
-          className="h-9 w-full min-w-0 flex-1 rounded-md border border-border bg-white px-3 text-sm font-medium text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30 sm:w-56"
+          className="h-9 w-full shrink-0 rounded-md border border-border bg-white px-3 text-sm font-medium text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30 sm:w-56"
         />
       </div>
       {visible.length === 0 && (
