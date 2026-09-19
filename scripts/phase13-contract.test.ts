@@ -24,7 +24,7 @@ function rlsCoveredTables(): { missing: string[]; tables: string[] } {
   const tables: string[] = [];
   const missing: string[] = [];
   for (let i = 0; i < migrationsSql.length; i++) {
-    const re = /create table\s+(?:public\.)?([a-z_0-9]+)/gi;
+    const re = /create table\s+(?:if not exists\s+)?(?:public\.)?([a-z_0-9]+)/gi;
     let m: RegExpExecArray | null;
     while ((m = re.exec(migrationsSql[i]))) {
       const name = m[1];

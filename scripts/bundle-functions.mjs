@@ -52,11 +52,13 @@ const policyseed = stripAllImports(read("supabase/functions/_shared/policy-seed.
 const planner = stripAllImports(read("supabase/functions/_shared/staffing-planner.ts"));
 const staffingReview = stripAllImports(read("supabase/functions/_shared/staffing-review.ts"));
 const myDayEngine = stripAllImports(read("supabase/functions/_shared/my-day-engine.ts"));
-const SHARED = { planner, engine, onboarding, onboardingV2, qwen, policy, reviewIndex, performance, recEngine, workflow, jobs, validate, evidence, resume, generated, journey, fixtures, seed, stageEngine, assessment, pcontext, leave, policyseed, llmcache, myWorkEngine, candidateCompare, onboardingQueue, assessmentQueue, fitStore, staffingReview, myDayEngine };
+const notificationEngine = stripAllImports(read("supabase/functions/_shared/notification-engine.ts"));
+const notifyHook = stripAllImports(read("supabase/functions/_shared/notify-hook.ts"));
+const SHARED = { planner, engine, onboarding, onboardingV2, qwen, policy, reviewIndex, performance, recEngine, workflow, jobs, validate, evidence, resume, generated, journey, fixtures, seed, stageEngine, assessment, pcontext, leave, policyseed, llmcache, myWorkEngine, candidateCompare, onboardingQueue, assessmentQueue, fitStore, staffingReview, myDayEngine, notificationEngine, notifyHook };
 
 // Function -> shared dependencies (in import order) it needs inlined.
 const FNS = {
-  "reset-demo": ["generated", "journey", "seed", "fixtures", "assessment", "policyseed", "onboardingV2", "reviewIndex", "engine"],
+  "reset-demo": ["generated", "journey", "seed", "fixtures", "assessment", "policyseed", "onboardingV2", "reviewIndex", "engine", "notifyHook"],
   "skill-match": ["engine", "evidence"],
   "extract-resume": ["engine", "qwen", "jobs", "validate", "evidence", "llmcache"],
   "rubric": ["qwen", "validate"],
@@ -66,9 +68,9 @@ const FNS = {
   "requisition": [],
   "onboarding-plan": ["engine", "onboardingV2"],
   "onboarding-approve": [],
-  "onboarding-task": ["onboardingV2"],
+  "onboarding-task": ["onboardingV2", "notifyHook"],
   "policy-qa": ["qwen", "policy", "validate", "pcontext", "leave", "policyseed", "llmcache"],
-  "escalate": [],
+  "escalate": ["notifyHook"],
   "workforce-signal": ["reviewIndex"],
   "workforce-review-index": ["reviewIndex"],
   "workforce-review-action": [],
@@ -76,13 +78,16 @@ const FNS = {
   "performance-draft": [],
   "performance-synthesis": ["qwen", "validate"],
   "recommendation-review": ["workflow"],
-  "recommendation-execute": ["workflow"],
+  "recommendation-execute": ["workflow", "notifyHook"],
   "recommendation-comment": [],
-  "action-task-update": ["workflow"],
+  "action-task-update": ["workflow", "notifyHook"],
   "recommendation-scan": ["engine", "recEngine", "reviewIndex", "workflow", "qwen", "validate"],
   "dashboard": ["engine", "reviewIndex"],
   "my-work": ["reviewIndex", "myWorkEngine"],
-  "my-day": ["reviewIndex", "myWorkEngine", "myDayEngine"],
+  "my-day": ["reviewIndex", "myWorkEngine", "myDayEngine", "notifyHook"],
+  "notify-scan": ["notificationEngine"],
+  "notifications": ["notificationEngine"],
+  "onboarding-approve": ["notifyHook"],
   "staffing-comparison": ["planner", "qwen", "staffingReview"],
   "overview-search": [],
   "policy-conversation": [],
@@ -96,8 +101,8 @@ const FNS = {
   "assessment-blueprint": ["assessment"],
   "assessment-session": ["jobs"],
   "assessment-evaluate": ["qwen", "jobs", "validate", "assessment"],
-  "assessment-review": ["engine", "evidence", "assessment", "fitStore"],
-  "application-stage": ["engine", "stageEngine"],
+  "assessment-review": ["engine", "evidence", "assessment", "fitStore", "notifyHook"],
+  "application-stage": ["engine", "stageEngine", "notifyHook"],
   "candidate-compare": ["candidateCompare"],
   "onboarding-queue": ["onboardingQueue"],
   "assessment-queue": ["assessmentQueue"],

@@ -1807,7 +1807,39 @@ export function buildMyDay(inputs: MyDayInputs, view: MyDayView = "today"): MyDa
 }
 
 
+// Shared helper: after an authoritative domain transition, schedule the
+// idempotent notification generator (notify-scan). Non-blocking by design —
+// the response is returned immediately while the scan completes in the
+// background. Failures are swallowed: notifications are derived from durable
+// canonical state and the next scan would catch up; the transition itself is
+// never rolled back because a notification could not be sent.
+//
+// NOTE: this module must stay free of `Deno` references so the plain shared
+// typecheck (tsconfig.functions.json, node types) stays green. Callers pass
+// their own runtime env values.
+export async function notifyScanAfter(
+  orgId: string,
+  supabaseUrl: string,
+  serviceKey: string
+): Promise<void> {
+  try {
+    await fetch(`${supabaseUrl}/functions/v1/notify-scan`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${serviceKey}`,
+        apikey: serviceKey,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ org_id: orgId }),
+    });
+  } catch {
+    /* non-fatal */
+  }
+}
+
+
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
+
 
 
 
@@ -2320,6 +2352,7 @@ Deno.serve(async (req) => {
         .single();
       if (error || !row) throw new Error(`myday create task: ${error?.message}`);
       const result = await buildResult(supabase, caller, view, tzOffsetMinutes);
+      void notifyScanAfter(caller.org_id, Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
       return json({ ok: true, created_id: row.id, result });
     }
 
@@ -2374,6 +2407,7 @@ Deno.serve(async (req) => {
         const { data: updated, error } = await supabase.from(table).update(patch).eq("id", row.id).eq("org_id", caller.org_id).eq("owner_twin_id", caller.id).eq("version", row.version).select("id").single();
         if (error || !updated) return json({ error: "VERSION_CONFLICT", message: "This item changed in another window — refresh and try again." }, 409);
         const result = await buildResult(supabase, caller, view, tzOffsetMinutes);
+        void notifyScanAfter(caller.org_id, Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
         return json({ ok: true, transitioned: { key, to }, result });
       }
 
@@ -2393,6 +2427,7 @@ Deno.serve(async (req) => {
         );
         if (error) throw new Error(`myday item state upsert: ${error.message}`);
         const result = await buildResult(supabase, caller, view, tzOffsetMinutes);
+        void notifyScanAfter(caller.org_id, Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
         return json({ ok: true, transitioned: { key, to }, result });
       }
 

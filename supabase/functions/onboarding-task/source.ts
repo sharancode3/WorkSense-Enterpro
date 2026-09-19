@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
+import { notifyScanAfter } from "../_shared/notify-hook.ts";
 import {
   applyWaiver,
   attemptHash,
@@ -256,7 +257,9 @@ async function handle(supabase: ReturnType<typeof createClient>, req: Request): 
       .update({ readiness, audit_events: appendAudit(`${twin.name} completed "${target.title}" with evidence.`) })
       .eq("id", planId);
 
-    return json({ ok: true, action, task_code: taskCode, state: "done", readiness, completion });
+    // Authoritative transition → schedule idempotent notification generation.
+  void notifyScanAfter(plan.org_id, Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+  return json({ ok: true, action, task_code: taskCode, state: "done", readiness, completion });
   }
 
   // -------------------------------------------------------------------------
@@ -279,6 +282,8 @@ async function handle(supabase: ReturnType<typeof createClient>, req: Request): 
       org_id: plan.org_id, plan_id: planId, task_code: taskCode, actor_twin_id: caller.id,
       action, attempt_hash: attemptHash(planId, taskCode, action, { note, blocker_id: blocker.id }), result: "applied", note, evidence: { blocker_id: blocker.id },
     });
+  // Authoritative transition → schedule idempotent notification generation.
+  void notifyScanAfter(plan.org_id, Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
     return json({ ok: true, action, task_code: taskCode, state: next.find((t) => t.task_code === taskCode)!.state, blockers: next.find((t) => t.task_code === taskCode)!.blockers, readiness });
   }
 
@@ -312,6 +317,8 @@ async function handle(supabase: ReturnType<typeof createClient>, req: Request): 
       org_id: plan.org_id, plan_id: planId, task_code: taskCode, actor_twin_id: caller.id,
       action, attempt_hash: attemptHash(planId, taskCode, action, { blocker_id: blockerId }), result: "applied", note: "Blocker resolved.", evidence: { blocker_id: blockerId },
     });
+  // Authoritative transition → schedule idempotent notification generation.
+  void notifyScanAfter(plan.org_id, Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
     return json({ ok: true, action, task_code: taskCode, state: next.find((t) => t.task_code === taskCode)!.state, blockers: nextBlockers, readiness });
   }
 
@@ -365,6 +372,8 @@ async function handle(supabase: ReturnType<typeof createClient>, req: Request): 
       org_id: plan.org_id, plan_id: planId, task_code: taskCode, actor_twin_id: caller.id,
       action, attempt_hash: attemptHash(planId, taskCode, action, { reason, policy_basis: policyBasis }), result: "applied", note: reason, evidence: { reason, policy_basis: policyBasis },
     });
+  // Authoritative transition → schedule idempotent notification generation.
+  void notifyScanAfter(plan.org_id, Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
     return json({ ok: true, action, task_code: taskCode, state: "waived", waiver, readiness });
   }
 
@@ -446,6 +455,8 @@ async function handle(supabase: ReturnType<typeof createClient>, req: Request): 
       action, attempt_hash: attemptHash(planId, oldCode, action, { skill }), result: "applied", note: reason, evidence: { skill, replaced_by: newCode, source_evidence: sourceEvidence },
     });
 
+  // Authoritative transition → schedule idempotent notification generation.
+  void notifyScanAfter(plan.org_id, Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
     return json({ ok: true, action, task_code: oldCode, replaced_by: newCode, plan_id: newPlan!.id, version: newVersion, status: "pending_approval", plan_hash: hash, readiness });
   }
 
@@ -520,6 +531,8 @@ async function handle(supabase: ReturnType<typeof createClient>, req: Request): 
       action, attempt_hash: attemptHash(planId, oldCode, action, { skill }), result: "applied", note: reason, evidence: { skill, reopened_by: reopenCode, source_evidence: sourceEvidence },
     });
 
+  // Authoritative transition → schedule idempotent notification generation.
+  void notifyScanAfter(plan.org_id, Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
     return json({ ok: true, action, task_code: oldCode, reopened_by: reopenCode, plan_id: newPlan!.id, version: newVersion, status: "pending_approval", plan_hash: hash, readiness });
   }
 

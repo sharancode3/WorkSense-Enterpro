@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
+import { notifyScanAfter } from "../_shared/notify-hook.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -150,6 +151,8 @@ Deno.serve(async (req) => {
     .single();
   if (error) return json({ error: "INTERNAL", message: error.message }, 500);
 
+  // Authoritative transition → schedule idempotent notification generation.
+  void notifyScanAfter(caller.org_id, Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
   return json({
     ok: true,
     escalation_id: data.id,

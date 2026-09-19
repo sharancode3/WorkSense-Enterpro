@@ -4517,6 +4517,286 @@ export type Database = {
           },
         ]
       }
+      notification_digests: {
+        Row: {
+          facts: Json
+          generated_at: string
+          id: string
+          org_id: string
+          period: string
+          period_key: string
+          twin_id: string
+        }
+        Insert: {
+          facts?: Json
+          generated_at?: string
+          id?: string
+          org_id: string
+          period: string
+          period_key: string
+          twin_id: string
+        }
+        Update: {
+          facts?: Json
+          generated_at?: string
+          id?: string
+          org_id?: string
+          period?: string
+          period_key?: string
+          twin_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notification_digests_org_id_fkey"
+            columns: ["org_id"]
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notification_digests_twin_id_fkey"
+            columns: ["twin_id"]
+            referencedRelation: "digital_twins"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      notification_events: {
+        Row: {
+          created_at: string
+          detail: Json
+          event_type: string
+          id: string
+          notification_id: string | null
+          org_id: string
+          recipient_twin_id: string
+        }
+        Insert: {
+          created_at?: string
+          detail?: Json
+          event_type: string
+          id?: string
+          notification_id?: string | null
+          org_id: string
+          recipient_twin_id: string
+        }
+        Update: {
+          created_at?: string
+          detail?: Json
+          event_type?: string
+          id?: string
+          notification_id?: string | null
+          org_id?: string
+          recipient_twin_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notification_events_org_id_fkey"
+            columns: ["org_id"]
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notification_events_recipient_twin_id_fkey"
+            columns: ["recipient_twin_id"]
+            referencedRelation: "digital_twins"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      notification_preferences: {
+        Row: {
+          assignments: boolean
+          daily_digest: boolean
+          due_soon: boolean
+          in_app: boolean
+          org_id: string
+          overdue: boolean
+          personal_reminders: boolean
+          quiet_hours_enabled: boolean
+          quiet_hours_end: string
+          quiet_hours_start: string
+          status_updates: boolean
+          timezone: string
+          twin_id: string
+          updated_at: string
+          weekly_digest: boolean
+          working_days: number[]
+        }
+        Insert: {
+          assignments?: boolean
+          daily_digest?: boolean
+          due_soon?: boolean
+          in_app?: boolean
+          org_id: string
+          overdue?: boolean
+          personal_reminders?: boolean
+          quiet_hours_enabled?: boolean
+          quiet_hours_end?: string
+          quiet_hours_start?: string
+          status_updates?: boolean
+          timezone?: string
+          twin_id: string
+          updated_at?: string
+          weekly_digest?: boolean
+          working_days?: number[]
+        }
+        Update: {
+          assignments?: boolean
+          daily_digest?: boolean
+          due_soon?: boolean
+          in_app?: boolean
+          org_id?: string
+          overdue?: boolean
+          personal_reminders?: boolean
+          quiet_hours_enabled?: boolean
+          quiet_hours_end?: string
+          quiet_hours_start?: string
+          status_updates?: boolean
+          timezone?: string
+          twin_id?: string
+          updated_at?: string
+          weekly_digest?: boolean
+          working_days?: number[]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notification_preferences_org_id_fkey"
+            columns: ["org_id"]
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notification_preferences_twin_id_fkey"
+            columns: ["twin_id"]
+            referencedRelation: "digital_twins"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      notifications: {
+        Row: {
+          action_label: string | null
+          action_required: boolean
+          actor_name: string | null
+          actor_twin_id: string | null
+          actor_type: string
+          body: string
+          category: string
+          created_at: string
+          deadline: string | null
+          deduplication_key: string
+          deep_link: string | null
+          delivery_channels: string[]
+          dismissed_at: string | null
+          event_id: string
+          expires_at: string | null
+          id: string
+          org_id: string
+          read_at: string | null
+          recipient_twin_id: string
+          related_name: string | null
+          related_twin_id: string | null
+          resolved_at: string | null
+          rule_version: number
+          severity: string
+          snoozed_until: string | null
+          source_module: string
+          source_ref_id: string | null
+          source_resource_id: string
+          source_resource_type: string
+          source_version: string | null
+          title: string
+          type: string
+          updated_at: string
+          work_item_id: string | null
+        }
+        Insert: {
+          action_label?: string | null
+          action_required?: boolean
+          actor_name?: string | null
+          actor_twin_id?: string | null
+          actor_type?: string
+          body: string
+          category: string
+          created_at?: string
+          deadline?: string | null
+          deduplication_key: string
+          deep_link?: string | null
+          delivery_channels?: string[]
+          dismissed_at?: string | null
+          event_id: string
+          expires_at?: string | null
+          id?: string
+          org_id: string
+          read_at?: string | null
+          recipient_twin_id: string
+          related_name?: string | null
+          related_twin_id?: string | null
+          resolved_at?: string | null
+          rule_version?: number
+          severity: string
+          snoozed_until?: string | null
+          source_module: string
+          source_ref_id?: string | null
+          source_resource_id: string
+          source_resource_type: string
+          source_version?: string | null
+          title: string
+          type: string
+          updated_at?: string
+          work_item_id?: string | null
+        }
+        Update: {
+          action_label?: string | null
+          action_required?: boolean
+          actor_name?: string | null
+          actor_twin_id?: string | null
+          actor_type?: string
+          body?: string
+          category?: string
+          created_at?: string
+          deadline?: string | null
+          deduplication_key?: string
+          deep_link?: string | null
+          delivery_channels?: string[]
+          dismissed_at?: string | null
+          event_id?: string
+          expires_at?: string | null
+          id?: string
+          org_id?: string
+          read_at?: string | null
+          recipient_twin_id?: string
+          related_name?: string | null
+          related_twin_id?: string | null
+          resolved_at?: string | null
+          rule_version?: number
+          severity?: string
+          snoozed_until?: string | null
+          source_module?: string
+          source_ref_id?: string | null
+          source_resource_id?: string
+          source_resource_type?: string
+          source_version?: string | null
+          title?: string
+          type?: string
+          updated_at?: string
+          work_item_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notifications_org_id_fkey"
+            columns: ["org_id"]
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notifications_recipient_twin_id_fkey"
+            columns: ["recipient_twin_id"]
+            referencedRelation: "digital_twins"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       onboarding_journeys: {
         Row: {
           audit_events: Json
@@ -4724,6 +5004,7 @@ export type Database = {
           task_type: string
           title: string
           topological_level: number
+          twin_id: string | null
           updated_at: string
           version: number
           waiver: Json | null
@@ -4749,6 +5030,7 @@ export type Database = {
           task_type: string
           title: string
           topological_level?: number
+          twin_id?: string | null
           updated_at?: string
           version?: number
           waiver?: Json | null
@@ -4774,6 +5056,7 @@ export type Database = {
           task_type?: string
           title?: string
           topological_level?: number
+          twin_id?: string | null
           updated_at?: string
           version?: number
           waiver?: Json | null
@@ -4790,6 +5073,12 @@ export type Database = {
             foreignKeyName: "onboarding_tasks_plan_id_fkey"
             columns: ["plan_id"]
             referencedRelation: "onboarding_plans"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "onboarding_tasks_twin_id_fkey"
+            columns: ["twin_id"]
+            referencedRelation: "digital_twins"
             referencedColumns: ["id"]
           },
         ]

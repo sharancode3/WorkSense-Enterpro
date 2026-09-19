@@ -11,6 +11,11 @@ import {
   myDayMutationSchema,
   myDayResultSchema,
   myDaySummarySchema,
+  notificationDigestSchema,
+  notificationListSchema,
+  notificationPrefsSchema,
+  notificationSummarySchema,
+  workflowAnalyticsSchema,
   onboardingQueueSchema,
   overviewSearchResultSchema,
   policyConversationLinkSchema,
@@ -25,9 +30,14 @@ import {
   type MyDayItem,
   type MyDayResult,
   type MyDaySummary,
+  type NotificationDigest,
+  type NotificationListResult,
+  type NotificationPrefs,
+  type NotificationSummaryResult,
+  type WorkflowAnalytics,
   type OnboardingQueue,
 } from "./contracts";
-import type { z } from "zod";
+import { z } from "zod";
 
 export type { MyDayItem, MyDayResult, MyDaySummary } from "./contracts";
 
@@ -1179,6 +1189,43 @@ export const myDayTransition = (payload: {
 
 export const myDayUpdatePrefs = (payload: { rollover_enabled?: boolean; workday_start_hour?: number }) =>
   invoke<{ ok: true; result: MyDayResult }>("my-day", { action: "update_prefs", ...myDayViewParam(), ...payload }, myDayMutationSchema, "my-day.prefs");
+
+// ---- Phase 34: notifications, reminders, digests, workflow analytics ----
+
+export const fetchNotificationList = (limit = 60) =>
+  invoke<NotificationListResult>("notifications", { action: "get", limit }, notificationListSchema, "notifications.get");
+
+export const fetchNotificationSummary = () =>
+  invoke<NotificationSummaryResult>("notifications", { action: "summary" }, notificationSummarySchema, "notifications.summary");
+
+export const notificationMarkRead = (id: string) =>
+  invoke<{ ok: true }>("notifications", { action: "mark_read", id }, z.object({ ok: z.literal(true) }), "notifications.mark_read");
+
+export const notificationMarkAllRead = () =>
+  invoke<{ ok: true; marked: number }>("notifications", { action: "mark_all_read" }, z.object({ ok: z.literal(true), marked: z.number() }), "notifications.mark_all_read");
+
+export const notificationSnooze = (id: string, snooze_until: string) =>
+  invoke<{ ok: true; snoozed_until: string }>("notifications", { action: "snooze", id, snooze_until }, z.object({ ok: z.literal(true), snoozed_until: z.string() }), "notifications.snooze");
+
+export const notificationDismiss = (id: string) =>
+  invoke<{ ok: true }>("notifications", { action: "dismiss", id }, z.object({ ok: z.literal(true) }), "notifications.dismiss");
+
+export const notificationPrefsGet = () =>
+  invoke<{ ok: true; prefs: NotificationPrefs }>("notifications", { action: "prefs_get" }, z.object({ ok: z.literal(true), prefs: notificationPrefsSchema }), "notifications.prefs_get");
+
+export const notificationPrefsUpdate = (payload: Partial<NotificationPrefs>) =>
+  invoke<{ ok: true; prefs: NotificationPrefs }>("notifications", { action: "prefs_update", ...payload }, z.object({ ok: z.literal(true), prefs: notificationPrefsSchema }), "notifications.prefs_update");
+
+export const notificationPrefsRestore = () =>
+  invoke<{ ok: true; prefs: NotificationPrefs }>("notifications", { action: "prefs_restore" }, z.object({ ok: z.literal(true), prefs: notificationPrefsSchema }), "notifications.prefs_restore");
+
+export const fetchNotificationDigest = (period: "daily" | "weekly") =>
+  invoke<{ ok: true; digest: NotificationDigest }>("notifications", { action: "digest", period }, z.object({ ok: z.literal(true), digest: notificationDigestSchema }), "notifications.digest");
+
+export const fetchWorkflowAnalytics = () =>
+  invoke<{ ok: true; analytics: WorkflowAnalytics }>("notifications", { action: "analytics", ...myDayViewParam() }, z.object({ ok: z.literal(true), analytics: workflowAnalyticsSchema }), "notifications.analytics");
+
+export type { NotificationRow, NotificationListResult, NotificationSummaryResult, NotificationPrefs, NotificationDigest, WorkflowAnalytics } from "./contracts";
 
 // ---- Phase 4: file-based resume ingestion & evidence review ----
 

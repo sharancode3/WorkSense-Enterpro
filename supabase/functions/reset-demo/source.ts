@@ -15,6 +15,7 @@ import { DEMO_FIXTURES } from "../_shared/generated-demo-fixtures.ts";
 import { ASSESSMENT_SEEDS, PEOPLE_OPS_REQUISITION, type BlueprintSeed } from "../_shared/assessment.ts";
 import { POLICY_ADDITIONS, TWIN_CONTEXT_OVERRIDES } from "../_shared/policy-seed.ts";
 import { computeReviewIndex, reviewSourceHash } from "../_shared/workforce-review-index.ts";
+import { notifyScanAfter } from "../_shared/notify-hook.ts";
 import {
   buildPlanDefs,
   deriveStates,
@@ -146,6 +147,11 @@ async function tearDownDemo(supabase, authIds: Record<string, string>) {
   await supabase.from("myday_recurrence_instances").delete().eq("org_id", orgId);
   await supabase.from("myday_prefs").delete().eq("org_id", orgId);
   await supabase.from("myday_personal_tasks").delete().eq("org_id", orgId);
+  // Phase 34 notifications derive from canonical state — wiped first.
+  await supabase.from("notification_events").delete().eq("org_id", orgId);
+  await supabase.from("notification_digests").delete().eq("org_id", orgId);
+  await supabase.from("notification_preferences").delete().eq("org_id", orgId);
+  await supabase.from("notifications").delete().eq("org_id", orgId);
   await supabase.from("action_tasks").delete().eq("org_id", orgId);
     await supabase.from("workflow_events").delete().eq("org_id", orgId);
     await supabase.from("admin_actions").delete().eq("org_id", orgId);
@@ -1208,6 +1214,9 @@ async function reseed(supabase, authIds: Record<string, string>) {
   // persona, deep-linked to canonical records. Uses real "now" so the walk-
   // through lands on a live "today" (unlike fx.clock which freezes the org).
   await seedMyDay(supabase, DEMO_ORG_ID);
+
+  // Phase 34: bootstrap the notification layer from canonical state.
+  await notifyScanAfter(DEMO_ORG_ID, Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
   // 9d) Batch 7 (late): differentiated candidate-session states for Ravi.
   // Runs AFTER seedDemoStories — Ravi's WS-SYN-* application is a story row.

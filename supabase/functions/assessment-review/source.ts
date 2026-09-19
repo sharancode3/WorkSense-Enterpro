@@ -378,6 +378,8 @@ Deno.serve(async (req) => {
     }
   }
 
+  // Authoritative transition → schedule idempotent notification generation.
+  void notifyScanAfter(caller.org_id, Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
   return json({
     ok: true,
     assessment_id: assessment.id,

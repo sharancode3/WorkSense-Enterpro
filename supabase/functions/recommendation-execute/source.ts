@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
+import { notifyScanAfter } from "../_shared/notify-hook.ts";
 import { buildTasksForCategory } from "../_shared/workflow-engine.ts";
 
 const corsHeaders = {
@@ -191,6 +192,8 @@ Deno.serve(async (req) => {
     if (mirrorErr) console.error("comment mirror failed:", mirrorErr.message);
   }
 
+  // Authoritative transition → schedule idempotent notification generation.
+  void notifyScanAfter(caller.org_id, Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
   return json({
     ok: true,
     request_id: requestId,

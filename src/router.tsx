@@ -15,6 +15,7 @@ import AdminAccess from "./pages/admin-access";
 import SystemStatus from "./pages/status";
 import DataQuality from "./pages/data-quality";
 import MyDay from "./pages/my-day";
+import Notifications from "./pages/notifications";
 import NotFound from "./pages/NotFound";
 import { ProtectedRoute } from "./components/protected-route";
 
@@ -59,6 +60,15 @@ export const routers = [
     element: (
       <ProtectedRoute>
         <MyDay />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: "/notifications",
+    name: "notifications",
+    element: (
+      <ProtectedRoute>
+        <Notifications />
       </ProtectedRoute>
     ),
   },

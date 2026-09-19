@@ -938,3 +938,218 @@ export interface MyDayItem {
   can_snooze: boolean;
 }
 
+
+// ---------------------------------------------------------------------------
+// Phase 34 — durable notifications, reminders, digests and workflow analytics.
+// ---------------------------------------------------------------------------
+
+export const notificationRowSchema = z.object({
+  id: z.string(),
+  org_id: z.string(),
+  recipient_twin_id: z.string(),
+  category: z.enum(["action_required", "deadline", "blocker", "assignment", "decision", "status_update", "security", "personal_reminder"]),
+  severity: z.enum(["critical", "high", "normal", "informational"]),
+  type: z.string(),
+  title: z.string(),
+  body: z.string(),
+  actor_type: z.enum(["system", "user"]),
+  actor_twin_id: z.string().nullable(),
+  actor_name: z.string().nullable(),
+  related_twin_id: z.string().nullable(),
+  related_name: z.string().nullable(),
+  source_module: z.string(),
+  source_resource_type: z.string(),
+  source_resource_id: z.string(),
+  source_version: z.string().nullable(),
+  source_ref_id: z.string().nullable(),
+  deep_link: z.string().nullable(),
+  action_required: z.boolean(),
+  action_label: z.string().nullable(),
+  deadline: z.string().nullable(),
+  work_item_id: z.string().nullable(),
+  read_at: z.string().nullable(),
+  snoozed_until: z.string().nullable(),
+  dismissed_at: z.string().nullable(),
+  resolved_at: z.string().nullable(),
+  expires_at: z.string().nullable(),
+  deduplication_key: z.string(),
+  event_id: z.string(),
+  delivery_channels: z.array(z.string()),
+  rule_version: z.number(),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+
+export const notificationListSchema = z.object({
+  ok: z.literal(true),
+  role: z.string(),
+  generated_at: z.string(),
+  unread_total: z.number(),
+  unread_actionable: z.number(),
+  critical_unread: z.number(),
+  items: z.array(notificationRowSchema),
+}) as z.ZodType<NotificationListResult>;
+
+export const notificationSummarySchema = z.object({
+  ok: z.literal(true),
+  unread_total: z.number(),
+  unread_actionable: z.number(),
+  critical_unread: z.number(),
+  role: z.string(),
+  generated_at: z.string(),
+}) as z.ZodType<NotificationSummaryResult>;
+
+export const notificationPrefsSchema = z.object({
+  twin_id: z.string(),
+  org_id: z.string().optional(),
+  in_app: z.boolean(),
+  assignments: z.boolean(),
+  due_soon: z.boolean(),
+  overdue: z.boolean(),
+  status_updates: z.boolean(),
+  personal_reminders: z.boolean(),
+  daily_digest: z.boolean(),
+  weekly_digest: z.boolean(),
+  quiet_hours_enabled: z.boolean(),
+  quiet_hours_start: z.string(),
+  quiet_hours_end: z.string(),
+  timezone: z.string(),
+  working_days: z.array(z.number()),
+  updated_at: z.string().nullable(),
+}) as z.ZodType<NotificationPrefs>;
+
+export const notificationDigestSchema = z.object({
+  period: z.enum(["daily", "weekly"]),
+  period_key: z.string(),
+  generated_at: z.string(),
+  facts: z.array(z.string()),
+  priorities: z.array(z.object({ title: z.string(), link: z.string().nullable(), label: z.string() })),
+  summary: z.object({ attention: z.number(), due_today: z.number(), blocked: z.number(), waiting: z.number(), completed_today: z.number() }),
+}) as z.ZodType<NotificationDigest>;
+
+export const workflowAnalyticsSchema = z.object({
+  as_of: z.string(),
+  scope: z.string(),
+  role: z.string(),
+  notes: z.array(z.string()),
+  period_days: z.number(),
+  completed_count: z.number(),
+  eligible_completed: z.number(),
+  on_time: z.number(),
+  on_time_rate: z.number().nullable(),
+  overdue_backlog: z.number(),
+  blocked_now: z.number(),
+  waiting_now: z.number(),
+  reopened_failed: z.number(),
+  median_cycle_hours: z.number().nullable(),
+  mean_cycle_hours: z.number().nullable(),
+  completed_last7: z.number(),
+  completed_prior7: z.number(),
+  week_over_week_pct: z.number().nullable(),
+  by_module: z.array(z.object({ module: z.string(), count: z.number() })),
+  rolled_over: z.number(),
+  completed_after_rollover: z.number(),
+}) as z.ZodType<WorkflowAnalytics>;
+
+export interface NotificationRow {
+  id: string;
+  org_id: string;
+  recipient_twin_id: string;
+  category: "action_required" | "deadline" | "blocker" | "assignment" | "decision" | "status_update" | "security" | "personal_reminder";
+  severity: "critical" | "high" | "normal" | "informational";
+  type: string;
+  title: string;
+  body: string;
+  actor_type: "system" | "user";
+  actor_twin_id: string | null;
+  actor_name: string | null;
+  related_twin_id: string | null;
+  related_name: string | null;
+  source_module: string;
+  source_resource_type: string;
+  source_resource_id: string;
+  source_version: string | null;
+  source_ref_id: string | null;
+  deep_link: string | null;
+  action_required: boolean;
+  action_label: string | null;
+  deadline: string | null;
+  work_item_id: string | null;
+  read_at: string | null;
+  snoozed_until: string | null;
+  dismissed_at: string | null;
+  resolved_at: string | null;
+  expires_at: string | null;
+  deduplication_key: string;
+  event_id: string;
+  delivery_channels: string[];
+  rule_version: number;
+  created_at: string;
+  updated_at: string;
+}
+export interface NotificationListResult {
+  ok: true;
+  role: string;
+  generated_at: string;
+  unread_total: number;
+  unread_actionable: number;
+  critical_unread: number;
+  items: NotificationRow[];
+}
+export interface NotificationSummaryResult {
+  ok: true;
+  unread_total: number;
+  unread_actionable: number;
+  critical_unread: number;
+  role: string;
+  generated_at: string;
+}
+export interface NotificationPrefs {
+  twin_id: string;
+  org_id?: string;
+  in_app: boolean;
+  assignments: boolean;
+  due_soon: boolean;
+  overdue: boolean;
+  status_updates: boolean;
+  personal_reminders: boolean;
+  daily_digest: boolean;
+  weekly_digest: boolean;
+  quiet_hours_enabled: boolean;
+  quiet_hours_start: string;
+  quiet_hours_end: string;
+  timezone: string;
+  working_days: number[];
+  updated_at: string | null;
+}
+export interface NotificationDigest {
+  period: "daily" | "weekly";
+  period_key: string;
+  generated_at: string;
+  facts: string[];
+  priorities: { title: string; link: string | null; label: string }[];
+  summary: { attention: number; due_today: number; blocked: number; waiting: number; completed_today: number };
+}
+export interface WorkflowAnalytics {
+  as_of: string;
+  scope: string;
+  role: string;
+  notes: string[];
+  period_days: number;
+  completed_count: number;
+  eligible_completed: number;
+  on_time: number;
+  on_time_rate: number | null;
+  overdue_backlog: number;
+  blocked_now: number;
+  waiting_now: number;
+  reopened_failed: number;
+  median_cycle_hours: number | null;
+  mean_cycle_hours: number | null;
+  completed_last7: number;
+  completed_prior7: number;
+  week_over_week_pct: number | null;
+  by_module: { module: string; count: number }[];
+  rolled_over: number;
+  completed_after_rollover: number;
+}

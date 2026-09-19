@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { CalendarDays, Clock, RefreshCw, Search, Sun, Undo2 } from "lucide-react";
+import { CalendarDays, ChevronDown, Clock, Info, RefreshCw, Search, Sun, Undo2 } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,7 +12,7 @@ import { NewTaskDialog } from "@/components/my-day/new-task-dialog";
 import { RhythmSection } from "@/components/my-day/rhythm-section";
 import { DayItem } from "@/components/my-day/day-item";
 import { GROUP_LABEL } from "@/components/my-day/format";
-import { fetchMyDay, myDayCreateTask, myDayTransition, myDayUpdatePrefs, type MyDayItem, type MyDayResult } from "@/lib/api";
+import { fetchMyDay, myDayCreateTask, myDayTransition, myDayUpdatePrefs, fetchNotificationDigest, fetchWorkflowAnalytics, type MyDayItem, type MyDayResult } from "@/lib/api";
 import { ROLE_BADGE_CLASS, ROLE_LABEL } from "@/lib/rbac";
 
 type View = "today" | "week" | "all";
@@ -126,6 +126,23 @@ export default function MyDay() {
     }
   }, []);
 
+  // Phase 34: deterministic daily digest + role-scoped workflow health.
+  const digest = useQuery({
+    queryKey: ["notification-digest", user?.id ?? "anon", "daily"],
+    queryFn: () => fetchNotificationDigest("daily"),
+    enabled: !!user && role !== "candidate",
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+  const analytics = useQuery({
+    queryKey: ["workflow-analytics", user?.id ?? "anon"],
+    queryFn: fetchWorkflowAnalytics,
+    enabled: !!user && role !== "candidate",
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+  const [showHealth, setShowHealth] = useState(false);
+
   if (!role || !twin) return null;
 
   const s = result?.summary;
@@ -176,6 +193,35 @@ export default function MyDay() {
                 <p className="mt-1 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">{c.label}</p>
               </div>
             ))}
+          </div>
+        )}
+
+        {/* Today at a glance — deterministic digest, grounded in canonical data. */}
+        {digest.data && (
+          <div className="mt-6 rounded-lg bg-white p-4 shadow-card">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Today at a glance</p>
+              <span className="text-[11px] text-muted-foreground">Generated {new Date(digest.data.digest.generated_at).toLocaleTimeString()}</span>
+            </div>
+            <ul className="mt-2 flex flex-col gap-1.5">
+              {digest.data.digest.facts.slice(0, 5).map((f) => (
+                <li key={f} className="text-sm text-foreground">· {f}</li>
+              ))}
+            </ul>
+            {digest.data.digest.priorities.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {digest.data.digest.priorities.map((p) => (
+                  <a
+                    key={p.title}
+                    href={p.link ?? undefined}
+                    className="inline-flex items-center gap-1 rounded-md bg-muted px-2.5 py-1 text-xs font-bold text-foreground hover:bg-muted/70"
+                  >
+                    <span className="rounded bg-primary px-1 py-px text-[9px] font-extrabold uppercase text-white">{p.label}</span>
+                    {p.title}
+                  </a>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
@@ -288,6 +334,60 @@ export default function MyDay() {
 
         {/* Rhythm analytics */}
         {result && <RhythmSection result={result} />}
+
+        {/* Workflow health — role-scoped, honest workflow-movement metrics. */}
+        {analytics.data && (
+          <section aria-label="Workflow health" className="mt-8 rounded-lg bg-white shadow-card">
+            <button
+              type="button"
+              onClick={() => setShowHealth((s) => !s)}
+              aria-expanded={showHealth}
+              className="flex w-full items-center justify-between gap-3 px-4 py-3.5 text-left sm:px-5"
+            >
+              <span className="flex items-center gap-2 text-sm font-extrabold text-foreground">
+                Workflow health
+                <span className="hidden rounded bg-muted px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground sm:inline">
+                  {analytics.data.analytics.scope} scope
+                </span>
+              </span>
+              <span className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                As of {new Date(analytics.data.analytics.as_of).toLocaleTimeString()}
+                <ChevronDown className={`h-4 w-4 transition-transform ${showHealth ? "rotate-180" : ""}`} />
+              </span>
+            </button>
+            {showHealth && (
+              <div className="border-t border-border px-4 pb-4 sm:px-5">
+                <div className="mt-3 flex items-start gap-2 rounded-md bg-muted px-3 py-2 text-[11px] text-muted-foreground">
+                  <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
+                  <p>
+                    These metrics describe workflow movement and task state. They do not measure employee value, effort or performance and are
+                    not used for automated employment decisions.
+                  </p>
+                </div>
+                <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+                  {[
+                    { label: "Completed (7d)", value: analytics.data.analytics.completed_count, hint: `${analytics.data.analytics.completed_last7} last 7 · ${analytics.data.analytics.completed_prior7} prior` },
+                    { label: "On-time rate", value: analytics.data.analytics.on_time_rate !== null ? `${analytics.data.analytics.on_time_rate}%` : "—", hint: `${analytics.data.analytics.on_time} of ${analytics.data.analytics.eligible_completed} eligible (waiting/blocked excluded)` },
+                    { label: "Median cycle", value: analytics.data.analytics.median_cycle_hours !== null ? `${Math.round(analytics.data.analytics.median_cycle_hours)}h` : "—", hint: analytics.data.analytics.notes[1] ?? "" },
+                    { label: "Overdue backlog", value: analytics.data.analytics.overdue_backlog, hint: "Open items past their due date" },
+                    { label: "Blocked now", value: analytics.data.analytics.blocked_now, hint: "Separated from on-time rates" },
+                    { label: "Waiting", value: analytics.data.analytics.waiting_now, hint: "Held elsewhere — never counted against you" },
+                    { label: "Reopened / failed", value: analytics.data.analytics.reopened_failed, hint: "Failed action tasks" },
+                    { label: "Rolled over", value: analytics.data.analytics.rolled_over, hint: `${analytics.data.analytics.completed_after_rollover} completed after rollover` },
+                    { label: "Week-over-week", value: analytics.data.analytics.week_over_week_pct !== null ? `${analytics.data.analytics.week_over_week_pct >= 0 ? "+" : ""}${analytics.data.analytics.week_over_week_pct}%` : "—", hint: "Completed count change" },
+                    { label: "By module", value: analytics.data.analytics.by_module.length, hint: analytics.data.analytics.by_module.slice(0, 3).map((m) => `${m.module}: ${m.count}`).join(" · ") },
+                  ].map((c) => (
+                    <div key={c.label} className="rounded-md bg-muted/50 p-3">
+                      <p className="text-lg font-extrabold leading-none text-foreground">{c.value}</p>
+                      <p className="mt-1 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">{c.label}</p>
+                      {c.hint && <p className="mt-0.5 text-[10px] leading-snug text-muted-foreground">{c.hint}</p>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </section>
+        )}
 
         {/* Personal rollover preference */}
         {result && (

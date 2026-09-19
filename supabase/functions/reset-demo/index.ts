@@ -5854,7 +5854,39 @@ export function authorizeSkillMatch(args: AuthorizeSkillMatchArgs): SkillMatchSc
 }
 
 
+// Shared helper: after an authoritative domain transition, schedule the
+// idempotent notification generator (notify-scan). Non-blocking by design —
+// the response is returned immediately while the scan completes in the
+// background. Failures are swallowed: notifications are derived from durable
+// canonical state and the next scan would catch up; the transition itself is
+// never rolled back because a notification could not be sent.
+//
+// NOTE: this module must stay free of `Deno` references so the plain shared
+// typecheck (tsconfig.functions.json, node types) stays green. Callers pass
+// their own runtime env values.
+export async function notifyScanAfter(
+  orgId: string,
+  supabaseUrl: string,
+  serviceKey: string
+): Promise<void> {
+  try {
+    await fetch(`${supabaseUrl}/functions/v1/notify-scan`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${serviceKey}`,
+        apikey: serviceKey,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ org_id: orgId }),
+    });
+  } catch {
+    /* non-fatal */
+  }
+}
+
+
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
+
 
 
 
@@ -5985,6 +6017,11 @@ async function tearDownDemo(supabase, authIds: Record<string, string>) {
   await supabase.from("myday_recurrence_instances").delete().eq("org_id", orgId);
   await supabase.from("myday_prefs").delete().eq("org_id", orgId);
   await supabase.from("myday_personal_tasks").delete().eq("org_id", orgId);
+  // Phase 34 notifications derive from canonical state — wiped first.
+  await supabase.from("notification_events").delete().eq("org_id", orgId);
+  await supabase.from("notification_digests").delete().eq("org_id", orgId);
+  await supabase.from("notification_preferences").delete().eq("org_id", orgId);
+  await supabase.from("notifications").delete().eq("org_id", orgId);
   await supabase.from("action_tasks").delete().eq("org_id", orgId);
     await supabase.from("workflow_events").delete().eq("org_id", orgId);
     await supabase.from("admin_actions").delete().eq("org_id", orgId);
@@ -7047,6 +7084,9 @@ async function reseed(supabase, authIds: Record<string, string>) {
   // persona, deep-linked to canonical records. Uses real "now" so the walk-
   // through lands on a live "today" (unlike fx.clock which freezes the org).
   await seedMyDay(supabase, DEMO_ORG_ID);
+
+  // Phase 34: bootstrap the notification layer from canonical state.
+  await notifyScanAfter(DEMO_ORG_ID, Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
   // 9d) Batch 7 (late): differentiated candidate-session states for Ravi.
   // Runs AFTER seedDemoStories — Ravi's WS-SYN-* application is a story row.

@@ -1,12 +1,13 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { LogOut, Menu, PanelLeftClose, PanelLeftOpen, RotateCcw } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 import { can, ROLE_BADGE_CLASS, ROLE_LABEL, ROLE_SCOPE_NOTE, type Role } from "@/lib/rbac";
 import { breadcrumbFor, type NavSection, visibleSections } from "@/lib/navigation";
 import { fetchHealth, fetchMyDaySummary, resetDemo } from "@/lib/api";
+import { NotificationBell } from "@/components/notification-bell";
 import { BUILD_INFO } from "@/generated/build-info";
 import { Button } from "@/components/ui/button";
 import {
@@ -171,6 +172,7 @@ function AccountFooter({ compact = false }: { compact?: boolean }) {
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { role, twin, user, signOut } = useAuth();
+  const qc = useQueryClient();
   const [drawerOpen, setDrawerOpen] = useState(false);
   // Phase 15: harmless UI preference only (never HR content).
   const [collapsed, setCollapsed] = useState<boolean>(() => {
@@ -231,6 +233,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     retry: false,
   });
   const badges: Record<string, number> = myDayBadge.data ? { "my-day": myDayBadge.data.badge } : {};
+
+  // Phase 34: sign-out clears cached sensitive notification content; sign-in
+  // as another twin uses its own query keys, so nothing leaks across sessions.
+  const prevUser = user?.id;
+  useEffect(() => {
+    if (prevUser === undefined) return;
+    if (!user) {
+      qc.removeQueries({ queryKey: ["notifications"] });
+      qc.removeQueries({ queryKey: ["notifications-summary"] });
+      qc.removeQueries({ queryKey: ["notification-digest"] });
+      qc.removeQueries({ queryKey: ["workflow-analytics"] });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
 
   return (
     <div className="flex min-h-screen bg-canvas">
@@ -322,6 +338,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 aria-label={healthLabel}
                 className={`h-2 w-2 rounded-full ${healthDot}`}
               />
+              {role !== "candidate" && user && <NotificationBell />}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="secondary" size="sm">

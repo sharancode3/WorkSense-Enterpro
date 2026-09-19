@@ -1,6 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
 import { computeFit } from "../_shared/skill-graph-engine.ts";
 import { checkStale, resolveTransition, STAGE_ACTOR_ROLES } from "../_shared/stage-engine.ts";
+import { notifyScanAfter } from "../_shared/notify-hook.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -203,6 +204,9 @@ Deno.serve(async (req) => {
     .select("id, prior_stage, new_stage, reason, at, version, actor_twin_id")
     .eq("application_id", application.id)
     .order("at", { ascending: true });
+
+  // Authoritative transition → schedule idempotent notification generation.
+  void notifyScanAfter(caller.org_id, Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
   return json({
     ok: true,

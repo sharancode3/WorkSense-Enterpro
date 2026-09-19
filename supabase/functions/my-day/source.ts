@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
+import { notifyScanAfter } from "../_shared/notify-hook.ts";
 import { computeReviewIndex } from "../_shared/workforce-review-index.ts";
 import { buildMyWork, type MyWorkResult, type TaskRow, type TwinRow } from "../_shared/my-work-engine.ts";
 import {
@@ -526,6 +527,7 @@ Deno.serve(async (req) => {
         .single();
       if (error || !row) throw new Error(`myday create task: ${error?.message}`);
       const result = await buildResult(supabase, caller, view, tzOffsetMinutes);
+      void notifyScanAfter(caller.org_id, Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
       return json({ ok: true, created_id: row.id, result });
     }
 
@@ -580,6 +582,7 @@ Deno.serve(async (req) => {
         const { data: updated, error } = await supabase.from(table).update(patch).eq("id", row.id).eq("org_id", caller.org_id).eq("owner_twin_id", caller.id).eq("version", row.version).select("id").single();
         if (error || !updated) return json({ error: "VERSION_CONFLICT", message: "This item changed in another window — refresh and try again." }, 409);
         const result = await buildResult(supabase, caller, view, tzOffsetMinutes);
+        void notifyScanAfter(caller.org_id, Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
         return json({ ok: true, transitioned: { key, to }, result });
       }
 
@@ -599,6 +602,7 @@ Deno.serve(async (req) => {
         );
         if (error) throw new Error(`myday item state upsert: ${error.message}`);
         const result = await buildResult(supabase, caller, view, tzOffsetMinutes);
+        void notifyScanAfter(caller.org_id, Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
         return json({ ok: true, transitioned: { key, to }, result });
       }
 
