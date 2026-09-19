@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
@@ -152,7 +152,20 @@ export default function Recruitment() {
   const compare = useQuery({
     queryKey: ["recruiter-compare", selected, user?.id ?? "anon"],
     queryFn: async () => {
-      if (!selected) return { ok: true as const, req_id: "", req_title: "", criteria: [], rows: [], scored_count: 0, unscored_count: 0, stale_count: 0 };
+      if (!selected) {
+        return {
+          ok: true as const,
+          req_id: "",
+          req_title: "",
+          criteria: [],
+          rows: [],
+          scored_count: 0,
+          unscored_count: 0,
+          stale_count: 0,
+          rank_weights: { mandatory: 0.35, preferred: 0.2, work_sample: 0.2, interview: 0.15, confidence: 0.1 },
+          fairness: { excluded_attributes: [], statement: "" },
+        };
+      }
       return candidateCompare(selected);
     },
     enabled: !!selected,
@@ -177,6 +190,41 @@ export default function Recruitment() {
   const req = reqs.data?.find((r) => r.id === selected) ?? null;
   const appsByTwin = new Map((apps.data?.apps ?? []).map((a) => [a.candidate_twin_id, a]));
   const visibleReqs = (reqs.data ?? []).filter((r) => statusFilter === "all" || r.status === statusFilter);
+
+  // Future capability signals = requisition future skills that are not already
+  // mandatory today (never duplicated without a reason like a raised target).
+  const futureSignals = useMemo(() => {
+    if (!req) return [];
+    const required = new Set((req.required_skills ?? []).map((s) => s.skill.toLowerCase()));
+    return ((req.future_skills ?? []) as { skill: string; target_proficiency: number }[]).filter((s) => !required.has(s.skill.toLowerCase()));
+  }, [req]);
+
+  // Canonical criteria display: mandatory (required_skills, normalized) +
+  // preferred (future additions only, normalized) — the same source of truth
+  // the candidate comparison uses. Guards against any stored criteria that
+  // duplicated mandatory skills as preferred without reason.
+  const displayCriteria = useMemo(() => {
+    if (!req) return [];
+    const required = (req.required_skills ?? []) as { skill: string; target_proficiency: number }[];
+    const nReq = Math.max(required.length, 1);
+    const nPref = Math.max(futureSignals.length, 1);
+    return [
+      ...required.map((s, i) => ({
+        skill: s.skill,
+        target_proficiency: s.target_proficiency,
+        requirement: "required" as const,
+        weight: Number((1 / nReq).toFixed(2)),
+        evidence_expectation: `Source artifact proving ${s.skill} at proficiency ${s.target_proficiency}: prior-role project output, work sample, or verified reference.`,
+      })),
+      ...futureSignals.map((s, i) => ({
+        skill: s.skill,
+        target_proficiency: s.target_proficiency,
+        requirement: "preferred" as const,
+        weight: Number((1 / nPref).toFixed(2)),
+        evidence_expectation: `Evidence of trajectory toward ${s.skill} (learning artifact, stretch work, or certification in progress).`,
+      })),
+    ];
+  }, [req, futureSignals]);
 
   // ?cand=<twin_id> deep-links straight into a candidate workspace (used by the
   // "My work" feed and shareable links). Opens once requisitions/candidates load.
@@ -389,7 +437,7 @@ export default function Recruitment() {
                   </div>
                   <div className="mt-4 flex flex-wrap gap-2">
                     <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Criteria</span>
-                    <CriteriaChips req={req} />
+                    <CriteriaChips req={{ ...req, requisition_criteria: displayCriteria } as RequisitionRow} />
                   </div>
                   <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-5">
                     {(["screening", "technical_interview", "final_round", "selected", "rejected"] as const).map((s) => (
@@ -474,6 +522,7 @@ export default function Recruitment() {
                         state={compareState}
                         onOpenCandidate={openCandidate}
                         onShowFit={(twinId) => openCandidate(twinId)}
+                        futureSignals={futureSignals}
                       />
                     ) : (
                       <div className="rounded-lg bg-muted p-6 text-sm text-muted-foreground">
@@ -486,21 +535,25 @@ export default function Recruitment() {
                     <div className="rounded-lg bg-white p-5 text-sm text-muted-foreground">
                       <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">How decisions stay honest</p>
                       <ul className="mt-2 flex flex-col gap-1.5 text-sm text-foreground/80">
-                        <li>• Match scores are deterministic distances over the skill graph — never probabilities, never LLM judgment.</li>
-                        <li>• Unknown scores are never ranked as zero: unscored candidates sit in their own bucket until a Fit card is computed.</li>
-                        <li>• Interview kits bias probes toward each candidate's adjacent/transferable/gap items, with cached per-role rubrics.</li>
+                        <li>• The match is a <b>requirement-weighted evidence match</b> computed by the canonical Skill Intelligence engine — every point comes from a requirement being satisfied by accepted evidence, never a probability or an LLM judgment.</li>
+                        <li>• Mandatory gates run before ranking: a candidate with an unmet mandatory requirement is gated, not ranked.</li>
+                        <li>• The explainable rank renormalizes its visible weights over <b>known</b> components — unknown assessment or interview results are never scored as zero.</li>
+                        <li>• Ranking excludes protected and proxy attributes (name, gender-coded terms, age, photo, address, college prestige) — the fairness panel lists them.</li>
                         <li>• "Select" requires a human action in the final round — model output can recommend, never decide.</li>
                       </ul>
                     </div>
                     <div className="rounded-lg bg-white p-5">
-                      <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Weighted criteria</p>
+                      <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Weighted criteria (normalized per section)</p>
+                      <p className="mt-1 text-[11px] text-muted-foreground">
+                        Mandatory hiring criteria and preferred differentiators are normalized within their own section; future capability signals are shown separately and never duplicated as mandatory.
+                      </p>
                       <div className="mt-2 flex flex-col gap-2">
-                        {req.requisition_criteria.length === 0 && (
+                        {displayCriteria.length === 0 && (
                           <p className="text-sm text-muted-foreground">
                             No weighted criteria yet — create them on a new requisition or update this one.
                           </p>
                         )}
-                        {req.requisition_criteria.map((c) => (
+                        {displayCriteria.map((c) => (
                           <div key={c.skill} className="flex flex-col gap-1 rounded-lg bg-muted p-3">
                             <div className="flex flex-wrap items-center gap-2">
                               <span className="font-bold text-foreground">{c.skill}</span>
@@ -511,6 +564,18 @@ export default function Recruitment() {
                             <p className="text-xs text-muted-foreground">{c.evidence_expectation}</p>
                           </div>
                         ))}
+                        {futureSignals.length > 0 && (
+                          <div className="rounded-lg border border-secondary/30 bg-secondary/5 p-3">
+                            <p className="text-xs font-bold uppercase tracking-wider text-secondary">Future capability signals</p>
+                            <div className="mt-1.5 flex flex-wrap gap-1.5">
+                              {futureSignals.map((s) => (
+                                <span key={s.skill} className="rounded-md bg-secondary/15 px-2 py-0.5 text-[11px] font-semibold text-secondary">
+                                  {s.skill} · {s.target_proficiency}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </TabsContent>

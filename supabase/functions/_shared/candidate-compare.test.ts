@@ -82,3 +82,121 @@ describe("buildCandidateComparison", () => {
     expect(res.criteria[0].requirement).toBe("required");
   });
 });
+
+describe("explainable ranking (audit rework)", () => {
+  const fitFor = (over: object) => ({
+    score: 0.6,
+    computed_at: "2026-09-10T09:00:00Z",
+    evidence_confidence: 0.8,
+    mandatory_gate: { met: true, unmet_skills: [] },
+    scoring: {
+      requirements: [
+        { skill: "Go", relationship: "direct", verified_contribution: 0.8, contribution: 0.9 },
+        { skill: "Docker", relationship: "none", verified_contribution: 0, contribution: 0 },
+      ],
+      mandatory: { readiness: 0.8 },
+      preferred: { readiness: 0.5 },
+    },
+    ...over,
+  });
+
+  it("ranks with a visible weighting policy and renormalizes over known components", () => {
+    const res = buildCandidateComparison({
+      req,
+      applicants,
+      candidates,
+      fits: new Map([["t1", fitFor({})]]),
+      signals: new Map([
+        ["t1", { work_sample: 0.9, work_sample_reviewed: true, knowledge: null, knowledge_reviewed: false, interview_score: null, interview_status: "none", assessment_submitted: true }],
+      ]),
+    });
+    const row = res.rows.find((r) => r.twin_id === "t1")!;
+    expect(row.rank_tier).toBe("ranked");
+    expect(row.rank).not.toBeNull();
+    // Known components: mandatory .8, preferred .5, work_sample .9, confidence .8
+    // weightSum = .35+.2+.2+.1 = .85 ; rank = (.35*.8+.2*.5+.2*.9+.1*.8)/.85
+    const expected = (0.35 * 0.8 + 0.2 * 0.5 + 0.2 * 0.9 + 0.1 * 0.8) / 0.85;
+    expect(row.rank).toBeCloseTo(Math.round(expected * 1000) / 1000, 4);
+    expect(res.rank_weights.mandatory).toBe(0.35);
+  });
+
+  it("an unmet mandatory gate blocks ranking entirely", () => {
+    const res = buildCandidateComparison({
+      req,
+      applicants,
+      candidates,
+      fits: new Map([["t1", fitFor({ mandatory_gate: { met: false, unmet_skills: ["Go"] } })]]),
+    });
+    const row = res.rows.find((r) => r.twin_id === "t1")!;
+    expect(row.rank_tier).toBe("gated");
+    expect(row.rank).toBeNull();
+  });
+
+  it("insufficient evidence is its own state, never a zero rank", () => {
+    const res = buildCandidateComparison({
+      req,
+      applicants,
+      candidates,
+      fits: new Map([
+        [
+          "t1",
+          fitFor({
+            scoring: {
+              requirements: [{ skill: "Go", relationship: "none", verified_contribution: 0, contribution: 0 }],
+              mandatory: { readiness: 0 },
+              preferred: { readiness: null },
+            },
+            evidence_confidence: 0,
+          }),
+        ],
+      ]),
+    });
+    const row = res.rows.find((r) => r.twin_id === "t1")!;
+    expect(row.rank_tier).toBe("insufficient");
+    expect(row.rank).toBeNull();
+  });
+
+  it("unknown interview/work-sample results are never scored as zero", () => {
+    const res = buildCandidateComparison({
+      req,
+      applicants,
+      candidates,
+      fits: new Map([["t1", fitFor({})]]),
+      signals: new Map([
+        ["t1", { work_sample: null, work_sample_reviewed: false, knowledge: null, knowledge_reviewed: false, interview_score: null, interview_status: "none", assessment_submitted: false }],
+      ]),
+    });
+    const row = res.rows.find((r) => r.twin_id === "t1")!;
+    expect(row.rank).not.toBeNull(); // still ranked from fit-only components
+    expect(row.rank_components.interview).toBeNull();
+  });
+
+  it("ties on the composite get a deterministic reason", () => {
+    const mk = (twinId: string, conf: number) => ({
+      twin_id: twinId,
+      stage: "final_round",
+      version: 1,
+      application_code: `WS-${twinId}`,
+      applied_at: "2026-09-01T09:00:00Z",
+    });
+    const fits = new Map([
+      ["t1", fitFor({ evidence_confidence: 0.8 })],
+      ["t3", fitFor({ evidence_confidence: 0.8 })],
+    ]);
+    const res = buildCandidateComparison({
+      req: { ...req, audit_events: [] },
+      applicants: [mk("t1", 0.8), mk("t3", 0.8)],
+      candidates,
+      fits,
+    });
+    const [a, b] = res.rows;
+    expect(a.rank).toBeCloseTo(b.rank ?? -1, 5);
+    expect(b.tie_reason).toContain("Same composite");
+  });
+
+  it("reports the fairness/audit panel with excluded protected attributes", () => {
+    const res = buildCandidateComparison({ req, applicants, candidates, fits: new Map() });
+    expect(res.fairness.excluded_attributes).toContain("name");
+    expect(res.fairness.statement).toContain("Protected");
+  });
+});

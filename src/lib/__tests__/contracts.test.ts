@@ -93,12 +93,14 @@ describe("decode (unknown -> validated schema -> typed contract)", () => {
       req_title: "Backend Engineer",
       criteria: [{ skill: "Go", target_proficiency: 4, requirement: "required", weight: 1, evidence_expectation: "Go work sample." }],
       rows: [
-        { twin_id: "t1", name: "Aria", email: "aria@example.com", stage: "final_round", version: 2, application_code: "WS-1", applied_at: "2026-08-12T09:00:00Z", status: "scored", score: 0.83, score_at: "2026-08-20T09:00:00Z", gaps: [], adjacent: [], transferable: [] },
-        { twin_id: "t2", name: "Bo", email: null, stage: "screening", version: 1, application_code: "WS-2", applied_at: "2026-09-01T09:00:00Z", status: "unscored", score: null, score_at: null, gaps: [], adjacent: [], transferable: [] },
+        { twin_id: "t1", name: "Aria", email: "aria@example.com", stage: "final_round", version: 2, application_code: "WS-1", applied_at: "2026-08-12T09:00:00Z", status: "scored", score: 0.83, score_at: "2026-08-20T09:00:00Z", gaps: [], adjacent: [], transferable: [], gate_met: true, mandatory_readiness: 0.8, preferred_readiness: 0.6, verified_coverage: { met: 3, total: 4 }, provisional_coverage: { met: 4, total: 4 }, evidence_confidence: 0.9, work_sample: 0.8, work_sample_reviewed: true, interview_score: 0.85, interview_status: "scored", assessment_submitted: true, rank: 0.81, rank_components: { mandatory: 0.8, preferred: 0.6, work_sample: 0.8, interview: 0.85, confidence: 0.9 }, rank_tier: "ranked", tie_reason: null },
+        { twin_id: "t2", name: "Bo", email: null, stage: "screening", version: 1, application_code: "WS-2", applied_at: "2026-09-01T09:00:00Z", status: "unscored", score: null, score_at: null, gaps: [], adjacent: [], transferable: [], gate_met: null, mandatory_readiness: null, preferred_readiness: null, verified_coverage: { met: 0, total: 0 }, provisional_coverage: { met: 0, total: 0 }, evidence_confidence: null, work_sample: null, work_sample_reviewed: false, interview_score: null, interview_status: "none", assessment_submitted: false, rank: null, rank_components: { mandatory: null, preferred: null, work_sample: null, interview: null, confidence: null }, rank_tier: "unranked", tie_reason: null },
       ],
       scored_count: 1,
       unscored_count: 1,
       stale_count: 0,
+      rank_weights: { mandatory: 0.35, preferred: 0.2, work_sample: 0.2, interview: 0.15, confidence: 0.1 },
+      fairness: { excluded_attributes: [], statement: "" },
     };
     const parsed = decode(candidateCompareSchema, payload, "candidate-compare");
     expect(parsed.rows[0].status).toBe("scored");

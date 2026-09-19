@@ -6,7 +6,6 @@ import {
   CheckCircle2,
   CircleDot,
   FileSearch,
-  Layers,
   ListChecks,
   ShieldCheck,
   Target,
@@ -15,14 +14,14 @@ import {
 import { DemoQuickAccess } from "@/components/demo-quick-access";
 import { Button } from "@/components/ui/button";
 
-// The product flow — plain-language steps, not architecture terms.
+// The connected lifecycle — plain-language steps, not architecture terms.
 const FLOW: { icon: typeof Users; label: string; note: string }[] = [
-  { icon: Users, label: "People & roles", note: "Employee, candidate and demand records." },
-  { icon: FileSearch, label: "Evidence", note: "Resumes, assessments and verified skills." },
-  { icon: Layers, label: "Recommendation", note: "Cross-source, human-reviewed suggestion." },
-  { icon: ShieldCheck, label: "Approval", note: "A named person decides with a reason." },
-  { icon: ListChecks, label: "Assigned action", note: "Owned tasks appear for the right person." },
-  { icon: BadgeCheck, label: "Verified outcome", note: "Evidence is confirmed, not assumed." },
+  { icon: Briefcase, label: "Demand", note: "Requisitions and role needs are recorded." },
+  { icon: FileSearch, label: "Candidate evidence", note: "Résumés, assessments and verified skills." },
+  { icon: Users, label: "Human hiring decision", note: "A recruiter and manager decide with evidence." },
+  { icon: ListChecks, label: "Adaptive onboarding", note: "Dependency-ordered tasks with named owners." },
+  { icon: BadgeCheck, label: "Verified skills", note: "Evidence is confirmed, not assumed." },
+  { icon: Target, label: "Staffing & workforce", note: "Skills map to demand; plans need approval." },
 ];
 
 // Representative product snapshot — the same shape a real recommendation card
@@ -78,21 +77,22 @@ export default function Landing() {
         </div>
       </header>
 
-      {/* Hero — short, mobile-safe headline + real product snapshot */}
+      {/* Hero — lifecycle visible in the first viewport + real product snapshot */}
       <section className="border-b border-border bg-white">
-        <div className="mx-auto grid max-w-7xl grid-cols-1 items-center gap-10 px-4 py-14 sm:px-6 md:py-20 lg:grid-cols-2">
+        <div className="mx-auto grid max-w-7xl grid-cols-1 items-center gap-8 px-4 py-10 sm:px-6 md:py-14 lg:grid-cols-2">
           <div>
             <span className="inline-block rounded-md bg-muted px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
               Workforce decision intelligence
             </span>
             <h1 className="mt-4 text-3xl font-extrabold leading-tight tracking-tight text-foreground sm:text-4xl xl:text-[2.75rem] xl:leading-[1.1]">
-              Turn workforce evidence into{" "}
-              <span className="text-primary">confident action</span>.
+              Evidence in.{" "}
+              <span className="text-primary">Approved action out.</span>
             </h1>
             <p className="mt-4 max-w-xl text-base leading-relaxed text-muted-foreground sm:text-lg">
-              Connect hiring, onboarding, skills and workforce signals — then review, approve and track the next step.
+              WorkSense connects demand, candidate evidence, human hiring decisions, adaptive onboarding,
+              verified skills and staffing — every step reviewed and approved by the right person, never acted on alone.
             </p>
-            <div className="mt-8 flex flex-wrap items-center gap-3">
+            <div className="mt-7 flex flex-wrap items-center gap-3">
               <a href="#demo">
                 <Button size="lg">
                   Explore the demo <ArrowRight className="h-4 w-4" />
@@ -119,9 +119,6 @@ export default function Landing() {
             <div className="flex items-center justify-between gap-2">
               <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
                 Recommended action
-              </span>
-              <span className="rounded-md bg-muted px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                Illustrative demo preview · fictional
               </span>
               <span className="rounded bg-muted px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
                 Needs approval
@@ -153,32 +150,36 @@ export default function Landing() {
             </p>
           </div>
         </div>
+
+        {/* Connected lifecycle — the first-viewport visual */}
+        <div className="border-t border-border bg-canvas">
+          <div className="mx-auto max-w-7xl px-4 py-5 sm:px-6">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+              The connected lifecycle — every handoff is human-approved
+            </p>
+            <ol className="mt-3 flex flex-col gap-2 lg:flex-row lg:items-stretch lg:gap-0">
+              {FLOW.map((step, i) => (
+                <li key={step.label} className="flex flex-1 items-center gap-3 lg:px-3">
+                  <div className="flex flex-1 items-center gap-3 rounded-lg border border-border bg-white p-3">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+                      <step.icon className="h-4.5 w-4.5" strokeWidth={2} aria-hidden="true" />
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Step {i + 1}</span>
+                      <span className="block truncate text-sm font-bold text-foreground">{step.label}</span>
+                    </span>
+                  </div>
+                  {i < FLOW.length - 1 && (
+                    <ArrowRight className="hidden h-4 w-4 shrink-0 text-muted-foreground/60 lg:block" aria-hidden="true" />
+                  )}
+                </li>
+              ))}
+            </ol>
+          </div>
+        </div>
       </section>
 
       {/* Three journeys */}
-      {/* Product flow — horizontal on desktop, vertical on mobile */}
-      <section className="border-b border-border bg-white" aria-label="How WorkSense works">
-        <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6">
-          <h2 className="text-lg font-extrabold tracking-tight text-foreground">From evidence to verified outcome</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Every step is routed through the right person — nothing here acts on its own.
-          </p>
-          <ol className="mt-6 flex flex-col gap-3 md:flex-row md:items-stretch md:gap-2">
-            {FLOW.map((step, i) => (
-              <li key={step.label} className="flex flex-1 items-center gap-3 rounded-lg border border-border bg-canvas p-3 md:flex-col md:items-start md:gap-2">
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
-                  <step.icon className="h-4.5 w-4.5" strokeWidth={2} aria-hidden="true" />
-                </span>
-                <span>
-                  <span className="block text-xs font-extrabold uppercase tracking-wider text-muted-foreground">Step {i + 1}</span>
-                  <span className="block text-sm font-bold text-foreground">{step.label}</span>
-                  <span className="block text-xs text-muted-foreground">{step.note}</span>
-                </span>
-              </li>
-            ))}
-          </ol>
-        </div>
-      </section>
 
       <section id="journeys" className="scroll-mt-16">
         <div className="mx-auto max-w-7xl px-4 py-14 sm:px-6 md:py-20">

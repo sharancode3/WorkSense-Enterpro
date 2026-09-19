@@ -598,7 +598,7 @@ export const TWINS: TwinSeed[] = [
     verified_skills: [
       { name: "Go", proficiency: 4, evidence_source: "interview_rubric", verification_rigor: "high" },
       { name: "PostgreSQL", proficiency: 4, evidence_source: "technical_assessment", verification_rigor: "medium" },
-      { name: "Docker", proficiency: 3, evidence_source: "resume", verification_rigor: "low" },
+      { name: "Docker", proficiency: 3, evidence_source: "work_sample", verification_rigor: "high" },
       { name: "Kubernetes", proficiency: 2, evidence_source: "resume", verification_rigor: "low" },
     ],
     interview_rubrics: [

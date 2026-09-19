@@ -1591,7 +1591,14 @@ async function seedRecruitmentWorkspace(supabase, orgId: string, clock: string) 
 
     const rubrics = [...required.map((s) => s.skill), "Collaboration"].map((comp) => demoRubricFor(comp, req.title));
 
+    // Audit rework: mandatory skills are NEVER duplicated as preferred without
+    // a reason. Preferred differentiators = FUTURE ADDITIONS only (skills not
+    // already mandatory today). Raised targets on mandatory skills stay visible
+    // as future capability signals via future_skills — not as duplicate criteria.
     const nReq = Math.max(required.length, 1);
+    const requiredSet = new Set(required.map((s) => s.skill.toLowerCase()));
+    const additions = (future ?? []).filter((s) => !requiredSet.has(s.skill.toLowerCase()));
+    const nPref = Math.max(additions.length, 1);
     const criteria = [
       ...required.map((s, i) => ({
         skill: s.skill,
@@ -1600,11 +1607,11 @@ async function seedRecruitmentWorkspace(supabase, orgId: string, clock: string) 
         weight: Number((1 / nReq).toFixed(2)),
         evidence_expectation: `Source artifact proving ${s.skill} at proficiency ${s.target_proficiency}: prior-role project output, work sample, or verified reference.`,
       })),
-      ...future.map((s) => ({
+      ...additions.map((s, i) => ({
         skill: s.skill,
         target_proficiency: s.target_proficiency,
         requirement: "preferred" as const,
-        weight: 0.4,
+        weight: Number((1 / nPref).toFixed(2)),
         evidence_expectation: `Evidence of trajectory toward ${s.skill} (learning artifact, stretch work, or certification in progress).`,
       })),
     ];

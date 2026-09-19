@@ -1166,10 +1166,13 @@ export function computeReviewIndex(input: ReviewIndexInput): ReviewIndexResult {
 
   let tierCapped = false;
   let gateReason: string | null = null;
-  if (priority === "review" && history_state === "none") {
+  if (priority === "review" && history_state !== "adequate") {
     priority = "high";
     tierCapped = true;
-    gateReason = "The index qualifies for the top tier on profile snapshots alone, but there is zero longitudinal observation history — the case is honestly capped until history exists. It is not an alarming classification on no data.";
+    gateReason =
+      history_state === "none"
+        ? "The index qualifies for the top tier on profile snapshots alone, but there is zero longitudinal observation history — the case is honestly capped until history exists. It is not an alarming classification on no data."
+        : `The index qualifies for the top tier, but longitudinal history is insufficient (${distinctPresentPeriods} of ${REVIEW_HISTORY_MIN_PERIODS} required periods). Missing history never escalates a case — collect observations before treating this as a top-priority review.`;
   } else if (priority === "review" && data_completeness < REVIEW_MIN_COMPLETENESS) {
     priority = "high";
     tierCapped = true;
@@ -1434,11 +1437,13 @@ Deno.serve(async (req) => {
   const headcount = scoped.length;
   const reviewPriorityCases = reviewCases.filter((c) => c.index >= REVIEW_THRESHOLD || c.priority === "review" || c.priority === "high").length;
 
-  const [reqsRes, recsRes, plansRes, tasksRes] = await Promise.all([
+  const [reqsRes, recsRes, plansRes, tasksRes, staffingRes, policyRes] = await Promise.all([
     supabase.from("job_requisitions").select("id, title, department, status, applicants, future_skills, required_skills, seniority_level").eq("org_id", caller.org_id),
     supabase.from("recommendations").select("id, twin_id, category, urgency, status, proposed_action, executive_summary").eq("org_id", caller.org_id).eq("status", "needs_review"),
     supabase.from("onboarding_plans").select("id, twin_id, version, status").eq("org_id", caller.org_id).not("status", "eq", "superseded"),
     supabase.from("onboarding_tasks").select("plan_id, state").eq("org_id", caller.org_id),
+    supabase.from("staffing_proposals").select("id, option_label, status, created_at, submitted_by, scenario_version").eq("org_id", caller.org_id).eq("status", "open").order("created_at", { ascending: false }).limit(5),
+    supabase.from("policy_documents").select("id, doc_code, title, version, effective_to").eq("org_id", caller.org_id),
   ]);
 
   const reqs = (reqsRes.data ?? []) as {
@@ -1573,6 +1578,123 @@ Deno.serve(async (req) => {
     .filter(Boolean))].sort() as string[];
   const availableRequisitions = reqs.map((r) => ({ id: r.id, title: r.title, status: r.status }));
 
+  // ---- Decision intelligence: compact, high-value, deep-linked items -------
+  // Each item names the person/role, why it surfaced, confidence/data quality,
+  // required owner and a deep link. No duplicate alerts across sections.
+  const plans = (plansRes.data ?? []) as { id: string; twin_id: string; version: number; status: string }[];
+  const tasks = (tasksRes.data ?? []) as { plan_id: string; state: string }[];
+  const planTasks = new Map<string, string[]>();
+  for (const t of tasks) planTasks.set(t.plan_id, [...(planTasks.get(t.plan_id) ?? []), t.state]);
+  const nameByTwin = new Map((scoped as { id: string; name: string }[]).map((t) => [t.id, t.name]));
+  const deptByTwin = new Map((scoped as { id: string; department?: string | null }[]).map((t) => [t.id, t.department ?? null]));
+
+  const decision_intelligence: {
+    category: "workforce_review" | "onboarding_blocked" | "hiring_awaiting_evidence" | "staffing_proposal" | "data_quality_followup";
+    title: string;
+    person: string | null;
+    role: string | null;
+    why: string;
+    confidence: string | null;
+    owner: string;
+    link: string;
+  }[] = [];
+
+  // 1) Evidence-backed workforce reviews (adequate history only).
+  for (const c of reviewCases.filter((x) => x.history_state === "adequate" && (x.priority === "review" || x.priority === "high")).slice(0, 3)) {
+    decision_intelligence.push({
+      category: "workforce_review",
+      title: `Review ${c.name} — ${c.priority === "review" ? "review priority" : "review prompt"} (${c.index}/100)`,
+      person: c.name,
+      role: "workforce case",
+      why: `Workforce Review Index ${c.index}/100 with adequate longitudinal history — a manager conversation is warranted.`,
+      confidence: c.confidence,
+      owner: "People Manager / HR",
+      link: `/workforce?twin=${c.twin_id}`,
+    });
+  }
+
+  // 2) Blocked onboarding dependencies (plan task in blocked/failed state).
+  for (const p of plans) {
+    if (!scopedIds.has(p.twin_id)) continue;
+    const states = planTasks.get(p.id) ?? [];
+    if (!states.some((s) => s === "blocked" || s === "failed")) continue;
+    decision_intelligence.push({
+      category: "onboarding_blocked",
+      title: `Onboarding blocked for ${nameByTwin.get(p.twin_id) ?? "employee"}`,
+      person: nameByTwin.get(p.twin_id) ?? null,
+      role: deptByTwin.get(p.twin_id) ?? null,
+      why: `A task in plan v${p.version} is blocked or failed — the journey cannot advance until an authorized resolution.`,
+      confidence: null,
+      owner: "IT Security / Manager / HR",
+      link: "/onboarding",
+    });
+  }
+
+  // 3) Hiring decisions awaiting evidence (final-round applicants per open req).
+  for (const r of openReqs) {
+    const final = ((r.applicants ?? []) as { stage: string }[]).filter((a) => a.stage === "final_round").length;
+    const interview = ((r.applicants ?? []) as { stage: string }[]).filter((a) => a.stage === "technical_interview").length;
+    if (final + interview === 0) continue;
+    decision_intelligence.push({
+      category: "hiring_awaiting_evidence",
+      title: `${r.title} — ${final} decision${final === 1 ? "" : "s"} pending, ${interview} in interview`,
+      person: null,
+      role: r.title,
+      why: final > 0
+        ? `Final-round candidate(s) await a human decision in the recruitment workspace.`
+        : `Candidate(s) are mid-interview — assessments must be reviewed before a decision.`,
+      confidence: null,
+      owner: "Technical Recruiter",
+      link: `/recruitment?req=${r.id}`,
+    });
+  }
+
+  // 4) Staffing proposals requiring review.
+  for (const p of (staffingRes.data ?? []) as { id: string; option_label?: string; status: string; created_at: string }[]) {
+    decision_intelligence.push({
+      category: "staffing_proposal",
+      title: `Staffing proposal: ${p.option_label ?? "option"} (${p.status})`,
+      person: null,
+      role: "staffing",
+      why: `A staffing proposal was submitted and requires an HR human decision.`,
+      confidence: null,
+      owner: "HR (proposal reviewer)",
+      link: "/staffing",
+    });
+  }
+
+  // 5) Data-quality follow-up: zero/partial-history cases with snapshot flags.
+  for (const c of reviewCases.filter((x) => x.history_state !== "adequate").slice(0, 3)) {
+    decision_intelligence.push({
+      category: "data_quality_followup",
+      title: `Insufficient history — ${c.name}`,
+      person: c.name,
+      role: "workforce case",
+      why: `Longitudinal history is ${c.history_state === "none" ? "absent" : "partial"} (${Math.round(c.completeness * 100)}% complete). This is a data-quality follow-up, not a risk classification.`,
+      confidence: c.confidence,
+      owner: "HR (collect observations)",
+      link: `/workforce?twin=${c.twin_id}`,
+    });
+  }
+
+  // 6) Expiring policies (effective_to within the next 60 days).
+  const nowMs = Date.now();
+  for (const p of (policyRes.data ?? []) as { id: string; doc_code: string; title: string; version: number; effective_to?: string | null }[]) {
+    if (!p.effective_to) continue;
+    const diffDays = (new Date(p.effective_to).getTime() - nowMs) / 86400000;
+    if (diffDays < 0 || diffDays > 60) continue;
+    decision_intelligence.push({
+      category: "data_quality_followup",
+      title: `Policy expiring: ${p.title} (v${p.version})`,
+      person: null,
+      role: "policy",
+      why: `Policy ${p.doc_code} expires ${new Date(p.effective_to).toLocaleDateString()} (${Math.round(diffDays)} days) — review or renew before it lapses.`,
+      confidence: null,
+      owner: "HR / Policy owner",
+      link: "/policy",
+    });
+  }
+
   return json({
     ok: true,
     scope,
@@ -1593,6 +1715,7 @@ Deno.serve(async (req) => {
       available: { departments: availableDepartments, requisitions: availableRequisitions },
     },
     review_cases: reviewCases,
+    decision_intelligence,
     // Phase 14: decision-oriented distributions — hiring funnel by stage and
     // review-band counts, each with denominators (sample sizes) so no number
     // floats without context.

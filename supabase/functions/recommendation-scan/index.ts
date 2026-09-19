@@ -1456,10 +1456,13 @@ export function computeReviewIndex(input: ReviewIndexInput): ReviewIndexResult {
 
   let tierCapped = false;
   let gateReason: string | null = null;
-  if (priority === "review" && history_state === "none") {
+  if (priority === "review" && history_state !== "adequate") {
     priority = "high";
     tierCapped = true;
-    gateReason = "The index qualifies for the top tier on profile snapshots alone, but there is zero longitudinal observation history — the case is honestly capped until history exists. It is not an alarming classification on no data.";
+    gateReason =
+      history_state === "none"
+        ? "The index qualifies for the top tier on profile snapshots alone, but there is zero longitudinal observation history — the case is honestly capped until history exists. It is not an alarming classification on no data."
+        : `The index qualifies for the top tier, but longitudinal history is insufficient (${distinctPresentPeriods} of ${REVIEW_HISTORY_MIN_PERIODS} required periods). Missing history never escalates a case — collect observations before treating this as a top-priority review.`;
   } else if (priority === "review" && data_completeness < REVIEW_MIN_COMPLETENESS) {
     priority = "high";
     tierCapped = true;

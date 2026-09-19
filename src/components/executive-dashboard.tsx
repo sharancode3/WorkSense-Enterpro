@@ -306,45 +306,61 @@ export function ExecutiveDashboard() {
           </div>
         </div>
       )}
-      {/* Phase 14: exceptions & next actions directly beneath the KPIs — the
-          first-screen answer to "what should I do next". */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <Link
-          to={can(role, "view_all_workforce") || can(role, "view_team") ? "/workforce" : "#"}
-          onClick={(e) => !(can(role, "view_all_workforce") || can(role, "view_team")) && e.preventDefault()}
-          className="rounded-lg bg-white p-4 transition-all hover:scale-[1.01]"
-          aria-label={`Review-priority cases: ${d.cards.review_priority_cases}`}
-        >
-          <p className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-muted-foreground">
-            <AlertTriangle className="h-3.5 w-3.5 text-destructive" /> Review cases needing attention
+      {/* Phase 14 + audit: consolidated DECISION INTELLIGENCE — each item names
+          the person/role, why it surfaced, confidence, owner and a deep link.
+          Replaces the previous duplicated exception cards. */}
+      <div className="rounded-lg bg-white p-5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="flex items-center gap-2 text-lg font-extrabold tracking-tight text-foreground">
+            <AlertTriangle className="h-5 w-5 text-accent" strokeWidth={2.5} /> Decision intelligence
+          </h2>
+          <span className="rounded-md bg-muted px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+            {d.decision_intelligence?.length ?? 0} high-value items · computed {new Date(d.computed_at).toLocaleTimeString()}
+          </span>
+        </div>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Only evidence-backed items worth acting on now — each identifies who/what it affects, why it surfaced,
+          confidence, required owner and a direct link. Missing data and stale evidence are follow-ups, never risk.
+        </p>
+        {(!d.decision_intelligence || d.decision_intelligence.length === 0) ? (
+          <p className="mt-4 rounded-lg bg-muted p-4 text-sm text-muted-foreground">
+            No decision-intelligence items in scope with the current filters. This is the expected state when reviews are
+            current, onboarding is unblocked, hiring decisions have evidence and no staffing proposals are pending.
           </p>
-          <p className="mt-1 text-2xl font-extrabold text-foreground">{d.cards.review_priority_cases}</p>
-          <p className="text-[11px] text-muted-foreground">index ≥ {d.threshold}/100 · of {d.review_band_counts.total} in scope</p>
-        </Link>
-        <Link
-          to={can(role, "view_onboarding") ? "/onboarding" : "#"}
-          onClick={(e) => !can(role, "view_onboarding") && e.preventDefault()}
-          className="rounded-lg bg-white p-4 transition-all hover:scale-[1.01]"
-          aria-label={`Blocked onboarding journeys: ${d.cards.journeys_blocked}`}
-        >
-          <p className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-muted-foreground">
-            <ListChecks className="h-3.5 w-3.5 text-destructive" /> Blocked onboarding journeys
-          </p>
-          <p className="mt-1 text-2xl font-extrabold text-foreground">{d.cards.journeys_blocked}</p>
-          <p className="text-[11px] text-muted-foreground">of {d.cards.journeys_in_progress} active — a task is blocked or failed</p>
-        </Link>
-        <Link
-          to={can(role, "approve_recommendations") ? "/hub" : "#"}
-          onClick={(e) => !can(role, "approve_recommendations") && e.preventDefault()}
-          className="rounded-lg bg-white p-4 transition-all hover:scale-[1.01]"
-          aria-label={`Recommendations awaiting review: ${d.cards.pending_recommendations}`}
-        >
-          <p className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-muted-foreground">
-            <Layers className="h-3.5 w-3.5 text-primary" /> Recommendations awaiting review
-          </p>
-          <p className="mt-1 text-2xl font-extrabold text-foreground">{d.cards.pending_recommendations}</p>
-          <p className="text-[11px] text-muted-foreground">each needs a typed human decision</p>
-        </Link>
+        ) : (
+          <ul className="mt-4 flex flex-col gap-2.5">
+            {d.decision_intelligence.map((item, i) => {
+              const catMeta = {
+                workforce_review: { label: "Workforce review", cls: "bg-destructive/10 text-destructive" },
+                onboarding_blocked: { label: "Onboarding blocked", cls: "bg-accent/20 text-accent" },
+                hiring_awaiting_evidence: { label: "Hiring awaiting evidence", cls: "bg-primary/10 text-primary" },
+                staffing_proposal: { label: "Staffing proposal", cls: "bg-secondary/15 text-secondary" },
+                data_quality_followup: { label: "Data-quality follow-up", cls: "bg-muted text-foreground" },
+              }[item.category] ?? { label: item.category, cls: "bg-muted text-foreground" };
+              return (
+                <li key={`${item.category}-${i}`}>
+                  <Link
+                    to={item.link}
+                    className="flex flex-col gap-1.5 rounded-lg border border-border bg-canvas p-3.5 transition-all hover:scale-[1.005] hover:border-primary/40"
+                  >
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className={`rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${catMeta.cls}`}>{catMeta.label}</span>
+                      <span className="text-sm font-bold text-foreground">{item.title}</span>
+                      {item.person && <span className="text-xs text-muted-foreground">→ {item.person}</span>}
+                      <ArrowRight className="ml-auto h-4 w-4 text-muted-foreground" />
+                    </div>
+                    <p className="text-xs leading-relaxed text-muted-foreground">{item.why}</p>
+                    <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-[11px] text-muted-foreground">
+                      {item.confidence && <span>confidence: <b className={item.confidence === "low" ? "text-destructive" : "text-foreground"}>{item.confidence}</b></span>}
+                      <span>owner: <b className="text-foreground">{item.owner}</b></span>
+                      <span>{item.role && item.role !== "staffing" && item.role !== "policy" ? `role: ${item.role}` : ""}</span>
+                    </div>
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        )}
       </div>
 
       {/* Freshness + scope + filter disclosure */}

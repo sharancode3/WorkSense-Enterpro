@@ -733,6 +733,16 @@ export interface DashboardData {
     pending_recommendations: number;
   };
   review_cases: ReviewCaseRow[];
+  decision_intelligence: {
+    category: "workforce_review" | "onboarding_blocked" | "hiring_awaiting_evidence" | "staffing_proposal" | "data_quality_followup";
+    title: string;
+    person: string | null;
+    role: string | null;
+    why: string;
+    confidence: string | null;
+    owner: string;
+    link: string;
+  }[];
   hiring_funnel: { stage: string; count: number }[];
   review_band_counts: { low: number; medium: number; high: number; review: number; total: number };
   heatmap: HeatmapBucket[];

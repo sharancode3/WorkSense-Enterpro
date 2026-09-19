@@ -91,7 +91,8 @@ export const candidateRowSchema = z.object({
 });
 export type CandidateRow = z.infer<typeof candidateRowSchema>;
 
-// Phase 4: candidate comparison (scored / unscored / stale buckets).
+// Phase 4 + audit rework: candidate comparison (scored / unscored / stale
+// buckets + evidence funnel + explainable rank).
 export const candidateCompareRowSchema = z.object({
   twin_id: z.string(),
   name: z.string(),
@@ -106,6 +107,27 @@ export const candidateCompareRowSchema = z.object({
   gaps: z.array(z.string()),
   adjacent: z.array(z.string()),
   transferable: z.array(z.string()),
+  gate_met: z.boolean().nullable(),
+  mandatory_readiness: z.number().nullable(),
+  preferred_readiness: z.number().nullable(),
+  verified_coverage: z.object({ met: z.number(), total: z.number() }),
+  provisional_coverage: z.object({ met: z.number(), total: z.number() }),
+  evidence_confidence: z.number().nullable(),
+  work_sample: z.number().nullable(),
+  work_sample_reviewed: z.boolean(),
+  interview_score: z.number().nullable(),
+  interview_status: z.enum(["none", "scheduled", "scored"]),
+  assessment_submitted: z.boolean(),
+  rank: z.number().nullable(),
+  rank_components: z.object({
+    mandatory: z.number().nullable(),
+    preferred: z.number().nullable(),
+    work_sample: z.number().nullable(),
+    interview: z.number().nullable(),
+    confidence: z.number().nullable(),
+  }),
+  rank_tier: z.enum(["ranked", "gated", "insufficient", "unranked"]),
+  tie_reason: z.string().nullable(),
 });
 export type CandidateCompareRow = z.infer<typeof candidateCompareRowSchema>;
 
@@ -118,6 +140,17 @@ export const candidateCompareSchema = z.object({
   scored_count: z.number(),
   unscored_count: z.number(),
   stale_count: z.number(),
+  rank_weights: z.object({
+    mandatory: z.number(),
+    preferred: z.number(),
+    work_sample: z.number(),
+    interview: z.number(),
+    confidence: z.number(),
+  }),
+  fairness: z.object({
+    excluded_attributes: z.array(z.string()),
+    statement: z.string(),
+  }),
 }) as z.ZodType<CandidateCompare>;
 export interface CandidateCompare {
   ok: true;
@@ -128,6 +161,8 @@ export interface CandidateCompare {
   scored_count: number;
   unscored_count: number;
   stale_count: number;
+  rank_weights: { mandatory: number; preferred: number; work_sample: number; interview: number; confidence: number };
+  fairness: { excluded_attributes: string[]; statement: string };
 }
 
 // ---------------------------------------------------------------------------

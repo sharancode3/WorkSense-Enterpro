@@ -98,7 +98,7 @@ describe("workforce-review-index (Phase 9)", () => {
     expect(growth.recommended_fact_finding.some((f) => f.includes("growth conversation"))).toBe(true);
   });
 
-  it("priority tiers: top tier requires >= 75% data completeness", () => {
+  it("priority tiers: top tier requires >= 75% data completeness AND adequate history", () => {
     const saturated = baseInput({
       promotion_lag_months: 200,
       attendance: { baseline: 0.5, recent: 5 },
@@ -110,13 +110,29 @@ describe("workforce-review-index (Phase 9)", () => {
     expect(noObs.priority).toBe("high");
     expect(noObs.priority_gate.tier_capped).toBe(true);
 
-    const withObs = computeReviewIndex({
+    // Two observation periods still = partial history -> capped off the top tier.
+    const partialObs = computeReviewIndex({
       ...saturated,
       observations: obs("engagement", [
         { period: "2026-01", value: 4 },
         { period: "2026-02", value: 3 },
       ]),
     });
+    expect(partialObs.history_state).toBe("partial");
+    expect(partialObs.priority).toBe("high");
+    expect(partialObs.priority_gate.tier_capped).toBe(true);
+
+    // Adequate history (>=3 distinct present periods) + high completeness -> top tier.
+    const withObs = computeReviewIndex({
+      ...saturated,
+      observations: obs("engagement", [
+        { period: "2026-01", value: 4 },
+        { period: "2026-02", value: 3 },
+        { period: "2026-03", value: 3 },
+        { period: "2026-04", value: 3 },
+      ]),
+    });
+    expect(withObs.history_state).toBe("adequate");
     expect(withObs.priority).toBe("review");
     expect(withObs.priority_gate.tier_capped).toBe(false);
   });
@@ -296,6 +312,58 @@ describe("workforce-review-index (Phase 7 — defensibility)", () => {
     expect(REVIEW_MODEL_STATUS.has_validated_predictive_model).toBe(false);
     expect(REVIEW_MODEL_STATUS.label.toLowerCase()).toContain("not a probability");
     expect(REVIEW_MODEL_STATUS.future_ml_requirements.length).toBeGreaterThanOrEqual(6);
+  });
+
+  it("AUDIT INVARIANT: a zero-history worker is never a normal HIGH/REVIEW band", () => {
+    // Leila-style: high snapshot factors, ZERO longitudinal observations.
+    const r = computeReviewIndex(
+      baseInput({
+        promotion_lag_months: 60, // full career factor
+        attendance: { baseline: 0.3, recent: 1.5 }, // materially above own baseline
+        delivery: { missed: 8, total: 8 },
+        observations: [], // NO history
+      })
+    );
+    expect(r.index).toBeGreaterThanOrEqual(75); // raw index qualifies for top tier
+    expect(r.history_state).toBe("none");
+    expect(r.priority).not.toBe("review"); // capped off the top tier
+    expect(r.priority_gate.tier_capped).toBe(true);
+    expect(r.confidence).toBe("low");
+    expect(r.data_quality.issues.some((i) => i.kind === "zero_history")).toBe(true);
+  });
+
+  it("AUDIT INVARIANT: adequate history + completeness is required before longitudinal priority", () => {
+    const r = computeReviewIndex(
+      baseInput({
+        promotion_lag_months: 60,
+        attendance: { baseline: 0.3, recent: 1.5 },
+        delivery: { missed: 6, total: 8 },
+        observations: obs("engagement", [
+          { period: "2026-01", value: 4 }, { period: "2026-02", value: 4 },
+          { period: "2026-03", value: 4 }, { period: "2026-04", value: 2 },
+        ]),
+      })
+    );
+    expect(r.history_state).toBe("adequate");
+    expect(r.priority).toBe("review"); // evidence-backed case CAN reach the top tier
+    expect(r.priority_gate.tier_capped).toBe(false);
+    expect(r.confidence).not.toBe("low");
+  });
+
+  it("AUDIT INVARIANT: partial history caps the top tier and is labeled insufficient history", () => {
+    const r = computeReviewIndex(
+      baseInput({
+        promotion_lag_months: 60,
+        attendance: { baseline: 0.3, recent: 1.5 },
+        delivery: { missed: 8, total: 8 },
+        observations: obs("engagement", [
+          { period: "2026-04", value: 4 }, { period: "2026-05", value: 2 },
+        ]),
+      })
+    );
+    expect(r.history_state).toBe("partial");
+    expect(r.priority).toBe("high"); // capped from review
+    expect(r.priority_gate.tier_capped).toBe(true);
   });
 });
 

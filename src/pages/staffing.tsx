@@ -63,6 +63,57 @@ interface SkillRow {
   mandatory: boolean;
 }
 
+/** Clearly-labeled fictional scenario presets. Selecting one POPULATES the
+ *  editable inputs — it never auto-submits or auto-runs. */
+const SCENARIO_PRESETS: {
+  id: string;
+  label: string;
+  description: string;
+  scenario: StaffingPlanInput;
+  skills: SkillRow[];
+}[] = [
+  {
+    id: "backend-45",
+    label: "Staff a backend platform project in 45 days",
+    description: "Fictional scenario — fills the demand, skills, deadline and budget so you can edit and run.",
+    scenario: {
+      name: "Backend platform project — 45 days",
+      demand_title: "Senior Backend Engineer",
+      deadline_days: 45,
+      budget_usd: 80000,
+      capacity_people: 1,
+      geography: "US",
+      horizon_months: 12,
+    },
+    skills: [
+      { skill: "Go", min_proficiency: "4", mandatory: true },
+      { skill: "REST APIs", min_proficiency: "3", mandatory: true },
+      { skill: "PostgreSQL", min_proficiency: "3", mandatory: true },
+      { skill: "Docker", min_proficiency: "3", mandatory: false },
+    ],
+  },
+  {
+    id: "data-90",
+    label: "Close a data capability gap in 90 days",
+    description: "Fictional scenario — fills the demand, skills, deadline and budget so you can edit and run.",
+    scenario: {
+      name: "Data capability gap — 90 days",
+      demand_title: "Data Analyst",
+      deadline_days: 90,
+      budget_usd: 55000,
+      capacity_people: 1,
+      geography: "US",
+      horizon_months: 12,
+    },
+    skills: [
+      { skill: "SQL", min_proficiency: "4", mandatory: true },
+      { skill: "Python", min_proficiency: "3", mandatory: true },
+      { skill: "Tableau", min_proficiency: "3", mandatory: false },
+      { skill: "Data Modeling", min_proficiency: "3", mandatory: false },
+    ],
+  },
+];
+
 // Batch F (F2): the staffing flow is explicit — Define → Compare → Review →
 // Approve. The stepper reflects where the user is; comparison comes FIRST.
 const STEPS = [
@@ -266,6 +317,34 @@ export default function StaffingPlanner() {
             );
           })}
         </ol>
+
+        {/* Scenario presets — populate editable inputs, never auto-submit */}
+        <div className="mt-6 rounded-lg bg-muted/60 p-4">
+          <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+            Scenario presets (fictional demo data) — select one to fill the editable form
+          </p>
+          <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+            {SCENARIO_PRESETS.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => {
+                  setScenario(p.scenario);
+                  setSkills(p.skills.map((s) => ({ ...s })));
+                  setPlan(null);
+                  setSelectedOption(null);
+                  setProposal(null);
+                  setInputFingerprint(null);
+                  toast.success(`Preset loaded: ${p.label}. Review the inputs, then run the scenario.`);
+                }}
+                className="rounded-md bg-white px-3 py-2 text-left text-xs shadow-sm ring-1 ring-border transition-all hover:scale-[1.01] hover:ring-primary/40"
+              >
+                <span className="block font-bold text-foreground">{p.label}</span>
+                <span className="mt-0.5 block text-[11px] text-muted-foreground">{p.description}</span>
+              </button>
+            ))}
+          </div>
+        </div>
 
         {/* Scenario inputs — Define */}
         <div className="mt-6 grid grid-cols-1 gap-4 rounded-lg bg-white p-5 lg:grid-cols-4">

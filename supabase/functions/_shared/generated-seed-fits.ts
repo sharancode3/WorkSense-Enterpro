@@ -880,16 +880,14 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
       "target_id": "33333333-3333-3333-3333-333333333301",
       "target_title": "Senior Backend Engineer",
       "scenario": "current",
-      "score": 0.62,
-      "profile_match": 0.683,
-      "evidence_confidence": 0.813,
+      "score": 0.87,
+      "profile_match": 0.833,
+      "evidence_confidence": 0.963,
       "mandatory_gate": {
-        "met": false,
-        "unmet_skills": [
-          "Docker"
-        ],
+        "met": true,
+        "unmet_skills": [],
         "count": 4,
-        "note": "Unmet: Docker. Without accepted evidence these cannot raise verified readiness."
+        "note": "Every mandatory requirement has accepted evidence (direct or accepted-adjacent)."
       },
       "contextual_alignment": {
         "candidate_level": 4,
@@ -944,24 +942,24 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
           },
           {
             "skill": "Docker",
-            "classification": "provisional_direct",
+            "classification": "verified_direct",
             "relationship": "direct",
             "mandatory": true,
             "required_proficiency": 3,
             "candidate_proficiency": 3,
             "effective_proficiency": 3,
             "gap": 0,
-            "evidence_state": "claimed",
-            "evidence_source": "claimed",
+            "evidence_state": "reviewer_confirmed",
+            "evidence_source": "reviewer_confirmed",
             "freshness_days": null,
-            "evidence_factor": 0.4,
-            "verified_contribution": 0,
-            "contribution": 0.4,
-            "verified": false,
+            "evidence_factor": 1,
+            "verified_contribution": 1,
+            "contribution": 1,
+            "verified": true,
             "provisional": true,
-            "next_action": "Verify evidence — accepted evidence would confirm this match.",
+            "next_action": "None — requirement met with accepted evidence.",
             "edge": null,
-            "reason": "Holds Docker at 3/3 required — evidence state: claimed.",
+            "reason": "Holds Docker at 3/3 required — evidence state: reviewer_confirmed.",
             "limitation": null
           },
           {
@@ -993,28 +991,26 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
         ],
         "mandatory": {
           "count": 4,
-          "met": 3,
-          "unmet": 1,
-          "unmet_skills": [
-            "Docker"
-          ],
-          "gated": true,
-          "readiness": 0.62
+          "met": 4,
+          "unmet": 0,
+          "unmet_skills": [],
+          "gated": false,
+          "readiness": 0.87
         },
         "preferred": null,
         "verified": {
-          "readiness": 0.62
+          "readiness": 0.87
         },
         "provisional": {
-          "readiness": 0.683
+          "readiness": 0.833
         },
-        "confidence": 0.813,
+        "confidence": 0.963,
         "group_weights": {
           "mandatory": 0.7,
           "preferred": 0.3
         },
         "evidence_artifacts": {
-          "count": 2,
+          "count": 3,
           "threshold": 5
         },
         "resolved_from": "current"
@@ -1064,32 +1060,31 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
             "edge": null,
             "reason": "Holds PostgreSQL at 4/3 required — evidence state: assessment_supported.",
             "limitation": null
-          }
-        ],
-        "provisional_direct": [
+          },
           {
             "skill": "Docker",
-            "classification": "provisional_direct",
+            "classification": "verified_direct",
             "relationship": "direct",
             "mandatory": true,
             "required_proficiency": 3,
             "candidate_proficiency": 3,
             "effective_proficiency": 3,
             "gap": 0,
-            "evidence_state": "claimed",
-            "evidence_source": "claimed",
+            "evidence_state": "reviewer_confirmed",
+            "evidence_source": "reviewer_confirmed",
             "freshness_days": null,
-            "evidence_factor": 0.4,
-            "verified_contribution": 0,
-            "contribution": 0.4,
-            "verified": false,
+            "evidence_factor": 1,
+            "verified_contribution": 1,
+            "contribution": 1,
+            "verified": true,
             "provisional": true,
-            "next_action": "Verify evidence — accepted evidence would confirm this match.",
+            "next_action": "None — requirement met with accepted evidence.",
             "edge": null,
-            "reason": "Holds Docker at 3/3 required — evidence state: claimed.",
+            "reason": "Holds Docker at 3/3 required — evidence state: reviewer_confirmed.",
             "limitation": null
           }
         ],
+        "provisional_direct": [],
         "below_target": [],
         "adjacent_support": [
           {
@@ -1124,7 +1119,7 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
       },
       "versions": {
         "engine": "3",
-        "evidence": "a4203583",
+        "evidence": "64f51776",
         "requisition": "unknown",
         "graph": "8aaab563",
         "context": "6788a556",
