@@ -9,126 +9,259 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
       "target_id": "33333333-3333-3333-3333-333333333301",
       "target_title": "Senior Backend Engineer",
       "scenario": "current",
-      "score": 0.392,
-      "sections": {
-        "direct": {
-          "value": 0.354,
-          "items": [
-            {
-              "skill": "Go",
-              "classification": "direct",
-              "required_proficiency": 4,
-              "candidate_proficiency": 3,
-              "edge": null,
-              "contribution": 0.75,
-              "reason": "Holds Go at 3/4 — below the required bar.",
-              "limitation": null
-            },
-            {
-              "skill": "Docker",
-              "classification": "direct",
-              "required_proficiency": 3,
-              "candidate_proficiency": 2,
-              "edge": null,
-              "contribution": 0.6666666666666666,
-              "reason": "Holds Docker at 2/3 — below the required bar.",
-              "limitation": null
-            }
-          ]
-        },
-        "adjacent": {
-          "value": 0.18,
-          "items": [
-            {
-              "skill": "REST APIs",
-              "classification": "adjacent",
-              "required_proficiency": 3,
-              "candidate_proficiency": null,
-              "edge": {
-                "from_skill": "Go",
-                "type": "ADJACENT_TO",
-                "weight": 0.6
-              },
-              "contribution": 0.36,
-              "reason": "No direct REST APIs; backed by Go → REST APIs (ADJACENT_TO, 0.60).",
-              "limitation": "Adjacent support is NOT direct equivalence: this person has no evidence for the required skill itself. Confirm real capability before relying on it."
-            }
-          ]
-        },
-        "evidence": {
-          "value": 0.6,
-          "artifact_count": 3,
-          "threshold": 5
-        },
-        "seniority": {
-          "value": 0.8,
-          "candidate_level": 3,
-          "role_level": 4
-        }
+      "score": 0.444,
+      "profile_match": 0.419,
+      "evidence_confidence": 0.95,
+      "mandatory_gate": {
+        "met": false,
+        "unmet_skills": [
+          "PostgreSQL"
+        ],
+        "count": 4,
+        "note": "Unmet: PostgreSQL. Without accepted evidence these cannot raise verified readiness."
       },
-      "classification": {
-        "direct": [
+      "contextual_alignment": {
+        "candidate_level": 3,
+        "role_level": 4,
+        "note": "Seniority (3 vs 4 role level) is shown as context only — it never contributes to the match score."
+      },
+      "scoring": {
+        "requirements": [
           {
             "skill": "Go",
-            "classification": "direct",
+            "classification": "below_target",
+            "relationship": "direct",
+            "mandatory": true,
             "required_proficiency": 4,
             "candidate_proficiency": 3,
-            "edge": null,
+            "effective_proficiency": 3,
+            "gap": 1,
+            "evidence_state": "reviewer_confirmed",
+            "evidence_source": "reviewer_confirmed",
+            "freshness_days": null,
+            "evidence_factor": 1,
+            "verified_contribution": 0.75,
             "contribution": 0.75,
-            "reason": "Holds Go at 3/4 — below the required bar.",
+            "verified": true,
+            "provisional": true,
+            "next_action": "Close the gap to the target level, then re-verify.",
+            "edge": null,
+            "reason": "Holds Go at 3/4 required — evidence state: reviewer_confirmed.",
             "limitation": null
           },
           {
-            "skill": "Docker",
-            "classification": "direct",
-            "required_proficiency": 3,
-            "candidate_proficiency": 2,
-            "edge": null,
-            "contribution": 0.6666666666666666,
-            "reason": "Holds Docker at 2/3 — below the required bar.",
-            "limitation": null
-          }
-        ],
-        "adjacent": [
-          {
-            "skill": "REST APIs",
-            "classification": "adjacent",
+            "skill": "PostgreSQL",
+            "classification": "transferable_foundation",
+            "relationship": "transferable",
+            "mandatory": true,
             "required_proficiency": 3,
             "candidate_proficiency": null,
+            "effective_proficiency": 0,
+            "gap": 3,
+            "evidence_state": null,
+            "evidence_source": null,
+            "freshness_days": null,
+            "evidence_factor": 0,
+            "verified_contribution": 0,
+            "contribution": 0,
+            "verified": false,
+            "provisional": false,
+            "next_action": "No proficiency yet — a development candidate, not capability.",
+            "edge": null,
+            "reason": "No direct or adjacent path; SQL shares the same category (Data).",
+            "limitation": "Transferable support is the weakest signal: it establishes no proficiency in the required skill and contributes no points to the score. Treat it as a development candidate, not capability."
+          },
+          {
+            "skill": "Docker",
+            "classification": "below_target",
+            "relationship": "direct",
+            "mandatory": true,
+            "required_proficiency": 3,
+            "candidate_proficiency": 2,
+            "effective_proficiency": 2,
+            "gap": 1,
+            "evidence_state": "assessment_supported",
+            "evidence_source": "assessment_supported",
+            "freshness_days": null,
+            "evidence_factor": 0.85,
+            "verified_contribution": 0.667,
+            "contribution": 0.567,
+            "verified": true,
+            "provisional": true,
+            "next_action": "Close the gap to the target level, then re-verify.",
+            "edge": null,
+            "reason": "Holds Docker at 2/3 required — evidence state: assessment_supported.",
+            "limitation": null
+          },
+          {
+            "skill": "REST APIs",
+            "classification": "adjacent_support",
+            "relationship": "adjacent",
+            "mandatory": true,
+            "required_proficiency": 3,
+            "candidate_proficiency": 3,
+            "effective_proficiency": 1.08,
+            "gap": 1.92,
+            "evidence_state": "reviewer_confirmed",
+            "evidence_source": "reviewer_confirmed",
+            "freshness_days": null,
+            "evidence_factor": 1,
+            "verified_contribution": 0.36,
+            "contribution": 0.36,
+            "verified": true,
+            "provisional": true,
+            "next_action": "Capability in the required skill itself is not yet evidenced — confirm via an assessment.",
             "edge": {
               "from_skill": "Go",
               "type": "ADJACENT_TO",
               "weight": 0.6
             },
-            "contribution": 0.36,
             "reason": "No direct REST APIs; backed by Go → REST APIs (ADJACENT_TO, 0.60).",
             "limitation": "Adjacent support is NOT direct equivalence: this person has no evidence for the required skill itself. Confirm real capability before relying on it."
           }
         ],
-        "transferable": [
+        "mandatory": {
+          "count": 4,
+          "met": 3,
+          "unmet": 1,
+          "unmet_skills": [
+            "PostgreSQL"
+          ],
+          "gated": true,
+          "readiness": 0.444
+        },
+        "preferred": null,
+        "verified": {
+          "readiness": 0.444
+        },
+        "provisional": {
+          "readiness": 0.419
+        },
+        "confidence": 0.95,
+        "group_weights": {
+          "mandatory": 0.7,
+          "preferred": 0.3
+        },
+        "evidence_artifacts": {
+          "count": 3,
+          "threshold": 5
+        },
+        "resolved_from": "current"
+      },
+      "classification": {
+        "verified_direct": [],
+        "provisional_direct": [],
+        "below_target": [
           {
-            "skill": "PostgreSQL",
-            "classification": "transferable",
-            "required_proficiency": 3,
-            "candidate_proficiency": null,
+            "skill": "Go",
+            "classification": "below_target",
+            "relationship": "direct",
+            "mandatory": true,
+            "required_proficiency": 4,
+            "candidate_proficiency": 3,
+            "effective_proficiency": 3,
+            "gap": 1,
+            "evidence_state": "reviewer_confirmed",
+            "evidence_source": "reviewer_confirmed",
+            "freshness_days": null,
+            "evidence_factor": 1,
+            "verified_contribution": 0.75,
+            "contribution": 0.75,
+            "verified": true,
+            "provisional": true,
+            "next_action": "Close the gap to the target level, then re-verify.",
             "edge": null,
-            "contribution": null,
-            "reason": "No direct or adjacent path; SQL shares the same category (Data).",
-            "limitation": "Transferable support is the weakest signal: it does not establish any proficiency in the required skill and contributes no points to the score. Treat it as a development candidate, not capability."
+            "reason": "Holds Go at 3/4 required — evidence state: reviewer_confirmed.",
+            "limitation": null
+          },
+          {
+            "skill": "Docker",
+            "classification": "below_target",
+            "relationship": "direct",
+            "mandatory": true,
+            "required_proficiency": 3,
+            "candidate_proficiency": 2,
+            "effective_proficiency": 2,
+            "gap": 1,
+            "evidence_state": "assessment_supported",
+            "evidence_source": "assessment_supported",
+            "freshness_days": null,
+            "evidence_factor": 0.85,
+            "verified_contribution": 0.667,
+            "contribution": 0.567,
+            "verified": true,
+            "provisional": true,
+            "next_action": "Close the gap to the target level, then re-verify.",
+            "edge": null,
+            "reason": "Holds Docker at 2/3 required — evidence state: assessment_supported.",
+            "limitation": null
           }
         ],
-        "gaps": []
+        "adjacent_support": [
+          {
+            "skill": "REST APIs",
+            "classification": "adjacent_support",
+            "relationship": "adjacent",
+            "mandatory": true,
+            "required_proficiency": 3,
+            "candidate_proficiency": 3,
+            "effective_proficiency": 1.08,
+            "gap": 1.92,
+            "evidence_state": "reviewer_confirmed",
+            "evidence_source": "reviewer_confirmed",
+            "freshness_days": null,
+            "evidence_factor": 1,
+            "verified_contribution": 0.36,
+            "contribution": 0.36,
+            "verified": true,
+            "provisional": true,
+            "next_action": "Capability in the required skill itself is not yet evidenced — confirm via an assessment.",
+            "edge": {
+              "from_skill": "Go",
+              "type": "ADJACENT_TO",
+              "weight": 0.6
+            },
+            "reason": "No direct REST APIs; backed by Go → REST APIs (ADJACENT_TO, 0.60).",
+            "limitation": "Adjacent support is NOT direct equivalence: this person has no evidence for the required skill itself. Confirm real capability before relying on it."
+          }
+        ],
+        "transferable_foundation": [
+          {
+            "skill": "PostgreSQL",
+            "classification": "transferable_foundation",
+            "relationship": "transferable",
+            "mandatory": true,
+            "required_proficiency": 3,
+            "candidate_proficiency": null,
+            "effective_proficiency": 0,
+            "gap": 3,
+            "evidence_state": null,
+            "evidence_source": null,
+            "freshness_days": null,
+            "evidence_factor": 0,
+            "verified_contribution": 0,
+            "contribution": 0,
+            "verified": false,
+            "provisional": false,
+            "next_action": "No proficiency yet — a development candidate, not capability.",
+            "edge": null,
+            "reason": "No direct or adjacent path; SQL shares the same category (Data).",
+            "limitation": "Transferable support is the weakest signal: it establishes no proficiency in the required skill and contributes no points to the score. Treat it as a development candidate, not capability."
+          }
+        ],
+        "missing": []
       },
       "versions": {
-        "engine": "2",
-        "evidence": "9882b815",
+        "engine": "3",
+        "evidence": "f611d735",
         "requisition": "unknown",
         "graph": "8aaab563",
-        "context": "c2c73c8e"
+        "context": "c2c73c8e",
+        "plan": "none"
       },
       "assumptions": {
         "horizon": "Current",
-        "note": "Current requirements — as recorded on the requisition today."
+        "note": "Current requirements — as recorded on the requisition today. Verified readiness answers: how much of today's requirement is already backed by accepted evidence?"
       },
       "computed_at": "2026-09-15T09:00:00Z"
     },
@@ -137,147 +270,352 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
       "target_id": "33333333-3333-3333-3333-333333333301",
       "target_title": "Senior Backend Engineer",
       "scenario": "future",
-      "score": 0.311,
-      "sections": {
-        "direct": {
-          "value": 0.236,
-          "items": [
-            {
-              "skill": "Go",
-              "classification": "direct",
-              "required_proficiency": 4,
-              "candidate_proficiency": 3,
-              "edge": null,
-              "contribution": 0.75,
-              "reason": "Holds Go at 3/4 — below the required bar.",
-              "limitation": null
-            },
-            {
-              "skill": "Docker",
-              "classification": "direct",
-              "required_proficiency": 3,
-              "candidate_proficiency": 2,
-              "edge": null,
-              "contribution": 0.6666666666666666,
-              "reason": "Holds Docker at 2/3 — below the required bar.",
-              "limitation": null
-            }
-          ]
-        },
-        "adjacent": {
-          "value": 0.09,
-          "items": [
-            {
-              "skill": "REST APIs",
-              "classification": "adjacent",
-              "required_proficiency": 3,
-              "candidate_proficiency": null,
-              "edge": {
-                "from_skill": "Go",
-                "type": "ADJACENT_TO",
-                "weight": 0.6
-              },
-              "contribution": 0.36,
-              "reason": "No direct REST APIs; backed by Go → REST APIs (ADJACENT_TO, 0.60).",
-              "limitation": "Adjacent support is NOT direct equivalence: this person has no evidence for the required skill itself. Confirm real capability before relying on it."
-            }
-          ]
-        },
-        "evidence": {
-          "value": 0.6,
-          "artifact_count": 3,
-          "threshold": 5
-        },
-        "seniority": {
-          "value": 0.8,
-          "candidate_level": 3,
-          "role_level": 4
-        }
+      "score": 0.296,
+      "profile_match": 0.28,
+      "evidence_confidence": 0.95,
+      "mandatory_gate": {
+        "met": false,
+        "unmet_skills": [
+          "PostgreSQL",
+          "Kubernetes",
+          "Event-driven architecture"
+        ],
+        "count": 6,
+        "note": "Unmet: PostgreSQL, Kubernetes, Event-driven architecture. Without accepted evidence these cannot raise verified readiness."
       },
-      "classification": {
-        "direct": [
+      "contextual_alignment": {
+        "candidate_level": 3,
+        "role_level": 4,
+        "note": "Seniority (3 vs 4 role level) is shown as context only — it never contributes to the match score."
+      },
+      "scoring": {
+        "requirements": [
           {
             "skill": "Go",
-            "classification": "direct",
+            "classification": "below_target",
+            "relationship": "direct",
+            "mandatory": true,
             "required_proficiency": 4,
             "candidate_proficiency": 3,
-            "edge": null,
+            "effective_proficiency": 3,
+            "gap": 1,
+            "evidence_state": "reviewer_confirmed",
+            "evidence_source": "reviewer_confirmed",
+            "freshness_days": null,
+            "evidence_factor": 1,
+            "verified_contribution": 0.75,
             "contribution": 0.75,
-            "reason": "Holds Go at 3/4 — below the required bar.",
+            "verified": true,
+            "provisional": true,
+            "next_action": "Close the gap to the target level, then re-verify.",
+            "edge": null,
+            "reason": "Holds Go at 3/4 required — evidence state: reviewer_confirmed.",
             "limitation": null
           },
           {
+            "skill": "PostgreSQL",
+            "classification": "transferable_foundation",
+            "relationship": "transferable",
+            "mandatory": true,
+            "required_proficiency": 4,
+            "candidate_proficiency": null,
+            "effective_proficiency": 0,
+            "gap": 4,
+            "evidence_state": null,
+            "evidence_source": null,
+            "freshness_days": null,
+            "evidence_factor": 0,
+            "verified_contribution": 0,
+            "contribution": 0,
+            "verified": false,
+            "provisional": false,
+            "next_action": "No proficiency yet — a development candidate, not capability.",
+            "edge": null,
+            "reason": "No direct or adjacent path; SQL shares the same category (Data).",
+            "limitation": "Transferable support is the weakest signal: it establishes no proficiency in the required skill and contributes no points to the score. Treat it as a development candidate, not capability."
+          },
+          {
             "skill": "Docker",
-            "classification": "direct",
+            "classification": "below_target",
+            "relationship": "direct",
+            "mandatory": true,
             "required_proficiency": 3,
             "candidate_proficiency": 2,
+            "effective_proficiency": 2,
+            "gap": 1,
+            "evidence_state": "assessment_supported",
+            "evidence_source": "assessment_supported",
+            "freshness_days": null,
+            "evidence_factor": 0.85,
+            "verified_contribution": 0.667,
+            "contribution": 0.567,
+            "verified": true,
+            "provisional": true,
+            "next_action": "Close the gap to the target level, then re-verify.",
             "edge": null,
-            "contribution": 0.6666666666666666,
-            "reason": "Holds Docker at 2/3 — below the required bar.",
+            "reason": "Holds Docker at 2/3 required — evidence state: assessment_supported.",
             "limitation": null
-          }
-        ],
-        "adjacent": [
+          },
           {
             "skill": "REST APIs",
-            "classification": "adjacent",
+            "classification": "adjacent_support",
+            "relationship": "adjacent",
+            "mandatory": true,
             "required_proficiency": 3,
-            "candidate_proficiency": null,
+            "candidate_proficiency": 3,
+            "effective_proficiency": 1.08,
+            "gap": 1.92,
+            "evidence_state": "reviewer_confirmed",
+            "evidence_source": "reviewer_confirmed",
+            "freshness_days": null,
+            "evidence_factor": 1,
+            "verified_contribution": 0.36,
+            "contribution": 0.36,
+            "verified": true,
+            "provisional": true,
+            "next_action": "Capability in the required skill itself is not yet evidenced — confirm via an assessment.",
             "edge": {
               "from_skill": "Go",
               "type": "ADJACENT_TO",
               "weight": 0.6
             },
+            "reason": "No direct REST APIs; backed by Go → REST APIs (ADJACENT_TO, 0.60).",
+            "limitation": "Adjacent support is NOT direct equivalence: this person has no evidence for the required skill itself. Confirm real capability before relying on it."
+          },
+          {
+            "skill": "Kubernetes",
+            "classification": "transferable_foundation",
+            "relationship": "transferable",
+            "mandatory": true,
+            "required_proficiency": 2,
+            "candidate_proficiency": null,
+            "effective_proficiency": 0,
+            "gap": 2,
+            "evidence_state": null,
+            "evidence_source": null,
+            "freshness_days": null,
+            "evidence_factor": 0,
+            "verified_contribution": 0,
+            "contribution": 0,
+            "verified": false,
+            "provisional": false,
+            "next_action": "No proficiency yet — a development candidate, not capability.",
+            "edge": null,
+            "reason": "No direct or adjacent path; Docker shares the same category (DevOps).",
+            "limitation": "Transferable support is the weakest signal: it establishes no proficiency in the required skill and contributes no points to the score. Treat it as a development candidate, not capability."
+          },
+          {
+            "skill": "Event-driven architecture",
+            "classification": "missing",
+            "relationship": "none",
+            "mandatory": true,
+            "required_proficiency": 2,
+            "candidate_proficiency": null,
+            "effective_proficiency": 0,
+            "gap": 2,
+            "evidence_state": null,
+            "evidence_source": null,
+            "freshness_days": null,
+            "evidence_factor": 0,
+            "verified_contribution": 0,
+            "contribution": 0,
+            "verified": false,
+            "provisional": false,
+            "next_action": "No evidence or path — needs an assessment or structured learning.",
+            "edge": null,
+            "reason": "No direct, adjacent, or transferable path found for Event-driven architecture.",
+            "limitation": null
+          }
+        ],
+        "mandatory": {
+          "count": 6,
+          "met": 3,
+          "unmet": 3,
+          "unmet_skills": [
+            "PostgreSQL",
+            "Kubernetes",
+            "Event-driven architecture"
+          ],
+          "gated": true,
+          "readiness": 0.296
+        },
+        "preferred": null,
+        "verified": {
+          "readiness": 0.296
+        },
+        "provisional": {
+          "readiness": 0.28
+        },
+        "confidence": 0.95,
+        "group_weights": {
+          "mandatory": 0.7,
+          "preferred": 0.3
+        },
+        "evidence_artifacts": {
+          "count": 3,
+          "threshold": 5
+        },
+        "resolved_from": "resolved-future"
+      },
+      "classification": {
+        "verified_direct": [],
+        "provisional_direct": [],
+        "below_target": [
+          {
+            "skill": "Go",
+            "classification": "below_target",
+            "relationship": "direct",
+            "mandatory": true,
+            "required_proficiency": 4,
+            "candidate_proficiency": 3,
+            "effective_proficiency": 3,
+            "gap": 1,
+            "evidence_state": "reviewer_confirmed",
+            "evidence_source": "reviewer_confirmed",
+            "freshness_days": null,
+            "evidence_factor": 1,
+            "verified_contribution": 0.75,
+            "contribution": 0.75,
+            "verified": true,
+            "provisional": true,
+            "next_action": "Close the gap to the target level, then re-verify.",
+            "edge": null,
+            "reason": "Holds Go at 3/4 required — evidence state: reviewer_confirmed.",
+            "limitation": null
+          },
+          {
+            "skill": "Docker",
+            "classification": "below_target",
+            "relationship": "direct",
+            "mandatory": true,
+            "required_proficiency": 3,
+            "candidate_proficiency": 2,
+            "effective_proficiency": 2,
+            "gap": 1,
+            "evidence_state": "assessment_supported",
+            "evidence_source": "assessment_supported",
+            "freshness_days": null,
+            "evidence_factor": 0.85,
+            "verified_contribution": 0.667,
+            "contribution": 0.567,
+            "verified": true,
+            "provisional": true,
+            "next_action": "Close the gap to the target level, then re-verify.",
+            "edge": null,
+            "reason": "Holds Docker at 2/3 required — evidence state: assessment_supported.",
+            "limitation": null
+          }
+        ],
+        "adjacent_support": [
+          {
+            "skill": "REST APIs",
+            "classification": "adjacent_support",
+            "relationship": "adjacent",
+            "mandatory": true,
+            "required_proficiency": 3,
+            "candidate_proficiency": 3,
+            "effective_proficiency": 1.08,
+            "gap": 1.92,
+            "evidence_state": "reviewer_confirmed",
+            "evidence_source": "reviewer_confirmed",
+            "freshness_days": null,
+            "evidence_factor": 1,
+            "verified_contribution": 0.36,
             "contribution": 0.36,
+            "verified": true,
+            "provisional": true,
+            "next_action": "Capability in the required skill itself is not yet evidenced — confirm via an assessment.",
+            "edge": {
+              "from_skill": "Go",
+              "type": "ADJACENT_TO",
+              "weight": 0.6
+            },
             "reason": "No direct REST APIs; backed by Go → REST APIs (ADJACENT_TO, 0.60).",
             "limitation": "Adjacent support is NOT direct equivalence: this person has no evidence for the required skill itself. Confirm real capability before relying on it."
           }
         ],
-        "transferable": [
+        "transferable_foundation": [
           {
             "skill": "PostgreSQL",
-            "classification": "transferable",
+            "classification": "transferable_foundation",
+            "relationship": "transferable",
+            "mandatory": true,
             "required_proficiency": 4,
             "candidate_proficiency": null,
+            "effective_proficiency": 0,
+            "gap": 4,
+            "evidence_state": null,
+            "evidence_source": null,
+            "freshness_days": null,
+            "evidence_factor": 0,
+            "verified_contribution": 0,
+            "contribution": 0,
+            "verified": false,
+            "provisional": false,
+            "next_action": "No proficiency yet — a development candidate, not capability.",
             "edge": null,
-            "contribution": null,
             "reason": "No direct or adjacent path; SQL shares the same category (Data).",
-            "limitation": "Transferable support is the weakest signal: it does not establish any proficiency in the required skill and contributes no points to the score. Treat it as a development candidate, not capability."
+            "limitation": "Transferable support is the weakest signal: it establishes no proficiency in the required skill and contributes no points to the score. Treat it as a development candidate, not capability."
           },
           {
             "skill": "Kubernetes",
-            "classification": "transferable",
+            "classification": "transferable_foundation",
+            "relationship": "transferable",
+            "mandatory": true,
             "required_proficiency": 2,
             "candidate_proficiency": null,
+            "effective_proficiency": 0,
+            "gap": 2,
+            "evidence_state": null,
+            "evidence_source": null,
+            "freshness_days": null,
+            "evidence_factor": 0,
+            "verified_contribution": 0,
+            "contribution": 0,
+            "verified": false,
+            "provisional": false,
+            "next_action": "No proficiency yet — a development candidate, not capability.",
             "edge": null,
-            "contribution": null,
             "reason": "No direct or adjacent path; Docker shares the same category (DevOps).",
-            "limitation": "Transferable support is the weakest signal: it does not establish any proficiency in the required skill and contributes no points to the score. Treat it as a development candidate, not capability."
+            "limitation": "Transferable support is the weakest signal: it establishes no proficiency in the required skill and contributes no points to the score. Treat it as a development candidate, not capability."
           }
         ],
-        "gaps": [
+        "missing": [
           {
             "skill": "Event-driven architecture",
-            "classification": "gap",
+            "classification": "missing",
+            "relationship": "none",
+            "mandatory": true,
             "required_proficiency": 2,
             "candidate_proficiency": null,
+            "effective_proficiency": 0,
+            "gap": 2,
+            "evidence_state": null,
+            "evidence_source": null,
+            "freshness_days": null,
+            "evidence_factor": 0,
+            "verified_contribution": 0,
+            "contribution": 0,
+            "verified": false,
+            "provisional": false,
+            "next_action": "No evidence or path — needs an assessment or structured learning.",
             "edge": null,
-            "contribution": null,
             "reason": "No direct, adjacent, or transferable path found for Event-driven architecture.",
             "limitation": null
           }
         ]
       },
       "versions": {
-        "engine": "2",
-        "evidence": "9882b815",
+        "engine": "3",
+        "evidence": "f611d735",
         "requisition": "unknown",
         "graph": "8aaab563",
-        "context": "c2c73c8e"
+        "context": "c2c73c8e",
+        "plan": "none"
       },
       "assumptions": {
-        "horizon": "12–24 month outlook",
-        "note": "12–24 month outlook — derived from the requisition's future_skills. Assumption: these skills are the expected demand; edit the requisition to change them."
+        "horizon": "Resolved 12–24 month target",
+        "note": "Resolved 12–24 month target — today's still-relevant requirements plus future additions, with raised targets applied. Verified readiness answers: how much of the future target is already backed by accepted evidence TODAY (no assumed learning)?"
       },
       "computed_at": "2026-09-15T09:00:00Z"
     }
@@ -288,125 +626,250 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
       "target_id": "33333333-3333-3333-3333-333333333302",
       "target_title": "Data Analyst",
       "scenario": "current",
-      "score": 0.898,
-      "sections": {
-        "direct": {
-          "value": 0.917,
-          "items": [
-            {
-              "skill": "SQL",
-              "classification": "direct",
-              "required_proficiency": 4,
-              "candidate_proficiency": 4,
-              "edge": null,
-              "contribution": 1,
-              "reason": "Holds SQL at 4/4 required.",
-              "limitation": null
-            },
-            {
-              "skill": "Python",
-              "classification": "direct",
-              "required_proficiency": 3,
-              "candidate_proficiency": 3,
-              "edge": null,
-              "contribution": 1,
-              "reason": "Holds Python at 3/3 required.",
-              "limitation": null
-            },
-            {
-              "skill": "Data Modeling",
-              "classification": "direct",
-              "required_proficiency": 3,
-              "candidate_proficiency": 2,
-              "edge": null,
-              "contribution": 0.6666666666666666,
-              "reason": "Holds Data Modeling at 2/3 — below the required bar.",
-              "limitation": null
-            },
-            {
-              "skill": "Tableau",
-              "classification": "direct",
-              "required_proficiency": 2,
-              "candidate_proficiency": 3,
-              "edge": null,
-              "contribution": 1,
-              "reason": "Holds Tableau at 3/2 required.",
-              "limitation": null
-            }
-          ]
-        },
-        "adjacent": {
-          "value": 1,
-          "items": []
-        },
-        "evidence": {
-          "value": 0.6,
-          "artifact_count": 3,
-          "threshold": 5
-        },
-        "seniority": {
-          "value": 1,
-          "candidate_level": 3,
-          "role_level": 3
-        }
+      "score": 0.75,
+      "profile_match": 0.742,
+      "evidence_confidence": 0.775,
+      "mandatory_gate": {
+        "met": false,
+        "unmet_skills": [
+          "Data Modeling"
+        ],
+        "count": 4,
+        "note": "Unmet: Data Modeling. Without accepted evidence these cannot raise verified readiness."
       },
-      "classification": {
-        "direct": [
+      "contextual_alignment": {
+        "candidate_level": 3,
+        "role_level": 3,
+        "note": "Seniority (3 vs 3 role level) is shown as context only — it never contributes to the match score."
+      },
+      "scoring": {
+        "requirements": [
           {
             "skill": "SQL",
-            "classification": "direct",
+            "classification": "verified_direct",
+            "relationship": "direct",
+            "mandatory": true,
             "required_proficiency": 4,
             "candidate_proficiency": 4,
-            "edge": null,
+            "effective_proficiency": 4,
+            "gap": 0,
+            "evidence_state": "reviewer_confirmed",
+            "evidence_source": "reviewer_confirmed",
+            "freshness_days": null,
+            "evidence_factor": 1,
+            "verified_contribution": 1,
             "contribution": 1,
-            "reason": "Holds SQL at 4/4 required.",
+            "verified": true,
+            "provisional": true,
+            "next_action": "None — requirement met with accepted evidence.",
+            "edge": null,
+            "reason": "Holds SQL at 4/4 required — evidence state: reviewer_confirmed.",
             "limitation": null
           },
           {
             "skill": "Python",
-            "classification": "direct",
+            "classification": "verified_direct",
+            "relationship": "direct",
+            "mandatory": true,
             "required_proficiency": 3,
             "candidate_proficiency": 3,
+            "effective_proficiency": 3,
+            "gap": 0,
+            "evidence_state": "assessment_supported",
+            "evidence_source": "assessment_supported",
+            "freshness_days": null,
+            "evidence_factor": 0.85,
+            "verified_contribution": 1,
+            "contribution": 0.85,
+            "verified": true,
+            "provisional": true,
+            "next_action": "None — requirement met with accepted evidence.",
             "edge": null,
-            "contribution": 1,
-            "reason": "Holds Python at 3/3 required.",
+            "reason": "Holds Python at 3/3 required — evidence state: assessment_supported.",
             "limitation": null
           },
           {
             "skill": "Data Modeling",
-            "classification": "direct",
+            "classification": "below_target",
+            "relationship": "direct",
+            "mandatory": true,
             "required_proficiency": 3,
             "candidate_proficiency": 2,
+            "effective_proficiency": 2,
+            "gap": 1,
+            "evidence_state": "claimed",
+            "evidence_source": "claimed",
+            "freshness_days": null,
+            "evidence_factor": 0.4,
+            "verified_contribution": 0,
+            "contribution": 0.267,
+            "verified": false,
+            "provisional": true,
+            "next_action": "Close the gap to the target level, then re-verify.",
             "edge": null,
-            "contribution": 0.6666666666666666,
-            "reason": "Holds Data Modeling at 2/3 — below the required bar.",
+            "reason": "Holds Data Modeling at 2/3 required — evidence state: claimed.",
             "limitation": null
           },
           {
             "skill": "Tableau",
-            "classification": "direct",
+            "classification": "verified_direct",
+            "relationship": "direct",
+            "mandatory": true,
             "required_proficiency": 2,
             "candidate_proficiency": 3,
+            "effective_proficiency": 2,
+            "gap": 0,
+            "evidence_state": "assessment_supported",
+            "evidence_source": "assessment_supported",
+            "freshness_days": null,
+            "evidence_factor": 0.85,
+            "verified_contribution": 1,
+            "contribution": 0.85,
+            "verified": true,
+            "provisional": true,
+            "next_action": "None — requirement met with accepted evidence.",
             "edge": null,
-            "contribution": 1,
-            "reason": "Holds Tableau at 3/2 required.",
+            "reason": "Holds Tableau at 3/2 required — evidence state: assessment_supported.",
             "limitation": null
           }
         ],
-        "adjacent": [],
-        "transferable": [],
-        "gaps": []
+        "mandatory": {
+          "count": 4,
+          "met": 3,
+          "unmet": 1,
+          "unmet_skills": [
+            "Data Modeling"
+          ],
+          "gated": true,
+          "readiness": 0.75
+        },
+        "preferred": null,
+        "verified": {
+          "readiness": 0.75
+        },
+        "provisional": {
+          "readiness": 0.742
+        },
+        "confidence": 0.775,
+        "group_weights": {
+          "mandatory": 0.7,
+          "preferred": 0.3
+        },
+        "evidence_artifacts": {
+          "count": 3,
+          "threshold": 5
+        },
+        "resolved_from": "current"
+      },
+      "classification": {
+        "verified_direct": [
+          {
+            "skill": "SQL",
+            "classification": "verified_direct",
+            "relationship": "direct",
+            "mandatory": true,
+            "required_proficiency": 4,
+            "candidate_proficiency": 4,
+            "effective_proficiency": 4,
+            "gap": 0,
+            "evidence_state": "reviewer_confirmed",
+            "evidence_source": "reviewer_confirmed",
+            "freshness_days": null,
+            "evidence_factor": 1,
+            "verified_contribution": 1,
+            "contribution": 1,
+            "verified": true,
+            "provisional": true,
+            "next_action": "None — requirement met with accepted evidence.",
+            "edge": null,
+            "reason": "Holds SQL at 4/4 required — evidence state: reviewer_confirmed.",
+            "limitation": null
+          },
+          {
+            "skill": "Python",
+            "classification": "verified_direct",
+            "relationship": "direct",
+            "mandatory": true,
+            "required_proficiency": 3,
+            "candidate_proficiency": 3,
+            "effective_proficiency": 3,
+            "gap": 0,
+            "evidence_state": "assessment_supported",
+            "evidence_source": "assessment_supported",
+            "freshness_days": null,
+            "evidence_factor": 0.85,
+            "verified_contribution": 1,
+            "contribution": 0.85,
+            "verified": true,
+            "provisional": true,
+            "next_action": "None — requirement met with accepted evidence.",
+            "edge": null,
+            "reason": "Holds Python at 3/3 required — evidence state: assessment_supported.",
+            "limitation": null
+          },
+          {
+            "skill": "Tableau",
+            "classification": "verified_direct",
+            "relationship": "direct",
+            "mandatory": true,
+            "required_proficiency": 2,
+            "candidate_proficiency": 3,
+            "effective_proficiency": 2,
+            "gap": 0,
+            "evidence_state": "assessment_supported",
+            "evidence_source": "assessment_supported",
+            "freshness_days": null,
+            "evidence_factor": 0.85,
+            "verified_contribution": 1,
+            "contribution": 0.85,
+            "verified": true,
+            "provisional": true,
+            "next_action": "None — requirement met with accepted evidence.",
+            "edge": null,
+            "reason": "Holds Tableau at 3/2 required — evidence state: assessment_supported.",
+            "limitation": null
+          }
+        ],
+        "provisional_direct": [],
+        "below_target": [
+          {
+            "skill": "Data Modeling",
+            "classification": "below_target",
+            "relationship": "direct",
+            "mandatory": true,
+            "required_proficiency": 3,
+            "candidate_proficiency": 2,
+            "effective_proficiency": 2,
+            "gap": 1,
+            "evidence_state": "claimed",
+            "evidence_source": "claimed",
+            "freshness_days": null,
+            "evidence_factor": 0.4,
+            "verified_contribution": 0,
+            "contribution": 0.267,
+            "verified": false,
+            "provisional": true,
+            "next_action": "Close the gap to the target level, then re-verify.",
+            "edge": null,
+            "reason": "Holds Data Modeling at 2/3 required — evidence state: claimed.",
+            "limitation": null
+          }
+        ],
+        "adjacent_support": [],
+        "transferable_foundation": [],
+        "missing": []
       },
       "versions": {
-        "engine": "2",
-        "evidence": "bc60c95a",
+        "engine": "3",
+        "evidence": "c3e460fa",
         "requisition": "unknown",
         "graph": "8aaab563",
-        "context": "c5c74147"
+        "context": "c5c74147",
+        "plan": "none"
       },
       "assumptions": {
         "horizon": "Current",
-        "note": "Current requirements — as recorded on the requisition today."
+        "note": "Current requirements — as recorded on the requisition today. Verified readiness answers: how much of today's requirement is already backed by accepted evidence?"
       },
       "computed_at": "2026-09-15T09:00:00Z"
     }
@@ -417,135 +880,259 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
       "target_id": "33333333-3333-3333-3333-333333333301",
       "target_title": "Senior Backend Engineer",
       "scenario": "current",
-      "score": 0.655,
-      "sections": {
-        "direct": {
-          "value": 0.75,
-          "items": [
-            {
-              "skill": "Go",
-              "classification": "direct",
-              "required_proficiency": 4,
-              "candidate_proficiency": 4,
-              "edge": null,
-              "contribution": 1,
-              "reason": "Holds Go at 4/4 required.",
-              "limitation": null
-            },
-            {
-              "skill": "PostgreSQL",
-              "classification": "direct",
-              "required_proficiency": 3,
-              "candidate_proficiency": 4,
-              "edge": null,
-              "contribution": 1,
-              "reason": "Holds PostgreSQL at 4/3 required.",
-              "limitation": null
-            },
-            {
-              "skill": "Docker",
-              "classification": "direct",
-              "required_proficiency": 3,
-              "candidate_proficiency": 3,
-              "edge": null,
-              "contribution": 1,
-              "reason": "Holds Docker at 3/3 required.",
-              "limitation": null
-            }
-          ]
-        },
-        "adjacent": {
-          "value": 0.48,
-          "items": [
-            {
-              "skill": "REST APIs",
-              "classification": "adjacent",
-              "required_proficiency": 3,
-              "candidate_proficiency": null,
-              "edge": {
-                "from_skill": "Go",
-                "type": "ADJACENT_TO",
-                "weight": 0.6
-              },
-              "contribution": 0.48,
-              "reason": "No direct REST APIs; backed by Go → REST APIs (ADJACENT_TO, 0.60).",
-              "limitation": "Adjacent support is NOT direct equivalence: this person has no evidence for the required skill itself. Confirm real capability before relying on it."
-            }
-          ]
-        },
-        "evidence": {
-          "value": 0.4,
-          "artifact_count": 2,
-          "threshold": 5
-        },
-        "seniority": {
-          "value": 1,
-          "candidate_level": 4,
-          "role_level": 4
-        }
+      "score": 0.62,
+      "profile_match": 0.683,
+      "evidence_confidence": 0.813,
+      "mandatory_gate": {
+        "met": false,
+        "unmet_skills": [
+          "Docker"
+        ],
+        "count": 4,
+        "note": "Unmet: Docker. Without accepted evidence these cannot raise verified readiness."
       },
-      "classification": {
-        "direct": [
+      "contextual_alignment": {
+        "candidate_level": 4,
+        "role_level": 4,
+        "note": "Seniority (4 vs 4 role level) is shown as context only — it never contributes to the match score."
+      },
+      "scoring": {
+        "requirements": [
           {
             "skill": "Go",
-            "classification": "direct",
+            "classification": "verified_direct",
+            "relationship": "direct",
+            "mandatory": true,
             "required_proficiency": 4,
             "candidate_proficiency": 4,
-            "edge": null,
+            "effective_proficiency": 4,
+            "gap": 0,
+            "evidence_state": "reviewer_confirmed",
+            "evidence_source": "reviewer_confirmed",
+            "freshness_days": null,
+            "evidence_factor": 1,
+            "verified_contribution": 1,
             "contribution": 1,
-            "reason": "Holds Go at 4/4 required.",
+            "verified": true,
+            "provisional": true,
+            "next_action": "None — requirement met with accepted evidence.",
+            "edge": null,
+            "reason": "Holds Go at 4/4 required — evidence state: reviewer_confirmed.",
             "limitation": null
           },
           {
             "skill": "PostgreSQL",
-            "classification": "direct",
+            "classification": "verified_direct",
+            "relationship": "direct",
+            "mandatory": true,
             "required_proficiency": 3,
             "candidate_proficiency": 4,
+            "effective_proficiency": 3,
+            "gap": 0,
+            "evidence_state": "assessment_supported",
+            "evidence_source": "assessment_supported",
+            "freshness_days": null,
+            "evidence_factor": 0.85,
+            "verified_contribution": 1,
+            "contribution": 0.85,
+            "verified": true,
+            "provisional": true,
+            "next_action": "None — requirement met with accepted evidence.",
             "edge": null,
-            "contribution": 1,
-            "reason": "Holds PostgreSQL at 4/3 required.",
+            "reason": "Holds PostgreSQL at 4/3 required — evidence state: assessment_supported.",
             "limitation": null
           },
           {
             "skill": "Docker",
-            "classification": "direct",
+            "classification": "provisional_direct",
+            "relationship": "direct",
+            "mandatory": true,
             "required_proficiency": 3,
             "candidate_proficiency": 3,
+            "effective_proficiency": 3,
+            "gap": 0,
+            "evidence_state": "claimed",
+            "evidence_source": "claimed",
+            "freshness_days": null,
+            "evidence_factor": 0.4,
+            "verified_contribution": 0,
+            "contribution": 0.4,
+            "verified": false,
+            "provisional": true,
+            "next_action": "Verify evidence — accepted evidence would confirm this match.",
             "edge": null,
-            "contribution": 1,
-            "reason": "Holds Docker at 3/3 required.",
+            "reason": "Holds Docker at 3/3 required — evidence state: claimed.",
             "limitation": null
-          }
-        ],
-        "adjacent": [
+          },
           {
             "skill": "REST APIs",
-            "classification": "adjacent",
+            "classification": "adjacent_support",
+            "relationship": "adjacent",
+            "mandatory": true,
             "required_proficiency": 3,
-            "candidate_proficiency": null,
+            "candidate_proficiency": 4,
+            "effective_proficiency": 1.44,
+            "gap": 1.56,
+            "evidence_state": "reviewer_confirmed",
+            "evidence_source": "reviewer_confirmed",
+            "freshness_days": null,
+            "evidence_factor": 1,
+            "verified_contribution": 0.48,
+            "contribution": 0.48,
+            "verified": true,
+            "provisional": true,
+            "next_action": "Capability in the required skill itself is not yet evidenced — confirm via an assessment.",
             "edge": {
               "from_skill": "Go",
               "type": "ADJACENT_TO",
               "weight": 0.6
             },
-            "contribution": 0.48,
             "reason": "No direct REST APIs; backed by Go → REST APIs (ADJACENT_TO, 0.60).",
             "limitation": "Adjacent support is NOT direct equivalence: this person has no evidence for the required skill itself. Confirm real capability before relying on it."
           }
         ],
-        "transferable": [],
-        "gaps": []
+        "mandatory": {
+          "count": 4,
+          "met": 3,
+          "unmet": 1,
+          "unmet_skills": [
+            "Docker"
+          ],
+          "gated": true,
+          "readiness": 0.62
+        },
+        "preferred": null,
+        "verified": {
+          "readiness": 0.62
+        },
+        "provisional": {
+          "readiness": 0.683
+        },
+        "confidence": 0.813,
+        "group_weights": {
+          "mandatory": 0.7,
+          "preferred": 0.3
+        },
+        "evidence_artifacts": {
+          "count": 2,
+          "threshold": 5
+        },
+        "resolved_from": "current"
+      },
+      "classification": {
+        "verified_direct": [
+          {
+            "skill": "Go",
+            "classification": "verified_direct",
+            "relationship": "direct",
+            "mandatory": true,
+            "required_proficiency": 4,
+            "candidate_proficiency": 4,
+            "effective_proficiency": 4,
+            "gap": 0,
+            "evidence_state": "reviewer_confirmed",
+            "evidence_source": "reviewer_confirmed",
+            "freshness_days": null,
+            "evidence_factor": 1,
+            "verified_contribution": 1,
+            "contribution": 1,
+            "verified": true,
+            "provisional": true,
+            "next_action": "None — requirement met with accepted evidence.",
+            "edge": null,
+            "reason": "Holds Go at 4/4 required — evidence state: reviewer_confirmed.",
+            "limitation": null
+          },
+          {
+            "skill": "PostgreSQL",
+            "classification": "verified_direct",
+            "relationship": "direct",
+            "mandatory": true,
+            "required_proficiency": 3,
+            "candidate_proficiency": 4,
+            "effective_proficiency": 3,
+            "gap": 0,
+            "evidence_state": "assessment_supported",
+            "evidence_source": "assessment_supported",
+            "freshness_days": null,
+            "evidence_factor": 0.85,
+            "verified_contribution": 1,
+            "contribution": 0.85,
+            "verified": true,
+            "provisional": true,
+            "next_action": "None — requirement met with accepted evidence.",
+            "edge": null,
+            "reason": "Holds PostgreSQL at 4/3 required — evidence state: assessment_supported.",
+            "limitation": null
+          }
+        ],
+        "provisional_direct": [
+          {
+            "skill": "Docker",
+            "classification": "provisional_direct",
+            "relationship": "direct",
+            "mandatory": true,
+            "required_proficiency": 3,
+            "candidate_proficiency": 3,
+            "effective_proficiency": 3,
+            "gap": 0,
+            "evidence_state": "claimed",
+            "evidence_source": "claimed",
+            "freshness_days": null,
+            "evidence_factor": 0.4,
+            "verified_contribution": 0,
+            "contribution": 0.4,
+            "verified": false,
+            "provisional": true,
+            "next_action": "Verify evidence — accepted evidence would confirm this match.",
+            "edge": null,
+            "reason": "Holds Docker at 3/3 required — evidence state: claimed.",
+            "limitation": null
+          }
+        ],
+        "below_target": [],
+        "adjacent_support": [
+          {
+            "skill": "REST APIs",
+            "classification": "adjacent_support",
+            "relationship": "adjacent",
+            "mandatory": true,
+            "required_proficiency": 3,
+            "candidate_proficiency": 4,
+            "effective_proficiency": 1.44,
+            "gap": 1.56,
+            "evidence_state": "reviewer_confirmed",
+            "evidence_source": "reviewer_confirmed",
+            "freshness_days": null,
+            "evidence_factor": 1,
+            "verified_contribution": 0.48,
+            "contribution": 0.48,
+            "verified": true,
+            "provisional": true,
+            "next_action": "Capability in the required skill itself is not yet evidenced — confirm via an assessment.",
+            "edge": {
+              "from_skill": "Go",
+              "type": "ADJACENT_TO",
+              "weight": 0.6
+            },
+            "reason": "No direct REST APIs; backed by Go → REST APIs (ADJACENT_TO, 0.60).",
+            "limitation": "Adjacent support is NOT direct equivalence: this person has no evidence for the required skill itself. Confirm real capability before relying on it."
+          }
+        ],
+        "transferable_foundation": [],
+        "missing": []
       },
       "versions": {
-        "engine": "2",
-        "evidence": "176605a3",
+        "engine": "3",
+        "evidence": "a4203583",
         "requisition": "unknown",
         "graph": "8aaab563",
-        "context": "6788a556"
+        "context": "6788a556",
+        "plan": "none"
       },
       "assumptions": {
         "horizon": "Current",
-        "note": "Current requirements — as recorded on the requisition today."
+        "note": "Current requirements — as recorded on the requisition today. Verified readiness answers: how much of today's requirement is already backed by accepted evidence?"
       },
       "computed_at": "2026-09-15T09:00:00Z"
     }
@@ -556,106 +1143,257 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
       "target_id": "33333333-3333-3333-3333-333333333301",
       "target_title": "Senior Backend Engineer",
       "scenario": "current",
-      "score": 0.248,
-      "sections": {
-        "direct": {
-          "value": 0.375,
-          "items": [
-            {
-              "skill": "Go",
-              "classification": "direct",
-              "required_proficiency": 4,
-              "candidate_proficiency": 2,
-              "edge": null,
-              "contribution": 0.5,
-              "reason": "Holds Go at 2/4 — below the required bar.",
-              "limitation": null
-            },
-            {
-              "skill": "REST APIs",
-              "classification": "direct",
-              "required_proficiency": 3,
-              "candidate_proficiency": 3,
-              "edge": null,
-              "contribution": 1,
-              "reason": "Holds REST APIs at 3/3 required.",
-              "limitation": null
-            }
-          ]
-        },
-        "adjacent": {
-          "value": 0,
-          "items": []
-        },
-        "evidence": {
-          "value": 0,
-          "artifact_count": 0,
-          "threshold": 5
-        },
-        "seniority": {
-          "value": 0.6,
-          "candidate_level": 2,
-          "role_level": 4
-        }
+      "score": 0,
+      "profile_match": 0.15,
+      "evidence_confidence": 0.4,
+      "mandatory_gate": {
+        "met": false,
+        "unmet_skills": [
+          "Go",
+          "PostgreSQL",
+          "Docker",
+          "REST APIs"
+        ],
+        "count": 4,
+        "note": "Unmet: Go, PostgreSQL, Docker, REST APIs. Without accepted evidence these cannot raise verified readiness."
       },
-      "classification": {
-        "direct": [
+      "contextual_alignment": {
+        "candidate_level": 2,
+        "role_level": 4,
+        "note": "Seniority (2 vs 4 role level) is shown as context only — it never contributes to the match score."
+      },
+      "scoring": {
+        "requirements": [
           {
             "skill": "Go",
-            "classification": "direct",
+            "classification": "below_target",
+            "relationship": "direct",
+            "mandatory": true,
             "required_proficiency": 4,
             "candidate_proficiency": 2,
+            "effective_proficiency": 2,
+            "gap": 2,
+            "evidence_state": "claimed",
+            "evidence_source": "claimed",
+            "freshness_days": null,
+            "evidence_factor": 0.4,
+            "verified_contribution": 0,
+            "contribution": 0.2,
+            "verified": false,
+            "provisional": true,
+            "next_action": "Close the gap to the target level, then re-verify.",
             "edge": null,
-            "contribution": 0.5,
-            "reason": "Holds Go at 2/4 — below the required bar.",
+            "reason": "Holds Go at 2/4 required — evidence state: claimed.",
             "limitation": null
           },
           {
-            "skill": "REST APIs",
-            "classification": "direct",
-            "required_proficiency": 3,
-            "candidate_proficiency": 3,
-            "edge": null,
-            "contribution": 1,
-            "reason": "Holds REST APIs at 3/3 required.",
-            "limitation": null
-          }
-        ],
-        "adjacent": [],
-        "transferable": [],
-        "gaps": [
-          {
             "skill": "PostgreSQL",
-            "classification": "gap",
+            "classification": "missing",
+            "relationship": "none",
+            "mandatory": true,
             "required_proficiency": 3,
             "candidate_proficiency": null,
+            "effective_proficiency": 0,
+            "gap": 3,
+            "evidence_state": null,
+            "evidence_source": null,
+            "freshness_days": null,
+            "evidence_factor": 0,
+            "verified_contribution": 0,
+            "contribution": 0,
+            "verified": false,
+            "provisional": false,
+            "next_action": "No evidence or path — needs an assessment or structured learning.",
             "edge": null,
-            "contribution": null,
             "reason": "No direct, adjacent, or transferable path found for PostgreSQL.",
             "limitation": null
           },
           {
             "skill": "Docker",
-            "classification": "gap",
+            "classification": "missing",
+            "relationship": "none",
+            "mandatory": true,
             "required_proficiency": 3,
             "candidate_proficiency": null,
+            "effective_proficiency": 0,
+            "gap": 3,
+            "evidence_state": null,
+            "evidence_source": null,
+            "freshness_days": null,
+            "evidence_factor": 0,
+            "verified_contribution": 0,
+            "contribution": 0,
+            "verified": false,
+            "provisional": false,
+            "next_action": "No evidence or path — needs an assessment or structured learning.",
             "edge": null,
-            "contribution": null,
+            "reason": "No direct, adjacent, or transferable path found for Docker.",
+            "limitation": null
+          },
+          {
+            "skill": "REST APIs",
+            "classification": "provisional_direct",
+            "relationship": "direct",
+            "mandatory": true,
+            "required_proficiency": 3,
+            "candidate_proficiency": 3,
+            "effective_proficiency": 3,
+            "gap": 0,
+            "evidence_state": "claimed",
+            "evidence_source": "claimed",
+            "freshness_days": null,
+            "evidence_factor": 0.4,
+            "verified_contribution": 0,
+            "contribution": 0.4,
+            "verified": false,
+            "provisional": true,
+            "next_action": "Verify evidence — accepted evidence would confirm this match.",
+            "edge": null,
+            "reason": "Holds REST APIs at 3/3 required — evidence state: claimed.",
+            "limitation": null
+          }
+        ],
+        "mandatory": {
+          "count": 4,
+          "met": 0,
+          "unmet": 4,
+          "unmet_skills": [
+            "Go",
+            "PostgreSQL",
+            "Docker",
+            "REST APIs"
+          ],
+          "gated": true,
+          "readiness": 0
+        },
+        "preferred": null,
+        "verified": {
+          "readiness": 0
+        },
+        "provisional": {
+          "readiness": 0.15
+        },
+        "confidence": 0.4,
+        "group_weights": {
+          "mandatory": 0.7,
+          "preferred": 0.3
+        },
+        "evidence_artifacts": {
+          "count": 0,
+          "threshold": 5
+        },
+        "resolved_from": "current"
+      },
+      "classification": {
+        "verified_direct": [],
+        "provisional_direct": [
+          {
+            "skill": "REST APIs",
+            "classification": "provisional_direct",
+            "relationship": "direct",
+            "mandatory": true,
+            "required_proficiency": 3,
+            "candidate_proficiency": 3,
+            "effective_proficiency": 3,
+            "gap": 0,
+            "evidence_state": "claimed",
+            "evidence_source": "claimed",
+            "freshness_days": null,
+            "evidence_factor": 0.4,
+            "verified_contribution": 0,
+            "contribution": 0.4,
+            "verified": false,
+            "provisional": true,
+            "next_action": "Verify evidence — accepted evidence would confirm this match.",
+            "edge": null,
+            "reason": "Holds REST APIs at 3/3 required — evidence state: claimed.",
+            "limitation": null
+          }
+        ],
+        "below_target": [
+          {
+            "skill": "Go",
+            "classification": "below_target",
+            "relationship": "direct",
+            "mandatory": true,
+            "required_proficiency": 4,
+            "candidate_proficiency": 2,
+            "effective_proficiency": 2,
+            "gap": 2,
+            "evidence_state": "claimed",
+            "evidence_source": "claimed",
+            "freshness_days": null,
+            "evidence_factor": 0.4,
+            "verified_contribution": 0,
+            "contribution": 0.2,
+            "verified": false,
+            "provisional": true,
+            "next_action": "Close the gap to the target level, then re-verify.",
+            "edge": null,
+            "reason": "Holds Go at 2/4 required — evidence state: claimed.",
+            "limitation": null
+          }
+        ],
+        "adjacent_support": [],
+        "transferable_foundation": [],
+        "missing": [
+          {
+            "skill": "PostgreSQL",
+            "classification": "missing",
+            "relationship": "none",
+            "mandatory": true,
+            "required_proficiency": 3,
+            "candidate_proficiency": null,
+            "effective_proficiency": 0,
+            "gap": 3,
+            "evidence_state": null,
+            "evidence_source": null,
+            "freshness_days": null,
+            "evidence_factor": 0,
+            "verified_contribution": 0,
+            "contribution": 0,
+            "verified": false,
+            "provisional": false,
+            "next_action": "No evidence or path — needs an assessment or structured learning.",
+            "edge": null,
+            "reason": "No direct, adjacent, or transferable path found for PostgreSQL.",
+            "limitation": null
+          },
+          {
+            "skill": "Docker",
+            "classification": "missing",
+            "relationship": "none",
+            "mandatory": true,
+            "required_proficiency": 3,
+            "candidate_proficiency": null,
+            "effective_proficiency": 0,
+            "gap": 3,
+            "evidence_state": null,
+            "evidence_source": null,
+            "freshness_days": null,
+            "evidence_factor": 0,
+            "verified_contribution": 0,
+            "contribution": 0,
+            "verified": false,
+            "provisional": false,
+            "next_action": "No evidence or path — needs an assessment or structured learning.",
+            "edge": null,
             "reason": "No direct, adjacent, or transferable path found for Docker.",
             "limitation": null
           }
         ]
       },
       "versions": {
-        "engine": "2",
-        "evidence": "50873a41",
+        "engine": "3",
+        "evidence": "782a8c21",
         "requisition": "unknown",
         "graph": "8aaab563",
-        "context": "a9574bb1"
+        "context": "a9574bb1",
+        "plan": "none"
       },
       "assumptions": {
         "horizon": "Current",
-        "note": "Current requirements — as recorded on the requisition today."
+        "note": "Current requirements — as recorded on the requisition today. Verified readiness answers: how much of today's requirement is already backed by accepted evidence?"
       },
       "computed_at": "2026-09-15T09:00:00Z"
     }
@@ -666,125 +1404,255 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
       "target_id": "33333333-3333-3333-3333-333333333302",
       "target_title": "Data Analyst",
       "scenario": "current",
-      "score": 0.83,
-      "sections": {
-        "direct": {
-          "value": 1,
-          "items": [
-            {
-              "skill": "SQL",
-              "classification": "direct",
-              "required_proficiency": 4,
-              "candidate_proficiency": 4,
-              "edge": null,
-              "contribution": 1,
-              "reason": "Holds SQL at 4/4 required.",
-              "limitation": null
-            },
-            {
-              "skill": "Python",
-              "classification": "direct",
-              "required_proficiency": 3,
-              "candidate_proficiency": 3,
-              "edge": null,
-              "contribution": 1,
-              "reason": "Holds Python at 3/3 required.",
-              "limitation": null
-            },
-            {
-              "skill": "Data Modeling",
-              "classification": "direct",
-              "required_proficiency": 3,
-              "candidate_proficiency": 3,
-              "edge": null,
-              "contribution": 1,
-              "reason": "Holds Data Modeling at 3/3 required.",
-              "limitation": null
-            },
-            {
-              "skill": "Tableau",
-              "classification": "direct",
-              "required_proficiency": 2,
-              "candidate_proficiency": 2,
-              "edge": null,
-              "contribution": 1,
-              "reason": "Holds Tableau at 2/2 required.",
-              "limitation": null
-            }
-          ]
-        },
-        "adjacent": {
-          "value": 1,
-          "items": []
-        },
-        "evidence": {
-          "value": 0,
-          "artifact_count": 0,
-          "threshold": 5
-        },
-        "seniority": {
-          "value": 0.8,
-          "candidate_level": 2,
-          "role_level": 3
-        }
+      "score": 0,
+      "profile_match": 0.4,
+      "evidence_confidence": 0.4,
+      "mandatory_gate": {
+        "met": false,
+        "unmet_skills": [
+          "SQL",
+          "Python",
+          "Data Modeling",
+          "Tableau"
+        ],
+        "count": 4,
+        "note": "Unmet: SQL, Python, Data Modeling, Tableau. Without accepted evidence these cannot raise verified readiness."
       },
-      "classification": {
-        "direct": [
+      "contextual_alignment": {
+        "candidate_level": 2,
+        "role_level": 3,
+        "note": "Seniority (2 vs 3 role level) is shown as context only — it never contributes to the match score."
+      },
+      "scoring": {
+        "requirements": [
           {
             "skill": "SQL",
-            "classification": "direct",
+            "classification": "provisional_direct",
+            "relationship": "direct",
+            "mandatory": true,
             "required_proficiency": 4,
             "candidate_proficiency": 4,
+            "effective_proficiency": 4,
+            "gap": 0,
+            "evidence_state": "claimed",
+            "evidence_source": "claimed",
+            "freshness_days": null,
+            "evidence_factor": 0.4,
+            "verified_contribution": 0,
+            "contribution": 0.4,
+            "verified": false,
+            "provisional": true,
+            "next_action": "Verify evidence — accepted evidence would confirm this match.",
             "edge": null,
-            "contribution": 1,
-            "reason": "Holds SQL at 4/4 required.",
+            "reason": "Holds SQL at 4/4 required — evidence state: claimed.",
             "limitation": null
           },
           {
             "skill": "Python",
-            "classification": "direct",
+            "classification": "provisional_direct",
+            "relationship": "direct",
+            "mandatory": true,
             "required_proficiency": 3,
             "candidate_proficiency": 3,
+            "effective_proficiency": 3,
+            "gap": 0,
+            "evidence_state": "claimed",
+            "evidence_source": "claimed",
+            "freshness_days": null,
+            "evidence_factor": 0.4,
+            "verified_contribution": 0,
+            "contribution": 0.4,
+            "verified": false,
+            "provisional": true,
+            "next_action": "Verify evidence — accepted evidence would confirm this match.",
             "edge": null,
-            "contribution": 1,
-            "reason": "Holds Python at 3/3 required.",
+            "reason": "Holds Python at 3/3 required — evidence state: claimed.",
             "limitation": null
           },
           {
             "skill": "Data Modeling",
-            "classification": "direct",
+            "classification": "provisional_direct",
+            "relationship": "direct",
+            "mandatory": true,
             "required_proficiency": 3,
             "candidate_proficiency": 3,
+            "effective_proficiency": 3,
+            "gap": 0,
+            "evidence_state": "claimed",
+            "evidence_source": "claimed",
+            "freshness_days": null,
+            "evidence_factor": 0.4,
+            "verified_contribution": 0,
+            "contribution": 0.4,
+            "verified": false,
+            "provisional": true,
+            "next_action": "Verify evidence — accepted evidence would confirm this match.",
             "edge": null,
-            "contribution": 1,
-            "reason": "Holds Data Modeling at 3/3 required.",
+            "reason": "Holds Data Modeling at 3/3 required — evidence state: claimed.",
             "limitation": null
           },
           {
             "skill": "Tableau",
-            "classification": "direct",
+            "classification": "provisional_direct",
+            "relationship": "direct",
+            "mandatory": true,
             "required_proficiency": 2,
             "candidate_proficiency": 2,
+            "effective_proficiency": 2,
+            "gap": 0,
+            "evidence_state": "claimed",
+            "evidence_source": "claimed",
+            "freshness_days": null,
+            "evidence_factor": 0.4,
+            "verified_contribution": 0,
+            "contribution": 0.4,
+            "verified": false,
+            "provisional": true,
+            "next_action": "Verify evidence — accepted evidence would confirm this match.",
             "edge": null,
-            "contribution": 1,
-            "reason": "Holds Tableau at 2/2 required.",
+            "reason": "Holds Tableau at 2/2 required — evidence state: claimed.",
             "limitation": null
           }
         ],
-        "adjacent": [],
-        "transferable": [],
-        "gaps": []
+        "mandatory": {
+          "count": 4,
+          "met": 0,
+          "unmet": 4,
+          "unmet_skills": [
+            "SQL",
+            "Python",
+            "Data Modeling",
+            "Tableau"
+          ],
+          "gated": true,
+          "readiness": 0
+        },
+        "preferred": null,
+        "verified": {
+          "readiness": 0
+        },
+        "provisional": {
+          "readiness": 0.4
+        },
+        "confidence": 0.4,
+        "group_weights": {
+          "mandatory": 0.7,
+          "preferred": 0.3
+        },
+        "evidence_artifacts": {
+          "count": 0,
+          "threshold": 5
+        },
+        "resolved_from": "current"
+      },
+      "classification": {
+        "verified_direct": [],
+        "provisional_direct": [
+          {
+            "skill": "SQL",
+            "classification": "provisional_direct",
+            "relationship": "direct",
+            "mandatory": true,
+            "required_proficiency": 4,
+            "candidate_proficiency": 4,
+            "effective_proficiency": 4,
+            "gap": 0,
+            "evidence_state": "claimed",
+            "evidence_source": "claimed",
+            "freshness_days": null,
+            "evidence_factor": 0.4,
+            "verified_contribution": 0,
+            "contribution": 0.4,
+            "verified": false,
+            "provisional": true,
+            "next_action": "Verify evidence — accepted evidence would confirm this match.",
+            "edge": null,
+            "reason": "Holds SQL at 4/4 required — evidence state: claimed.",
+            "limitation": null
+          },
+          {
+            "skill": "Python",
+            "classification": "provisional_direct",
+            "relationship": "direct",
+            "mandatory": true,
+            "required_proficiency": 3,
+            "candidate_proficiency": 3,
+            "effective_proficiency": 3,
+            "gap": 0,
+            "evidence_state": "claimed",
+            "evidence_source": "claimed",
+            "freshness_days": null,
+            "evidence_factor": 0.4,
+            "verified_contribution": 0,
+            "contribution": 0.4,
+            "verified": false,
+            "provisional": true,
+            "next_action": "Verify evidence — accepted evidence would confirm this match.",
+            "edge": null,
+            "reason": "Holds Python at 3/3 required — evidence state: claimed.",
+            "limitation": null
+          },
+          {
+            "skill": "Data Modeling",
+            "classification": "provisional_direct",
+            "relationship": "direct",
+            "mandatory": true,
+            "required_proficiency": 3,
+            "candidate_proficiency": 3,
+            "effective_proficiency": 3,
+            "gap": 0,
+            "evidence_state": "claimed",
+            "evidence_source": "claimed",
+            "freshness_days": null,
+            "evidence_factor": 0.4,
+            "verified_contribution": 0,
+            "contribution": 0.4,
+            "verified": false,
+            "provisional": true,
+            "next_action": "Verify evidence — accepted evidence would confirm this match.",
+            "edge": null,
+            "reason": "Holds Data Modeling at 3/3 required — evidence state: claimed.",
+            "limitation": null
+          },
+          {
+            "skill": "Tableau",
+            "classification": "provisional_direct",
+            "relationship": "direct",
+            "mandatory": true,
+            "required_proficiency": 2,
+            "candidate_proficiency": 2,
+            "effective_proficiency": 2,
+            "gap": 0,
+            "evidence_state": "claimed",
+            "evidence_source": "claimed",
+            "freshness_days": null,
+            "evidence_factor": 0.4,
+            "verified_contribution": 0,
+            "contribution": 0.4,
+            "verified": false,
+            "provisional": true,
+            "next_action": "Verify evidence — accepted evidence would confirm this match.",
+            "edge": null,
+            "reason": "Holds Tableau at 2/2 required — evidence state: claimed.",
+            "limitation": null
+          }
+        ],
+        "below_target": [],
+        "adjacent_support": [],
+        "transferable_foundation": [],
+        "missing": []
       },
       "versions": {
-        "engine": "2",
-        "evidence": "ebe00abd",
+        "engine": "3",
+        "evidence": "42a799dd",
         "requisition": "unknown",
         "graph": "8aaab563",
-        "context": "aa574d44"
+        "context": "aa574d44",
+        "plan": "none"
       },
       "assumptions": {
         "horizon": "Current",
-        "note": "Current requirements — as recorded on the requisition today."
+        "note": "Current requirements — as recorded on the requisition today. Verified readiness answers: how much of today's requirement is already backed by accepted evidence?"
       },
       "computed_at": "2026-09-15T09:00:00Z"
     }

@@ -51,7 +51,7 @@ export interface CompareInputs {
   }[];
   candidates: Map<string, { id: string; name: string; email: string | null }>;
   /** twin_id -> persisted fit for THIS requisition (scenario current). */
-  fits: Map<string, { score: number; computed_at: string; classification?: { adjacent?: { skill: string }[]; transferable?: { skill: string }[]; gaps?: { skill: string }[] } }>;
+  fits: Map<string, { score: number; computed_at: string; scoring?: { requirements: { skill: string; relationship: string }[] } }>;
 }
 
 export interface CompareResult {
@@ -71,7 +71,7 @@ export function buildCandidateComparison(inputs: CompareInputs): CompareResult {
   const rows: CompareRow[] = inputs.applicants.map((app) => {
     const cand = inputs.candidates.get(app.twin_id);
     const fit = inputs.fits.get(app.twin_id);
-    const classification = fit?.classification;
+    const requirements = fit?.scoring?.requirements ?? [];
     let status: MatchStatus = "unscored";
     if (fit) {
       const fitAt = new Date(fit.computed_at).getTime();
@@ -88,9 +88,9 @@ export function buildCandidateComparison(inputs: CompareInputs): CompareResult {
       status,
       score: fit ? fit.score : null,
       score_at: fit ? fit.computed_at : null,
-      gaps: classification?.gaps?.map((g) => g.skill) ?? [],
-      adjacent: classification?.adjacent?.map((g) => g.skill) ?? [],
-      transferable: classification?.transferable?.map((g) => g.skill) ?? [],
+      gaps: requirements.filter((r) => r.relationship === "none").map((g) => g.skill),
+      adjacent: requirements.filter((r) => r.relationship === "adjacent").map((g) => g.skill),
+      transferable: requirements.filter((r) => r.relationship === "transferable").map((g) => g.skill),
     };
   });
 

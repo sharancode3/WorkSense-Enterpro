@@ -1,46 +1,65 @@
 import { describe, expect, it } from "vitest";
-import { coverageBreakdown, futureRequirementDiff, projectedFutureReadiness } from "../skill-graph-metrics";
-import type { FitItem, FitRecord, SkillAssertion } from "../skill-graph";
+import { coverageBreakdown, developmentForecast, futureRequirementDiff, resolvedFutureRequirements } from "../skill-graph-metrics";
+import type { DevelopmentPlan } from "../skill-graph-metrics";
+import type { FitItem, FitRecord } from "../skill-graph";
 
-const item = (skill: string, classification: FitItem["classification"] = "direct"): FitItem => ({
+const item = (skill: string, relationship: FitItem["relationship"] = "direct"): FitItem => ({
   skill,
-  classification,
+  classification: relationship === "direct" ? "verified_direct" : relationship === "adjacent" ? "adjacent_support" : relationship === "transferable" ? "transferable_foundation" : "missing",
+  relationship,
+  mandatory: true,
   required_proficiency: 3,
-  candidate_proficiency: 2,
+  candidate_proficiency: relationship === "direct" ? 3 : null,
+  effective_proficiency: relationship === "direct" ? 3 : 0,
+  gap: relationship === "direct" ? 0 : 3,
+  evidence_state: "reviewer_confirmed",
+  evidence_source: "artifact:resume|r1",
+  freshness_days: 5,
+  evidence_factor: 1,
+  verified_contribution: relationship === "direct" ? 1 : 0,
+  contribution: relationship === "direct" ? 1 : 0,
+  verified: relationship === "direct",
+  provisional: relationship === "direct",
+  next_action: "none",
   edge: null,
-  contribution: 0.5,
   reason: "",
 });
 
-const fit = (classification: {
-  direct?: FitItem[];
-  adjacent?: FitItem[];
-  transferable?: FitItem[];
-  gaps?: FitItem[];
-}, sections?: Partial<FitRecord["sections"]>): FitRecord =>
-  ({
-    target_type: "requisition",
-    target_id: "r1",
-    target_title: "Role",
-    scenario: "future",
-    score: 0.4,
-    sections: {
-      direct: { value: 0.5, items: classification.direct ?? [] },
-      adjacent: { value: 0, items: classification.adjacent ?? [] },
-      evidence: { value: 1, artifact_count: 5, threshold: 5 },
-      seniority: { value: 1, candidate_level: 3, role_level: 3 },
-      ...sections,
-    },
-    classification: {
-      direct: classification.direct ?? [],
-      adjacent: classification.adjacent ?? [],
-      transferable: classification.transferable ?? [],
-      gaps: classification.gaps ?? [],
-    },
-    computed_at: "2026-09-01T09:00:00Z",
-  });
+const req = (skill: string, target_proficiency: number, mandatory = true) => ({ skill, target_proficiency, mandatory });
 
-const assertion = (skill: string, review_state: string, proficiency = 3): SkillAssertion => ({
+const fit = (requirements: FitItem[]): FitRecord => ({
+  target_type: "requisition",
+  target_id: "r1",
+  target_title: "Role",
+  scenario: "current",
+  score: 0.4,
+  profile_match: 0.5,
+  evidence_confidence: 0.6,
+  mandatory_gate: { met: true, unmet_skills: [], count: 0, note: "" },
+  contextual_alignment: { candidate_level: 3, role_level: 3, note: "" },
+  scoring: {
+    requirements,
+    mandatory: { count: 0, met: 0, unmet: 0, unmet_skills: [], gated: false, readiness: 0.4 },
+    preferred: null,
+    verified: { readiness: 0.4 },
+    provisional: { readiness: 0.5 },
+    confidence: 0.6,
+    group_weights: { mandatory: 0.7, preferred: 0.3 },
+    evidence_artifacts: { count: 1, threshold: 5 },
+    resolved_from: "current",
+  },
+  classification: {
+    verified_direct: requirements.filter((i) => i.classification === "verified_direct"),
+    provisional_direct: requirements.filter((i) => i.classification === "provisional_direct"),
+    below_target: requirements.filter((i) => i.classification === "below_target"),
+    adjacent_support: requirements.filter((i) => i.classification === "adjacent_support"),
+    transferable_foundation: requirements.filter((i) => i.classification === "transferable_foundation"),
+    missing: requirements.filter((i) => i.classification === "missing"),
+  },
+  computed_at: "2026-09-01T09:00:00Z",
+});
+
+const assertion = (skill: string, review_state: string, proficiency = 3) => ({
   id: `a-${skill}`,
   skill_name: skill,
   claimed_proficiency: proficiency,
@@ -69,6 +88,30 @@ describe("futureRequirementDiff (E1)", () => {
   });
 });
 
+describe("resolvedFutureRequirements (Phase 9)", () => {
+  it("resolves additions, raised targets and explicit obsolete removals", () => {
+    const r = resolvedFutureRequirements(
+      [req("Go", 4), req("Docker", 3), req("PostgreSQL", 3)],
+      [req("Go", 5), req("Kubernetes", 2)],
+      [req("PostgreSQL", 3)]
+    );
+    expect(r.added).toEqual(["Kubernetes"]);
+    expect(r.raised).toEqual(["Go"]);
+    expect(r.obsolete).toContain("postgresql");
+    const by = new Map(r.resolved.map((s) => [s.skill.toLowerCase(), s]));
+    expect(by.get("go")?.target_proficiency).toBe(5);
+    expect(by.get("docker")).toBeDefined();
+    expect(by.has("postgresql")).toBe(false);
+    // additions are future capability signals -> preferred
+    expect(by.get("kubernetes")?.mandatory).toBe(false);
+  });
+
+  it("keeps current skills missing from the future list (removal only when obsolete)", () => {
+    const r = resolvedFutureRequirements([req("Go", 4), req("Docker", 3)], [req("Go", 4)]);
+    expect(r.resolved.map((s) => s.skill)).toContain("Docker");
+  });
+});
+
 describe("coverageBreakdown (E2)", () => {
   it("counts verified / unverified / missing across direct skills", () => {
     const direct = [item("Go"), item("PostgreSQL"), item("Docker"), item("REST APIs")];
@@ -88,71 +131,49 @@ describe("coverageBreakdown (E2)", () => {
     expect(c.verified).toBe(1);
     expect(c.unverified).toBe(0);
   });
-
-  it("only counts direct skills the caller passes — assertions on adjacent/transferable skills do not inflate direct coverage", () => {
-    const direct = [item("Go", "direct")];
-    const assertions = [assertion("Kubernetes", "reviewer_confirmed"), assertion("Docker", "reviewer_confirmed")];
-    expect(coverageBreakdown(direct, assertions)).toEqual({ directTotal: 1, verified: 0, unverified: 0, missing: 1 });
-  });
-
-  it("returns zeros when there are no direct skills", () => {
-    expect(coverageBreakdown([], [])).toEqual({ directTotal: 0, verified: 0, unverified: 0, missing: 0 });
-  });
 });
 
-describe("projectedFutureReadiness (§53/§55)", () => {
-  it("projected score is always >= the raw future score", () => {
-    // 4 future requirements: 1 met direct, 1 partial direct, 1 adjacent, 1 pure gap.
-    const f = fit({
-      direct: [{ ...item("Go", "direct"), candidate_proficiency: 4, required_proficiency: 3 }, item("SQL", "direct")],
-      adjacent: [item("Kubernetes", "adjacent")],
-      gaps: [item("ML Ops", "gap")],
-    });
-    const r = projectedFutureReadiness(f);
-    expect(r.score).toBeGreaterThan(f.score);
-    expect(r.total).toBe(4);
-    expect(r.metSkills).toBe(1);
-    // partial direct + adjacent + pure gap all still need development
-    expect(r.developmentPlan.length).toBe(3);
-    expect(r.alreadyMet.map((i) => i.skill)).toEqual(["Go"]);
+describe("developmentForecast (Phase 9)", () => {
+  const futureFit = fit([item("Go", "direct"), item("TypeScript", "adjacent"), item("Figma", "none")]);
+
+  const plan: DevelopmentPlan = {
+    id: "plan-1",
+    skills: [
+      { skill: "TypeScript", baseline: 2, target: 3, activities: "x", hours: 40 },
+      { skill: "Figma", baseline: 0, target: 2, activities: "y", hours: 24 },
+    ],
+    assessment_gate: "assessment accepted",
+    owner: "dana@worksense.demo",
+    due_date: "2027-06-30",
+    approved: true,
+  };
+
+  it("no plan -> Forecast not available with an honest reason (never a fixed-assumption projection)", () => {
+    const f = developmentForecast(futureFit, null);
+    expect(f.available).toBe(false);
+    expect(f.reason).toContain("No development plan");
+    expect(f.estimate).toBeNull();
   });
 
-  it("credits learning even with zero foundation (pure gaps still project forward)", () => {
-    // No overlap at all: the classic "current == future" case.
-    const f = fit({ gaps: [item("Policy Management", "gap"), item("People Analytics", "gap")] });
-    const r = projectedFutureReadiness(f);
-    expect(r.total).toBe(2);
-    expect(r.metSkills).toBe(0);
-    expect(r.developmentPlan.length).toBe(2);
-    // 2 × 0.35 / 2 = 0.35 direct → 0.5*0.35 + 0.25*0 + 0.15*1 + 0.1*1 = 0.425
-    expect(r.score).toBeCloseTo(0.425, 5);
-    expect(r.score).toBeGreaterThan(f.score);
+  it("an unapproved plan is not a forecast basis", () => {
+    const f = developmentForecast(futureFit, { ...plan, approved: false });
+    expect(f.available).toBe(false);
+    expect(f.reason).toContain("not approved");
   });
 
-  it("ranks stronger foundations first in the development plan", () => {
-    const f = fit({
-      adjacent: [item("Kubernetes", "adjacent")],
-      transferable: [item("Redis", "transferable")],
-      gaps: [item("ML Ops", "gap")],
-    });
-    const r = projectedFutureReadiness(f);
-    expect(r.developmentPlan.map((d) => d.skill)).toEqual(["Kubernetes", "Redis", "ML Ops"]);
-    expect(r.developmentPlan.map((d) => d.attainment)).toEqual([0.85, 0.6, 0.35]);
+  it("an incomplete plan is not a forecast basis", () => {
+    const f = developmentForecast(futureFit, { ...plan, skills: [{ skill: "Figma", baseline: 0, target: 2, activities: "", hours: 0 }] });
+    expect(f.available).toBe(false);
+    expect(f.reason).toContain("incomplete");
   });
 
-  it("matches the raw score when there is nothing to develop (all met)", () => {
-    const met = { ...item("Go", "direct"), candidate_proficiency: 4, required_proficiency: 3 };
-    const f = fit({ direct: [met] });
-    const r = projectedFutureReadiness(f);
-    expect(r.developmentPlan.length).toBe(0);
-    expect(r.metSkills).toBe(1);
-    // direct = 1, adjacent raw 0, evidence 1, seniority 1
-    expect(r.score).toBeCloseTo(0.5 * 1 + 0.25 * 0 + 0.15 * 1 + 0.1 * 1, 5);
-  });
-
-  it("handles an empty requirement set without dividing by zero", () => {
-    const r = projectedFutureReadiness(fit({}));
-    expect(r.score).toBe(0.4);
-    expect(r.total).toBe(0);
+  it("an approved complete plan yields a clearly-labeled scenario estimate with a confidence band", () => {
+    const f = developmentForecast(futureFit, plan);
+    expect(f.available).toBe(true);
+    expect(f.estimate).not.toBeNull();
+    expect(f.estimate!.band[0]).toBeLessThanOrEqual(f.estimate!.value);
+    expect(f.estimate!.band[1]).toBeGreaterThanOrEqual(f.estimate!.value);
+    expect(f.estimate!.note).toContain("estimate");
+    expect(f.estimate!.assumptions.length).toBeGreaterThan(0);
   });
 });

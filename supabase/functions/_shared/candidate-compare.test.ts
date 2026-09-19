@@ -30,12 +30,12 @@ describe("buildCandidateComparison", () => {
   it("buckets scored (sorted desc), then unscored, then stale", () => {
     const fits = new Map([
       // t1 scored fresh (fit after created audit)
-      ["t1", { score: 0.83, computed_at: "2026-08-20T09:00:00Z", classification: { gaps: [{ skill: "Docker" }], adjacent: [], transferable: [] } }],
+      ["t1", { score: 0.83, computed_at: "2026-08-20T09:00:00Z", scoring: { requirements: [{ skill: "Docker", relationship: "none" }] } }],
       // t2 unscored (no fit)
       // t3 scored lower
-      ["t3", { score: 0.41, computed_at: "2026-08-21T09:00:00Z", classification: { gaps: [{ skill: "Go" }], adjacent: [{ skill: "TypeScript" }], transferable: [] } }],
+      ["t3", { score: 0.41, computed_at: "2026-08-21T09:00:00Z", scoring: { requirements: [{ skill: "Go", relationship: "none" }, { skill: "TypeScript", relationship: "adjacent" }] } }],
       // t4 stale (criteria changed after fit)
-      ["t4", { score: 0.66, computed_at: "2026-08-10T09:00:00Z", classification: { gaps: [], adjacent: [], transferable: [] } }],
+      ["t4", { score: 0.66, computed_at: "2026-08-10T09:00:00Z", scoring: { requirements: [] } }],
     ]);
     const res = buildCandidateComparison({
       req: { ...req, audit_events: [...req.audit_events, { action: "requirements_changed", timestamp: "2026-08-15T09:00:00Z" }] },

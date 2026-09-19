@@ -1,12 +1,37 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
-import { AlertTriangle, BadgeCheck, Info, Loader2, Lock, Search, Share2, ShieldCheck, Sparkles, Target, Workflow } from "lucide-react";
+import {
+  BadgeCheck,
+  ChevronDown,
+  ChevronRight,
+  Clock,
+  Filter,
+  Info,
+  Loader2,
+  Lock,
+  Search,
+  Share2,
+  ShieldCheck,
+  Target,
+  Workflow,
+  X,
+} from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/auth-context";
 import { AppShell } from "@/components/app-shell";
 import { FitCard } from "@/components/fit-card";
-import { computeSkillFit, coverageBreakdown, futureRequirementDiff, projectedFutureReadiness, type FitLineage, type FitRecord, type GraphNode, type SkillMatchResult } from "@/lib/skill-graph";
+import {
+  computeSkillFit,
+  coverageBreakdown,
+  developmentForecast,
+  futureRequirementDiff,
+  type FitClassification,
+  type FitLineage,
+  type FitRecord,
+  type GraphNode,
+  type SkillMatchResult,
+} from "@/lib/skill-graph";
 import { can } from "@/lib/rbac";
 import { Button } from "@/components/ui/button";
 
@@ -24,7 +49,7 @@ const STATE_META: Record<string, { label: string; chip: string }> = {
   extracted: { label: "Extracted (unverified)", chip: "bg-muted text-foreground" },
   claimed: { label: "Self-reported", chip: "bg-muted text-foreground" },
   expired: { label: "Expired", chip: "bg-muted text-muted-foreground" },
-  disputed: { label: "Disputed", chip: "bg-destructive/20 text-destructive" },
+  disputed: { label: "Disputed", chip: "bg-muted text-muted-foreground" },
   superseded: { label: "Superseded", chip: "bg-muted text-muted-foreground" },
 };
 
@@ -35,13 +60,28 @@ const EDGE_LIMITATION: Record<string, string> = {
 };
 
 const EDGE_LEGEND: Record<string, { label: string; color: string; dashed?: boolean }> = {
-  ADJACENT_TO: { label: "Related skill", color: "var(--primary, #6d5efc)" },
-  TRANSFERABLE_TO: { label: "Transferable experience", color: "var(--secondary, #0ea5a4)", dashed: true },
-  PREREQUISITE_OF: { label: "Prerequisite", color: "var(--accent, #f59e0b)" },
+  ADJACENT_TO: { label: "Related skill", color: "var(--secondary, #0ea5a4)" },
+  TRANSFERABLE_TO: { label: "Transferable experience", color: "var(--accent, #f59e0b)", dashed: true },
+  PREREQUISITE_OF: { label: "Prerequisite", color: "var(--primary, #6d5efc)" },
 };
 
-// Batch E (E4): results are BOUND to the person + demand they were computed
-// for. Changing either marks them outdated; late responses are ignored.
+const CLASS_META: Record<FitClassification, { label: string; color: string; hint: string }> = {
+  verified_direct: { label: "Verified direct", color: "var(--secondary, #0ea5a4)", hint: "Accepted evidence, at/above target" },
+  provisional_direct: { label: "Provisional direct", color: "var(--primary, #6d5efc)", hint: "Claimed/extracted, not accepted" },
+  below_target: { label: "Below target", color: "var(--accent, #f59e0b)", hint: "Direct evidence below the bar" },
+  adjacent_support: { label: "Adjacent support", color: "var(--secondary, #0ea5a4)", hint: "Related but not equivalent" },
+  transferable_foundation: { label: "Transferable foundation", color: "var(--primary, #6d5efc)", hint: "Development candidate, no points" },
+  missing: { label: "Missing", color: "var(--destructive, #ef4444)", hint: "No evidence or path" },
+};
+
+const EDGE_HUMAN: Record<string, string> = {
+  ADJACENT_TO: "related skill",
+  TRANSFERABLE_TO: "transferable experience",
+  PREREQUISITE_OF: "prerequisite",
+};
+
+// Results are BOUND to the person + demand they were computed for. Changing
+// either marks them outdated; late responses are ignored.
 interface MatchResults {
   twinId: string;
   reqId: string;
@@ -57,9 +97,6 @@ interface MatchResults {
 
 export default function SkillGraph() {
   const { role, twin: me, user } = useAuth();
-  // §55: deep-linkable selection (?person=<twinId>&demand=<reqId>) so a specific
-  // assessment can be shared and re-opened — and so the trajectory is reachable
-  // without re-picking both dropdowns.
   const [searchParams] = useSearchParams();
   const [twinId, setTwinId] = useState(() => searchParams.get("person") ?? "");
   const [reqId, setReqId] = useState(() => searchParams.get("demand") ?? "");
@@ -68,6 +105,9 @@ export default function SkillGraph() {
   const [error, setError] = useState<string | null>(null);
   const [taxSearch, setTaxSearch] = useState("");
   const [focusedSkill, setFocusedSkill] = useState<string | null>(null);
+  const [taxonomyOpen, setTaxonomyOpen] = useState(false);
+  const [matrixScenario, setMatrixScenario] = useState<"current" | "future">("current");
+  const [matrixFilter, setMatrixFilter] = useState<"all" | FitClassification>("all");
   // Monotonic run id: a completed request only commits its results when it is
   // still the latest run (late previous-selection responses are dropped).
   const runIdRef = useRef(0);
@@ -153,7 +193,6 @@ export default function SkillGraph() {
 
   const focusedNode = useMemo(() => graph.data?.find((n) => n.skill === focusedSkill), [graph.data, focusedSkill]);
 
-  // Batch E (E4): identity-bound run with a late-response guard.
   const runMatch = async (force = false) => {
     if (!twinId || !reqId) return;
     const runId = ++runIdRef.current;
@@ -189,12 +228,6 @@ export default function SkillGraph() {
     }
   };
 
-  // Selecting a person (and a demand) computes the graph immediately — no need
-  // to scroll back up to press "Compute coverage". Selecting either side again
-  // re-runs for the new selection; already-computed selections are not
-  // recomputed on every render. The run is gated on the requisition catalog so a
-  // deep-linked selection (?person/&demand) never computes before we know
-  // whether the demand defines future requirements.
   useEffect(() => {
     if (!twinId || !reqId) return;
     if (!reqs.data) return;
@@ -203,7 +236,6 @@ export default function SkillGraph() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [twinId, reqId, reqs.data]);
 
-  // E1: what changed between current and future requirement sets.
   const futureDiff = useMemo(() => {
     const reqRow = (reqs.data ?? []).find((r) => r.id === results?.reqId);
     if (!reqRow) return null;
@@ -214,18 +246,36 @@ export default function SkillGraph() {
     return d.added.length > 0 || d.raised.length > 0 || d.removed.length > 0 ? d : null;
   }, [reqs.data, results?.reqId]);
 
-  // E2: verified coverage vs profile match (claims included).
+  // E2: verified coverage vs profile match (claims included) over direct skills.
   const coverage = useMemo(() => {
     if (!results?.current || !results.lineage) return null;
-    const c = coverageBreakdown(results.current.classification.direct, results.lineage.assertions);
+    const c = coverageBreakdown(
+      results.current.scoring.requirements.filter((i) => i.relationship === "direct"),
+      results.lineage.assertions
+    );
     return c.directTotal > 0 ? c : null;
   }, [results]);
 
-  // §55: computed development trajectory for the future outlook — models the
-  // person working the role's development plan over the 12–24 month horizon.
-  const futureProj = useMemo(() => {
-    if (!results?.future) return null;
-    return projectedFutureReadiness(results.future);
+  // Gaps: any requirement where the effective credit is below the bar.
+  const unmet = useMemo(
+    () => (results?.current ? results.current.scoring.requirements.filter((r) => r.effective_proficiency < r.required_proficiency) : []),
+    [results]
+  );
+
+  // The matrix rows come from whichever scenario is being inspected.
+  const matrixFit = matrixScenario === "future" && results?.future ? results.future : results?.current ?? null;
+  const matrixRows = useMemo(() => {
+    if (!matrixFit) return [];
+    const rows = matrixFit.scoring.requirements ?? [];
+    if (matrixFilter === "all") return rows;
+    return rows.filter((r) => r.classification === matrixFilter);
+  }, [matrixFit, matrixFilter]);
+
+  // Phase 9: current-vs-future raw delta, shown even when rounded values are equal.
+  const futureDelta = useMemo(() => {
+    if (!results?.future || !results.current) return null;
+    const raw = results.future.score - results.current.score;
+    return { raw, rounded: Math.round(results.future.score * 100) - Math.round(results.current.score * 100) };
   }, [results]);
 
   if (role && !can(role, "explore_skill_graph")) {
@@ -250,6 +300,8 @@ export default function SkillGraph() {
   const scopeLabel =
     results?.scope === "self" ? "Your own skills" : results?.scope === "team" ? "Your team" : results?.scope === "candidates" ? "Authorized candidates" : "Organization";
   const selectionDirty = Boolean(results && (results.twinId !== twinId || results.reqId !== reqId));
+  const person = (twins.data ?? []).find((t) => t.id === results?.twinId);
+  const reqRow = (reqs.data ?? []).find((r) => r.id === results?.reqId);
 
   return (
     <AppShell>
@@ -260,11 +312,10 @@ export default function SkillGraph() {
             Capability against a chosen demand
           </h1>
           <p className="max-w-3xl text-muted-foreground">
-            Pick a person and a demand to see how their <b>verified evidence</b> maps to the requirements. Every skill is
-            shown with its support state (self-reported, extracted, assessment-supported, or reviewer-verified), the
-            source artifact and excerpt, and what still needs verification. Adjacent or transferable support is labeled
-            as such — it is never presented as direct capability. The overall match includes claims; verified coverage
-            is shown separately.
+            Pick a person and a demand to see their <b>verified evidence</b> mapped to the requirements. The headline is{" "}
+            <b>verified readiness</b> (accepted independent evidence only); the provisional profile match includes
+            self-reported and extracted claims, each attenuated by its evidence quality. There is no evidence-count or
+            seniority component — unrelated evidence can never manufacture match points.
           </p>
           <p className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
             <ShieldCheck className="h-3.5 w-3.5 text-primary" /> Scope for this account: {scopeLabel} — enforced server-side.
@@ -323,7 +374,6 @@ export default function SkillGraph() {
 
         {results && (
           <>
-            {/* E4: outdated-selection banner — results are bound to a selection. */}
             {selectionDirty ? (
               <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-lg border-2 border-accent/40 bg-accent/10 p-4">
                 <p className="flex items-center gap-2 text-sm font-semibold text-foreground">
@@ -343,131 +393,168 @@ export default function SkillGraph() {
               </p>
             )}
 
-            {/* §55: the headline answer to "what if this person learns?" — shown
-                BEFORE the two fit cards so the growth story is not buried. */}
-            {results.future && futureProj && (() => {
-              const today = Math.round(results.current.score * 100);
-              const target = Math.round(results.future.score * 100);
-              const projected = Math.round(futureProj.score * 100);
-              const cur = results.current;
-              const shared =
-                cur.classification.direct.length +
-                cur.classification.adjacent.length +
-                cur.classification.transferable.length;
-              const noOverlap = shared === 0;
-              const person = (twins.data ?? []).find((t) => t.id === results.twinId);
-              const tiles = [
-                { label: "Today", value: today, sub: "current requirements · current evidence", cls: "bg-foreground text-white", subCls: "text-white/60" },
-                {
-                  label: "Future target",
-                  value: target,
-                  sub: "future requirements · no learning",
-                  cls: target < today ? "bg-accent text-foreground" : "bg-secondary text-white",
-                  subCls: target < today ? "text-foreground/60" : "text-white/70",
-                },
-                { label: "Projected with development", value: projected, sub: "after the role's development plan", cls: "bg-primary text-white", subCls: "text-white/70" },
-              ];
-              return (
-                <div className="mt-4 rounded-lg border-2 border-primary/15 bg-primary/5 p-5">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <h3 className="flex items-center gap-2 text-base font-extrabold tracking-tight text-foreground">
-                      <Sparkles className="h-5 w-5 text-primary" strokeWidth={2.5} /> Development trajectory (12–24 months)
-                    </h3>
-                    <span className="rounded-md bg-white px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground ring-1 ring-border">
-                      computed · 50/25/15/10 weights
+            {/* Sticky compact assessment header */}
+            <div className="sticky top-0 z-20 mt-6 rounded-lg border border-border bg-background/95 px-4 py-3 shadow-sm backdrop-blur">
+              <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 text-sm">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <span className="font-extrabold text-foreground">{person?.name ?? "Person"}</span>
+                  <span className="text-xs text-muted-foreground">{person?.role.replace("_", " ")}</span>
+                  <span className="text-border">|</span>
+                  <span className="font-semibold text-foreground">{results.current.target_title}</span>
+                  <span className="text-xs text-muted-foreground">{reqRow?.department}</span>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold">
+                  <span className="rounded-md bg-primary/10 px-2 py-1 text-primary">Current {Math.round(results.current.score * 100)}%</span>
+                  {results.future ? (
+                    <span className="rounded-md bg-secondary/10 px-2 py-1 text-secondary">
+                      Future target {Math.round(results.future.score * 100)}%
                     </span>
-                  </div>
-
-                  {noOverlap && (
-                    <p className="mt-3 flex items-start gap-2 rounded-lg bg-accent/15 px-3 py-2.5 text-xs leading-relaxed text-foreground">
-                      <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" />
-                      <span>
-                        <b>This pairing shares no skills.</b> {person?.name ?? "This person"} holds nothing in{" "}
-                        {cur.target_title}'s requirement set, so <b>Today</b> and <b>Future target</b> both collapse to the
-                        evidence + seniority floor and look identical. That is a selection mismatch, not a broken score —
-                        choose a demand in {person?.department ?? "the same field"} to see direct and adjacent matches,
-                        while the projected line below still shows the development path.
-                      </span>
-                    </p>
+                  ) : (
+                    <span className="rounded-md bg-muted px-2 py-1 text-muted-foreground">Future not defined</span>
                   )}
+                  <span className="rounded-md bg-muted px-2 py-1 text-muted-foreground">
+                    {results.current.scoring.resolved_from === "current" ? "current scenario" : "resolved-future"}
+                  </span>
+                </div>
+              </div>
+            </div>
 
-                  <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
-                    {tiles.map((s) => (
-                      <div key={s.label} className={`rounded-lg p-3.5 ${s.cls}`}>
-                        <p className={`text-[10px] font-bold uppercase tracking-wider ${s.subCls}`}>{s.label}</p>
-                        <p className="mt-1 text-2xl font-extrabold tracking-tight">{s.value}%</p>
-                        <p className={`mt-0.5 text-[10px] ${s.subCls}`}>{s.sub}</p>
-                      </div>
-                    ))}
-                  </div>
+            {/* Phase 9: four decision cards */}
+            <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="rounded-lg bg-primary p-4 text-white">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-white/70">Verified readiness</p>
+                <p className="mt-1 text-3xl font-extrabold">{Math.round(results.current.score * 100)}<span className="text-base opacity-70">/100</span></p>
+                <p className="mt-1 text-[11px] text-white/75">accepted evidence vs {results.current.scoring.requirements.length} current requirement(s)</p>
+              </div>
+              <div className="rounded-lg bg-secondary p-4 text-white">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-white/70">Provisional profile match</p>
+                <p className="mt-1 text-3xl font-extrabold">{Math.round(results.current.profile_match * 100)}<span className="text-base opacity-70">/100</span></p>
+                <p className="mt-1 text-[11px] text-white/75">all live claims, attenuated by evidence quality</p>
+              </div>
+              <div className={`rounded-lg p-4 ${results.current.mandatory_gate.met ? "bg-muted text-foreground" : "bg-destructive text-white"}`}>
+                <p className={`text-[10px] font-bold uppercase tracking-wider ${results.current.mandatory_gate.met ? "text-muted-foreground" : "text-white/80"}`}>Mandatory gate</p>
+                <p className={`mt-1 text-3xl font-extrabold ${results.current.mandatory_gate.met ? "text-secondary" : ""}`}>
+                  {results.current.mandatory_gate.met ? "Met" : "Not met"}
+                </p>
+                <p className={`mt-1 text-[11px] ${results.current.mandatory_gate.met ? "text-muted-foreground" : "text-white/85"}`}>
+                  {results.current.mandatory_gate.met
+                    ? `${results.current.scoring.mandatory.met}/${results.current.scoring.mandatory.count} mandatory met`
+                    : `unmet: ${results.current.mandatory_gate.unmet_skills.join(", ") || "—"}`}
+                </p>
+              </div>
+              <div className="rounded-lg bg-muted p-4 text-foreground">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Evidence confidence</p>
+                <p className="mt-1 text-3xl font-extrabold">{Math.round(results.current.evidence_confidence * 100)}<span className="text-base text-muted-foreground">/100</span></p>
+                <p className="mt-1 text-[11px] text-muted-foreground">{results.artifacts?.count ?? 0} independent artifact(s) · mean review rigor</p>
+              </div>
+            </div>
 
-                  <div className="relative mt-4 h-2 rounded-full bg-muted">
-                    <div
-                      className="absolute h-full rounded-full bg-primary/40"
-                      style={{ left: `${Math.min(today, projected)}%`, width: `${Math.abs(projected - today)}%` }}
-                    />
-                    {[
-                      { v: today, l: "today" },
-                      { v: target, l: "future target (no learning)" },
-                      { v: projected, l: "projected with development" },
-                    ].map((p, i) => (
-                      <span
-                        key={i}
-                        className="absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-primary shadow"
-                        style={{ left: `${p.v}%` }}
-                        title={`${p.l}: ${p.v}%`}
-                      />
-                    ))}
-                  </div>
-                  <div className="mt-2 flex flex-wrap justify-between gap-x-4 text-[11px] font-semibold text-muted-foreground">
-                    <span>Today {today}%</span>
-                    <span>Future target {target}%{target < today ? " (dips — harder target)" : ""}</span>
-                    <span>Projected {projected}%{projected > target ? ` (+${projected - target})` : ""}</span>
-                  </div>
+            {/* Phase 9: current-vs-future comparison (three honest values) */}
+            <div className="mt-6 rounded-lg border-2 border-primary/15 bg-primary/5 p-5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="flex items-center gap-2 text-base font-extrabold tracking-tight text-foreground">
+                  <Target className="h-5 w-5 text-primary" strokeWidth={2.5} /> Current vs future target — three honest values
+                </h3>
+                <span className="rounded-md bg-white px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground ring-1 ring-border">
+                  engine v{results.current.versions?.engine}
+                </span>
+              </div>
 
-                  <p className="mt-3 text-xs leading-relaxed text-foreground">
-                    <b className="text-primary">How to read this:</b> <b>Today</b> scores the person's evidence against the
-                    role's <b>current</b> requirements. <b>Future target</b> scores the same evidence against the role's{" "}
-                    <b>future</b> requirements with <b>no learning</b> — it dips whenever the future role demands more.{" "}
-                    <b>Projected with development</b> assumes the person works the role's development plan over the horizon:
-                    a skill already held counts fully, a related/adjacent skill transfers strongly, and a completely new
-                    skill is credited at training pace. Every number is computed from the same weighted engine — never
-                    hard-coded.
+              <div className="mt-4 grid grid-cols-1 gap-2 md:grid-cols-3">
+                <div className="rounded-lg bg-foreground p-4 text-white">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-white/60">Current verified readiness</p>
+                  <p className="mt-1 text-2xl font-extrabold">{Math.round(results.current.score * 100)}%</p>
+                  <p className="mt-0.5 text-[11px] text-white/70">
+                    today's evidence vs {results.current.scoring.requirements.length} current requirement(s) · mandatory {results.current.scoring.mandatory.count}
                   </p>
-
-                  {futureProj.developmentPlan.length > 0 && (
-                    <div className="mt-3">
-                      <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
-                        Development plan · {futureProj.developmentPlan.length} future skill
-                        {futureProj.developmentPlan.length === 1 ? "" : "s"} to build
-                      </p>
-                      <div className="mt-2 flex flex-wrap gap-1.5">
-                        {futureProj.developmentPlan.map((d) => (
-                          <span
-                            key={d.skill}
-                            className="rounded-md bg-white px-2 py-1 text-[11px] font-semibold text-foreground ring-1 ring-border"
-                          >
-                            {d.skill} <span className="capitalize text-muted-foreground">({d.basis})</span> → {Math.round(d.attainment * 100)}%
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  {futureProj.developmentPlan.length === 0 && (
-                    <p className="mt-3 text-[11px] text-muted-foreground">
-                      No development needed — this person already meets the role's entire future requirement set.
+                </div>
+                <div className={`rounded-lg p-4 ${results.future && results.future.score < results.current.score ? "bg-accent text-foreground" : "bg-secondary text-white"}`}>
+                  <p className={`text-[10px] font-bold uppercase tracking-wider ${results.future && results.future.score < results.current.score ? "text-foreground/60" : "text-white/70"}`}>Future-target readiness today</p>
+                  <p className="mt-1 text-2xl font-extrabold">
+                    {results.future ? `${Math.round(results.future.score * 100)}%` : "Not defined"}
+                  </p>
+                  <p className={`mt-0.5 text-[11px] ${results.future && results.future.score < results.current.score ? "text-foreground/70" : "text-white/75"}`}>
+                    {results.future
+                      ? `today's evidence vs resolved future target (${results.future.scoring.requirements.length} requirements) — no assumed learning`
+                      : "this demand defines no future requirements"}
+                  </p>
+                </div>
+                <div className="rounded-lg bg-white p-4 ring-1 ring-border">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Development forecast</p>
+                  {results.future ? (() => {
+                    const f = developmentForecast(results.future, null);
+                    return (
+                      <>
+                        <p className="mt-1 text-lg font-extrabold text-foreground">Forecast not available</p>
+                        <p className="mt-1 text-[11px] leading-snug text-muted-foreground">{f.reason}</p>
+                      </>
+                    );
+                  })() : (
+                    <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
+                      Future requirements are not defined, so there is nothing to forecast against.
                     </p>
                   )}
                 </div>
-              );
-            })()}
+              </div>
+
+              {/* Raw delta — shown even when rounded values are equal */}
+              {results.future && futureDelta && (
+                <div className="mt-3 rounded-lg bg-white p-3 text-xs text-foreground ring-1 ring-border">
+                  <p className="font-bold">
+                    Change vs today:{" "}
+                    <span className={futureDelta.raw > 0 ? "text-secondary" : futureDelta.raw < 0 ? "text-destructive" : "text-foreground"}>
+                      {futureDelta.raw > 0 ? "+" : ""}{futureDelta.raw.toFixed(3)} raw
+                    </span>
+                    {" · "}
+                    <span className="text-muted-foreground">rounded {futureDelta.rounded > 0 ? "+" : ""}{futureDelta.rounded} pts</span>
+                  </p>
+                  <p className="mt-1 leading-relaxed text-muted-foreground">
+                    {futureDelta.raw === 0
+                      ? "The rounded values look identical but the raw difference is exactly 0.000 — the future set neither adds requirements nor raises targets, and today's accepted evidence already covers it."
+                      : futureDelta.raw > 0
+                        ? "The future target adds requirements or raises targets; today's accepted evidence still covers more of it than the current bar."
+                        : "The future target is larger or harder — today's evidence covers less of it. This is a harder target, not a broken score."}
+                    {results.future.scoring.derivation &&
+                      ` ${results.future.scoring.derivation.added.length} future addition(s), ${results.future.scoring.derivation.raised.length} raised target(s).`}
+                  </p>
+                </div>
+              )}
+
+              {/* derivation chips */}
+              {results.future?.scoring.derivation && (() => {
+                const d = results.future.scoring.derivation;
+                const any = d.added.length > 0 || d.raised.length > 0 || d.obsolete.length > 0;
+                if (!any) return null;
+                return (
+                  <div className="mt-3 flex flex-wrap gap-1.5">
+                    {d.added.map((s) => (
+                      <span key={`a-${s}`} className="rounded-md bg-primary/10 px-2.5 py-1 text-[11px] font-semibold text-primary">Added: {s}</span>
+                    ))}
+                    {d.raised.map((s) => (
+                      <span key={`r-${s}`} className="rounded-md bg-accent/20 px-2.5 py-1 text-[11px] font-semibold text-accent">Raised target: {s}</span>
+                    ))}
+                    {d.obsolete.map((s) => (
+                      <span key={`o-${s}`} className="rounded-md bg-muted px-2.5 py-1 text-[11px] font-semibold text-muted-foreground">Obsolete: {s}</span>
+                    ))}
+                  </div>
+                );
+              })()}
+
+              <p className="mt-3 text-xs leading-relaxed text-foreground">
+                <b className="text-primary">How to read this:</b> <b>Current verified readiness</b> measures accepted
+                evidence against today's requirements. <b>Future-target readiness today</b> measures the SAME evidence
+                against the resolved 12–24 month target (current still-relevant + additions + raised targets) with no
+                assumed learning — it legitimately dips when the future role demands more. A <b>development forecast</b>{" "}
+                is only produced from an approved plan with skill-specific activities, baseline, target and an assessment
+                gate; it is never inferred from fixed learning constants.
+              </p>
+            </div>
 
             <div className="mt-4 grid grid-cols-1 gap-6 lg:grid-cols-2">
               <FitCard fit={results.current} lineage={results.lineage ?? undefined} />
               {results.future ? (
                 <FitCard fit={results.future} lineage={results.lineage ?? undefined} />
               ) : (
-                /* E1: empty future requirements are shown honestly, never as a fabricated score. */
                 <div className="flex flex-col gap-3 rounded-lg bg-white p-6">
                   <div className="flex items-start justify-between gap-2">
                     <h3 className="text-lg font-extrabold tracking-tight text-foreground">Future requirements</h3>
@@ -477,7 +564,7 @@ export default function SkillGraph() {
                       <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Future readiness</p>
                       <p className="mt-1 text-lg font-extrabold text-foreground">Future requirements not defined</p>
                     </div>
-                    <Sparkles className="h-6 w-6 text-muted-foreground" />
+                    <Clock className="h-6 w-6 text-muted-foreground" />
                   </div>
                   <p className="text-xs leading-relaxed text-muted-foreground">
                     This demand has no future-skills definition yet. No future score is computed — a fabricated 0 or 100
@@ -487,16 +574,14 @@ export default function SkillGraph() {
               )}
             </div>
 
-            {/* E1: changed requirements between current and future */}
             {futureDiff && (futureDiff.added.length > 0 || futureDiff.raised.length > 0 || futureDiff.removed.length > 0) && (
               <div className="mt-6 rounded-lg bg-white p-5 text-sm">
                 <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
                   <Workflow className="h-4 w-4 text-primary" /> How the future target differs from today
                 </p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  A lower future score can be legitimate — the future target is harder or different, not inflated. The{" "}
-                  <b className="text-foreground">development trajectory</b> above shows the computed growth path back up
-                  when the person closes foundation-backed gaps.
+                  The future target is the resolved set (current still-relevant + additions + raised targets). A lower
+                  future score is legitimate — a harder or larger target, not an inflated number.
                 </p>
                 <ul className="mt-2 flex flex-wrap gap-2">
                   {futureDiff.added.map((s) => (
@@ -506,17 +591,17 @@ export default function SkillGraph() {
                     <li key={`r-${s.skill}`} className="rounded-md bg-accent/20 px-2.5 py-1 text-xs font-semibold text-accent">Raised target: {s.skill} @ {s.target_proficiency}</li>
                   ))}
                   {futureDiff.removed.map((s) => (
-                    <li key={`d-${s.skill}`} className="rounded-md bg-muted px-2.5 py-1 text-xs font-semibold text-muted-foreground">No longer required: {s.skill}</li>
+                    <li key={`d-${s.skill}`} className="rounded-md bg-muted px-2.5 py-1 text-xs font-semibold text-muted-foreground">Not in future list (kept unless marked obsolete): {s.skill}</li>
                   ))}
                 </ul>
               </div>
             )}
 
-            {/* E2: claim-inclusive match vs verified coverage */}
+            {/* verified vs provisional coverage */}
             {coverage && coverage.directTotal > 0 && (
               <div className="mt-6 rounded-lg bg-white p-5">
                 <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                  <BadgeCheck className="h-4 w-4 text-primary" /> Profile match vs verified coverage
+                  <BadgeCheck className="h-4 w-4 text-primary" /> Verified coverage vs provisional claims
                 </p>
                 <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-4">
                   <div className="rounded-lg bg-muted p-3">
@@ -529,7 +614,7 @@ export default function SkillGraph() {
                     <p className="text-[10px] text-muted-foreground">reviewer-confirmed or assessment-supported</p>
                   </div>
                   <div className="rounded-lg bg-muted p-3">
-                    <p className="text-xs font-semibold text-muted-foreground">Unverified claims</p>
+                    <p className="text-xs font-semibold text-muted-foreground">Provisional claims</p>
                     <p className="text-xl font-extrabold text-accent">{coverage.unverified}</p>
                     <p className="text-[10px] text-muted-foreground">self-reported or extracted only</p>
                   </div>
@@ -540,85 +625,218 @@ export default function SkillGraph() {
                   </div>
                 </div>
                 <p className="mt-2 text-[11px] leading-snug text-muted-foreground">
-                  The overall match percentage includes self-reported and extracted claims where evidence is thin.
-                  Verified coverage counts only accepted independent evidence — keywords alone never satisfy a mandatory
-                  gate.
+                  Verified readiness counts only accepted independent evidence — keywords alone never satisfy a mandatory
+                  gate. The provisional profile match includes claims, each attenuated by its evidence quality.
                 </p>
               </div>
             )}
 
-            {/* Person skill network — visible edges + analysis + summary */}
+            {/* Phase 9: requirement-by-requirement matrix */}
+            <div className="mt-8 rounded-lg bg-white p-6">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h2 className="flex items-center gap-2 text-lg font-extrabold tracking-tight text-foreground">
+                    <Workflow className="h-5 w-5 text-primary" strokeWidth={2.5} /> Requirements versus evidence
+                  </h2>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    One row per requirement of the <b>{matrixScenario}</b> scenario ({matrixFit?.scoring.requirements.length ?? 0} requirements).
+                    "Effective" is the level credit applied; "gap" is target minus effective.
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex overflow-hidden rounded-md ring-1 ring-border">
+                    {(["current", "future"] as const).map((sc) => (
+                      <button
+                        key={sc}
+                        onClick={() => setMatrixScenario(sc)}
+                        className={`px-3 py-1.5 text-xs font-bold capitalize ${matrixScenario === sc ? "bg-foreground text-white" : "bg-white text-muted-foreground"}`}
+                      >
+                        {sc}
+                      </button>
+                    ))}
+                  </div>
+                  <label className="flex items-center gap-1.5 rounded-md bg-muted px-2.5 py-1.5 text-xs font-semibold text-muted-foreground">
+                    <Filter className="h-3.5 w-3.5" />
+                    <select
+                      value={matrixFilter}
+                      onChange={(e) => setMatrixFilter(e.target.value as "all" | FitClassification)}
+                      className="bg-transparent text-xs font-semibold text-foreground focus:outline-none"
+                      aria-label="Filter matrix rows"
+                    >
+                      <option value="all">All states</option>
+                      {(Object.keys(CLASS_META) as FitClassification[]).map((c) => (
+                        <option key={c} value={c}>{CLASS_META[c].label}</option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+              </div>
+
+              <div className="mt-4 overflow-x-auto">
+                <table className="w-full min-w-[900px] text-left text-sm">
+                  <thead>
+                    <tr className="border-b-2 border-border text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                      <th className="py-2 pr-3">Requirement</th>
+                      <th className="py-2 pr-3">Type</th>
+                      <th className="py-2 pr-3">Target</th>
+                      <th className="py-2 pr-3">Observed</th>
+                      <th className="py-2 pr-3">Evidence state</th>
+                      <th className="py-2 pr-3">Effective</th>
+                      <th className="py-2 pr-3">Gap</th>
+                      <th className="py-2 pr-3">Relationship</th>
+                      <th className="py-2 pr-3">Freshness</th>
+                      <th className="py-2">Next action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {matrixRows.map((item) => {
+                      const meta = CLASS_META[item.classification];
+                      const assertion = results?.lineage?.assertions.find((a) => a.skill_name?.toLowerCase() === item.skill.toLowerCase());
+                      const stateMeta = STATE_META[item.evidence_state ?? ""] ?? (item.evidence_state ? { label: item.evidence_state, chip: "bg-muted text-foreground" } : null);
+                      return (
+                        <tr key={`${matrixScenario}-${item.skill}`} className="border-b border-border/60 align-top">
+                          <td className="py-2.5 pr-3 font-bold text-foreground">
+                            {item.skill}
+                            <span className="ml-1 inline-block h-2.5 w-2.5 rounded-full align-middle" style={{ background: meta.color }} title={meta.hint} />
+                          </td>
+                          <td className="py-2.5 pr-3">
+                            <span className={`rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${item.mandatory ? "bg-destructive/10 text-destructive" : "bg-muted text-foreground"}`}>
+                              {item.mandatory ? "Mandatory" : "Preferred"}
+                            </span>
+                          </td>
+                          <td className="py-2.5 pr-3 font-semibold text-foreground">{item.required_proficiency}</td>
+                          <td className="py-2.5 pr-3 text-foreground">
+                            {item.candidate_proficiency !== null ? item.candidate_proficiency : "—"}
+                            {item.relationship === "adjacent" && item.edge && (
+                              <span className="block text-[10px] text-muted-foreground">via {item.edge.from_skill}</span>
+                            )}
+                          </td>
+                          <td className="py-2.5 pr-3">
+                            {stateMeta ? (
+                              <span className={`rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${stateMeta.chip}`}>{stateMeta.label}</span>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">—</span>
+                            )}
+                            {assertion && <span className="ml-1 text-[10px] text-muted-foreground">level {assertion.claimed_proficiency}</span>}
+                          </td>
+                          <td className="py-2.5 pr-3 font-semibold text-foreground">{item.effective_proficiency.toFixed(1)}</td>
+                          <td className="py-2.5 pr-3">
+                            <span className={item.gap > 0 ? "font-semibold text-accent" : "font-semibold text-secondary"}>{item.gap > 0 ? item.gap.toFixed(1) : "0"}</span>
+                          </td>
+                          <td className="py-2.5 pr-3">
+                            <span className="rounded-md bg-muted px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-foreground">{item.relationship}</span>
+                            {item.edge && (
+                              <span className="block font-mono text-[10px] text-muted-foreground">
+                                {item.edge.from_skill} → {item.skill}
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-2.5 pr-3 text-xs text-muted-foreground">
+                            {item.freshness_days !== null ? `${item.freshness_days}d` : "—"}
+                            {item.evidence_source && item.evidence_source.startsWith("artifact") && (
+                              <span className="block font-mono text-[9px]">{item.evidence_source.split("|").slice(1).join("|").slice(0, 24)}</span>
+                            )}
+                          </td>
+                          <td className="py-2.5 text-xs leading-relaxed text-muted-foreground">
+                            {item.next_action}
+                            {item.limitation && (
+                              <span className="mt-1 flex items-start gap-1 rounded bg-amber-50 px-1.5 py-0.5 text-[11px] text-amber-800">
+                                <Info className="mt-0.5 h-3 w-3 shrink-0" /> {item.limitation}
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <p className="mt-3 text-[11px] text-muted-foreground">
+                Evidence confidence {Math.round((matrixFit?.evidence_confidence ?? 0) * 100)}/100 ·{" "}
+                {results.artifacts?.count ?? 0} independent artifact(s) backing the scored skills (deduplicated by source).
+                Seniority is context only and never contributes to these numbers.
+              </p>
+            </div>
+
+            {/* Evidence-driven person skill network */}
             <div className="mt-8 rounded-lg bg-white p-6">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h2 className="flex items-center gap-2 text-lg font-extrabold tracking-tight text-foreground">
                   <Share2 className="h-5 w-5 text-primary" strokeWidth={2.5} /> Person skill network
                 </h2>
                 <span className="rounded-md bg-muted px-2 py-1 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
-                  computed for this selection
+                  {results.current.scoring.requirements.length} requirements · stored edges only
                 </span>
               </div>
               <p className="mt-1 text-xs text-muted-foreground">
-                Every skill this person maps against the role is a node; taxonomy relationships between those skills are drawn
-                as edges (Related, Transferable, Prerequisite). Node color shows how each skill supports the match.
+                The role sits at the center; nodes are this person's requirements colored by support classification.
+                Lines are only taxonomy edges stored in the skill graph between skills that both appear here — a
+                relationship is never proof of mastery. Click a node for its detail.
               </p>
               <PersonSkillNetwork
                 roleTitle={results.current.target_title}
-                items={results.current.classification.direct
-                  .concat(results.current.classification.adjacent, results.current.classification.transferable, results.current.classification.gaps)}
+                items={results.current.scoring.requirements}
                 graph={graph.data ?? []}
+                onSelect={(skill) => setFocusedSkill(skill)}
               />
+              {focusedSkill && (() => {
+                const node = results.current.scoring.requirements.find((r) => r.skill === focusedSkill);
+                if (!node) return null;
+                const meta = CLASS_META[node.classification];
+                return (
+                  <div className="mt-3 flex flex-col gap-2 rounded-lg border-2 border-primary/20 bg-primary/5 p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="flex items-center gap-2 text-sm font-extrabold text-foreground">
+                        <span className="inline-block h-3 w-3 rounded-full" style={{ background: meta.color }} />
+                        {node.skill}
+                        <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">{meta.label}</span>
+                      </p>
+                      <button onClick={() => setFocusedSkill(null)} className="text-xs font-bold text-muted-foreground hover:text-foreground">Close</button>
+                    </div>
+                    <p className="text-xs leading-relaxed text-muted-foreground">{node.reason}</p>
+                    <p className="text-xs font-semibold text-foreground">{node.next_action}</p>
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
+                      <span>Target {node.required_proficiency}</span>
+                      <span>Observed {node.candidate_proficiency ?? "—"}</span>
+                      <span>Effective {node.effective_proficiency.toFixed(1)}</span>
+                      <span>Gap {node.gap.toFixed(1)}</span>
+                      <span>{node.mandatory ? "Mandatory" : "Preferred"}</span>
+                    </div>
+                    {node.edge && (
+                      <p className="font-mono text-[11px] text-foreground">
+                        {node.edge.from_skill} → {node.skill} · {EDGE_HUMAN[node.edge.type] ?? node.edge.type} w{node.edge.weight.toFixed(2)}
+                      </p>
+                    )}
+                  </div>
+                );
+              })()}
 
-              {/* Summary strip */}
-              <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-5">
-                <div className="rounded-lg bg-muted p-3">
-                  <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Match score</p>
-                  <p className="text-xl font-extrabold text-primary">{Math.round(results.current.score * 100)}%</p>
-                </div>
-                <div className="rounded-lg bg-muted p-3">
-                  <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Verified skills</p>
-                  <p className="text-xl font-extrabold text-secondary">{coverage?.verified ?? 0}</p>
-                </div>
-                <div className="rounded-lg bg-muted p-3">
-                  <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Claims</p>
-                  <p className="text-xl font-extrabold text-accent">{results.lineage?.assertions.length ?? 0}</p>
-                </div>
-                <div className="rounded-lg bg-muted p-3">
-                  <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Gaps</p>
-                  <p className="text-xl font-extrabold text-foreground">{results.current.classification.gaps.length}</p>
-                </div>
-                <div className="rounded-lg bg-muted p-3">
-                  <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Artifacts</p>
-                  <p className="text-xl font-extrabold text-foreground">{results.artifacts?.count ?? 0}</p>
-                </div>
-              </div>
-
-              {/* Analysis */}
+              {/* Analysis: strengths / close paths / gaps (honest "no gaps" logic) */}
               <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
                 <div className="rounded-lg bg-muted p-4">
                   <p className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-secondary">
                     <BadgeCheck className="h-3.5 w-3.5" /> Verified strengths
                   </p>
                   <ul className="mt-2 flex flex-col gap-1.5 text-sm text-foreground">
-                    {(() => {
-                      const strong = results.current.classification.direct.filter((i) => (i.candidate_proficiency ?? 0) >= i.required_proficiency);
-                      return strong.length > 0
-                        ? strong.map((i) => <li key={i.skill}>· {i.skill} — level {i.candidate_proficiency}/{i.required_proficiency}</li>)
-                        : [<li key="none" className="text-muted-foreground">No direct skill reaches its target bar yet.</li>];
-                    })()}
+                    {results.current.scoring.requirements.filter((i) => i.classification === "verified_direct").map((i) => (
+                      <li key={i.skill}>· {i.skill} — level {i.candidate_proficiency}/{i.required_proficiency}</li>
+                    ))}
+                    {results.current.scoring.requirements.filter((i) => i.classification === "verified_direct").length === 0 && (
+                      <li className="text-muted-foreground">No requirement is met with accepted evidence yet.</li>
+                    )}
                   </ul>
                 </div>
                 <div className="rounded-lg bg-muted p-4">
                   <p className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-accent">
-                    <Sparkles className="h-3.5 w-3.5" /> Close / transferable paths
+                    <Workflow className="h-3.5 w-3.5" /> Adjacent / transferable paths
                   </p>
                   <ul className="mt-2 flex flex-col gap-1.5 text-sm text-foreground">
-                    {results.current.classification.adjacent.concat(results.current.classification.transferable).slice(0, 5).map((i) => (
-                      <li key={`${i.skill}-${i.classification}`}>
-                        · <span className="font-semibold">{i.skill}</span> — {i.reason}
-                        {i.edge ? ` (via ${i.edge.from_skill})` : ""}
+                    {results.current.scoring.requirements.filter((i) => i.relationship === "adjacent" || i.relationship === "transferable").slice(0, 6).map((i) => (
+                      <li key={`${i.skill}-${i.relationship}`}>
+                        · <span className="font-semibold">{i.skill}</span> — {i.relationship === "adjacent" ? (i.edge ? `via ${i.edge.from_skill}` : "adjacent") : "transferable only"}
                       </li>
                     ))}
-                    {results.current.classification.adjacent.concat(results.current.classification.transferable).length === 0 && (
+                    {results.current.scoring.requirements.filter((i) => i.relationship === "adjacent" || i.relationship === "transferable").length === 0 && (
                       <li className="text-muted-foreground">No adjacent or transferable support recorded.</li>
                     )}
                   </ul>
@@ -628,95 +846,20 @@ export default function SkillGraph() {
                     <Target className="h-3.5 w-3.5" /> Gaps to close
                   </p>
                   <ul className="mt-2 flex flex-col gap-1.5 text-sm text-foreground">
-                    {results.current.classification.gaps.slice(0, 6).map((i) => (
+                    {unmet.slice(0, 8).map((i) => (
                       <li key={i.skill}>· <span className="font-semibold">{i.skill}</span> — {i.reason}</li>
                     ))}
-                    {results.current.classification.gaps.length === 0 && <li className="text-muted-foreground">No skill gaps for the current scenario.</li>}
+                    {/* "No skill gaps" only when every requirement is genuinely at/above the bar —
+                        transferable/missing skills ARE gaps and must never be hidden. */}
+                    {unmet.length === 0 && results.current.scoring.requirements.length > 0 && (
+                      <li className="text-muted-foreground">No skill gaps — every requirement is at or above its bar.</li>
+                    )}
+                    {unmet.length === 0 && results.current.scoring.requirements.length === 0 && (
+                      <li className="text-muted-foreground">No requirements defined for this demand.</li>
+                    )}
                   </ul>
                 </div>
               </div>
-
-            </div>
-
-            {/* Requirements-vs-evidence matrix + gap bars */}
-            <div className="mt-8 rounded-lg bg-white p-6">
-              <h2 className="flex items-center gap-2 text-lg font-extrabold tracking-tight text-foreground">
-                <Workflow className="h-5 w-5 text-primary" strokeWidth={2.5} /> Requirements versus evidence
-              </h2>
-              <p className="mt-1 text-xs text-muted-foreground">
-                One row per required skill (current scenario). Bars show the target (filled outline) against the person's
-                current level. "Support state" is the strongest evidence behind the skill.
-              </p>
-              <div className="mt-4 overflow-x-auto">
-                <table className="w-full min-w-[640px] text-left text-sm">
-                  <thead>
-                    <tr className="border-b-2 border-border text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                      <th className="py-2 pr-3">Requirement</th>
-                      <th className="py-2 pr-3">Classification</th>
-                      <th className="py-2 pr-3">Support state</th>
-                      <th className="py-2 pr-3">Current vs target</th>
-                      <th className="py-2">Path / reason</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {results.current.classification.direct
-                      .concat(results.current.classification.adjacent, results.current.classification.transferable, results.current.classification.gaps)
-                      .map((item) => {
-                        const assertion = results.lineage?.assertions.find((a) => a.skill_name?.toLowerCase() === item.skill.toLowerCase());
-                        const meta = STATE_META[assertion?.review_state ?? ""] ?? { label: "No evidence", chip: "bg-muted text-foreground" };
-                        const holds = item.candidate_proficiency ?? 0;
-                        const target = item.required_proficiency;
-                        const pctHolds = Math.round((holds / 5) * 100);
-                        const pctTarget = Math.round((target / 5) * 100);
-                        return (
-                          <tr key={`${item.skill}-${item.classification}`} className="border-b border-border/60 align-top">
-                            <td className="py-2.5 pr-3 font-bold text-foreground">{item.skill}</td>
-                            <td className="py-2.5 pr-3">
-                              <span className="rounded-md bg-muted px-2 py-0.5 text-xs font-bold uppercase tracking-wider text-foreground">
-                                {item.classification}
-                              </span>
-                            </td>
-                            <td className="py-2.5 pr-3">
-                              <span className={`rounded-md px-2 py-0.5 text-[11px] font-bold uppercase tracking-wider ${meta.chip}`}>{meta.label}</span>
-                              {assertion && <span className="ml-1 text-xs text-muted-foreground">level {assertion.claimed_proficiency}</span>}
-                            </td>
-                            <td className="py-2.5 pr-3">
-                              <div className="flex w-40 items-center gap-1.5">
-                                <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-muted">
-                                  <div className="h-full bg-secondary" style={{ width: `${pctHolds}%` }} title={`holds ${holds}/5`} />
-                                </div>
-                                <span className="w-6 text-right text-[11px] font-bold text-foreground">{holds}</span>
-                                <span className="text-[11px] text-muted-foreground">/ {target}</span>
-                              </div>
-                            </td>
-                            <td className="py-2.5 text-xs leading-relaxed text-muted-foreground">
-                              {item.edge && (
-                                <span className="block font-mono text-[11px] text-foreground">
-                                  {item.edge.from_skill} → {item.skill} · {item.edge.type} w{item.edge.weight.toFixed(2)}
-                                </span>
-                              )}
-                              {item.reason}
-                              {item.limitation && (
-                                <span className="mt-1 flex items-start gap-1 rounded bg-amber-50 px-1.5 py-0.5 text-[11px] text-amber-800">
-                                  <Info className="mt-0.5 h-3 w-3 shrink-0" /> {item.limitation}
-                                </span>
-                              )}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                  </tbody>
-                </table>
-              </div>
-              <p className="mt-3 text-[11px] text-muted-foreground">
-                Evidence count uses <b>independent artifacts</b> (deduplicated): multiple assertions from the same
-                resume or work sample count once.
-                {results.artifacts && (
-                  <>
-                    {" "}This person currently has <b>{results.artifacts.count} independent artifact(s)</b> backing their scored skills.
-                  </>
-                )}
-              </p>
             </div>
           </>
         )}
@@ -731,98 +874,108 @@ export default function SkillGraph() {
           </div>
         )}
 
-        {/* Searchable taxonomy + focused relationship view (E5) */}
+        {/* Searchable taxonomy — collapsible "Explore skill taxonomy" */}
         <div className="mt-16">
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <div>
-              <h2 className="text-xl font-extrabold tracking-tight text-foreground">Connections</h2>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Typed relationships between skills — Related skill, Transferable experience, Prerequisite. Click a skill
-                to see its focused ego network (only its direct neighbors, never the whole taxonomy).
+          <button
+            onClick={() => setTaxonomyOpen((o) => !o)}
+            className="flex w-full items-center justify-between gap-3 rounded-lg bg-muted px-4 py-3 text-left"
+          >
+            <span>
+              <h2 className="text-xl font-extrabold tracking-tight text-foreground">Explore skill taxonomy</h2>
+              <p className="mt-0.5 text-sm text-muted-foreground">
+                Typed relationships between skills — {EDGE_HUMAN.ADJACENT_TO}, {EDGE_HUMAN.TRANSFERABLE_TO}, {EDGE_HUMAN.PREREQUISITE_OF}. Click a skill to see its focused ego network.
               </p>
-            </div>
-            <label className="flex items-center gap-2 rounded-md bg-muted px-3 py-2">
-              <Search className="h-4 w-4 text-muted-foreground" />
-              <input
-                value={taxSearch}
-                onChange={(e) => setTaxSearch(e.target.value)}
-                placeholder="Search skills…"
-                className="w-48 bg-transparent text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
-                aria-label="Search skills"
-              />
-            </label>
-          </div>
+            </span>
+            {taxonomyOpen ? <ChevronDown className="h-5 w-5 text-muted-foreground" /> : <ChevronRight className="h-5 w-5 text-muted-foreground" />}
+          </button>
 
-          {focusedSkill && focusedNode && (
-            <div className="mt-5 rounded-lg bg-foreground p-5 text-white">
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-lg font-extrabold">
-                  {focusedNode.skill}
-                  <span className="ml-2 rounded bg-white/15 px-2 py-0.5 text-xs font-bold uppercase tracking-wider">{focusedNode.category}</span>
-                </p>
-                <button onClick={() => setFocusedSkill(null)} className="text-xs font-bold text-white/70 hover:text-white">
-                  Close
-                </button>
-              </div>
+          {taxonomyOpen && (
+            <div className="mt-4">
+              <label className="flex items-center gap-2 rounded-md bg-muted px-3 py-2">
+                <Search className="h-4 w-4 text-muted-foreground" />
+                <input
+                  value={taxSearch}
+                  onChange={(e) => setTaxSearch(e.target.value)}
+                  placeholder="Search skills…"
+                  className="w-48 bg-transparent text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
+                  aria-label="Search skills"
+                />
+              </label>
 
-              {/* E5: focused SVG ego network */}
-              <EgoNetwork center={focusedNode.skill} nodes={graph.data ?? []} reverseEdges={reverseEdges} onSelect={setFocusedSkill} />
+              {focusedSkill && focusedNode && (
+                <div className="mt-5 rounded-lg bg-foreground p-5 text-white">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-lg font-extrabold">
+                      {focusedNode.skill}
+                      <span className="ml-2 rounded bg-white/15 px-2 py-0.5 text-xs font-bold uppercase tracking-wider">{focusedNode.category}</span>
+                    </p>
+                    <button onClick={() => setFocusedSkill(null)} className="flex items-center gap-1 text-xs font-bold text-white/70 hover:text-white">
+                      <X className="h-3.5 w-3.5" /> Close
+                    </button>
+                  </div>
 
-              <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-wider text-white/60">Outgoing relationships</p>
-                  <ul className="mt-2 flex flex-col gap-1.5">
-                    {focusedNode.outgoing_edges.length === 0 && <li className="text-sm text-white/60">No outgoing relationships.</li>}
-                    {focusedNode.outgoing_edges.map((e) => (
-                      <li key={`${e.target_skill}-${e.type}`} className="rounded bg-white/10 p-2.5 text-sm">
-                        <span className="font-bold">{focusedNode.skill}</span> → <span className="font-bold">{e.target_skill}</span>
-                        <span className="ml-2 rounded bg-white/20 px-1.5 py-0.5 font-mono text-[11px]">{e.type} · weight {e.weight.toFixed(2)}</span>
-                        <p className="mt-1 text-xs text-white/70">{EDGE_LIMITATION[e.type] ?? ""}</p>
-                      </li>
-                    ))}
-                  </ul>
+                  <EgoNetwork center={focusedNode.skill} nodes={graph.data ?? []} reverseEdges={reverseEdges} onSelect={setFocusedSkill} />
+
+                  <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-wider text-white/60">Outgoing relationships</p>
+                      <ul className="mt-2 flex flex-col gap-1.5">
+                        {focusedNode.outgoing_edges.length === 0 && <li className="text-sm text-white/60">No outgoing relationships.</li>}
+                        {focusedNode.outgoing_edges.map((e) => (
+                          <li key={`${e.target_skill}-${e.type}`} className="rounded bg-white/10 p-2.5 text-sm">
+                            <span className="font-bold">{focusedNode.skill}</span> → <span className="font-bold">{e.target_skill}</span>
+                            <span className="ml-2 rounded bg-white/20 px-1.5 py-0.5 text-[11px] font-semibold">{EDGE_HUMAN[e.type] ?? e.type} · weight {e.weight.toFixed(2)}</span>
+                            <p className="mt-1 text-xs text-white/70">{EDGE_LIMITATION[e.type] ?? ""}</p>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-wider text-white/60">What leads into it</p>
+                      <ul className="mt-2 flex flex-col gap-1.5">
+                        {(reverseEdges.get(focusedNode.skill.toLowerCase()) ?? []).length === 0 && (
+                          <li className="text-sm text-white/60">Nothing in the taxonomy points here.</li>
+                        )}
+                        {(reverseEdges.get(focusedNode.skill.toLowerCase()) ?? []).map((e, i) => (
+                          <li key={i} className="rounded bg-white/10 p-2.5 text-sm">
+                            <span className="font-bold">{e.from}</span> → <span className="font-bold">{focusedNode.skill}</span>
+                            <span className="ml-2 rounded bg-white/20 px-1.5 py-0.5 text-[11px] font-semibold">{EDGE_HUMAN[e.type] ?? e.type} · weight {e.weight.toFixed(2)}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-wider text-white/60">What leads into it</p>
-                  <ul className="mt-2 flex flex-col gap-1.5">
-                    {(reverseEdges.get(focusedNode.skill.toLowerCase()) ?? []).length === 0 && (
-                      <li className="text-sm text-white/60">Nothing in the taxonomy points here.</li>
-                    )}
-                    {(reverseEdges.get(focusedNode.skill.toLowerCase()) ?? []).map((e, i) => (
-                      <li key={i} className="rounded bg-white/10 p-2.5 text-sm">
-                        <span className="font-bold">{e.from}</span> → <span className="font-bold">{focusedNode.skill}</span>
-                        <span className="ml-2 rounded bg-white/20 px-1.5 py-0.5 font-mono text-[11px]">{e.type} · weight {e.weight.toFixed(2)}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
+              )}
+
+              <div className="mt-6 grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
+                {filteredCategories.map(([category, nodes]) => (
+                  <div key={category} className="rounded-lg bg-muted p-5">
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">{category}</h3>
+                    <div className="mt-3 flex flex-col gap-2">
+                      {nodes.map((node) => {
+                        const edgeLabel = node.outgoing_edges.length === 0 ? "no relationships" : `${node.outgoing_edges.length} relationship(s)`;
+                        return (
+                          <button
+                            key={node.id}
+                            type="button"
+                            onClick={() => setFocusedSkill(node.skill)}
+                            className={`rounded-md bg-white px-3 py-2.5 text-left transition-all hover:scale-[1.02] ${focusedSkill === node.skill ? "ring-2 ring-inset ring-primary" : ""}`}
+                          >
+                            <span className="text-sm font-bold text-foreground">{node.skill}</span>
+                            <span className="ml-2 text-xs text-muted-foreground">{edgeLabel}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+                {filteredCategories.length === 0 && (
+                  <p className="rounded-lg bg-muted p-6 text-sm text-muted-foreground">No skills match "{taxSearch}".</p>
+                )}
               </div>
             </div>
           )}
-
-          <div className="mt-6 grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
-            {filteredCategories.map(([category, nodes]) => (
-              <div key={category} className="rounded-lg bg-muted p-5">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">{category}</h3>
-                <div className="mt-3 flex flex-col gap-2">
-                  {nodes.map((node) => (
-                    <button
-                      key={node.id}
-                      type="button"
-                      onClick={() => setFocusedSkill(node.skill)}
-                      className={`rounded-md bg-white px-3 py-2.5 text-left transition-all hover:scale-[1.02] ${focusedSkill === node.skill ? "ring-2 ring-inset ring-primary" : ""}`}
-                    >
-                      <span className="text-sm font-bold text-foreground">{node.skill}</span>
-                      <span className="ml-2 text-xs text-muted-foreground">{node.outgoing_edges.length} edge(s)</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ))}
-            {filteredCategories.length === 0 && (
-              <p className="rounded-lg bg-muted p-6 text-sm text-muted-foreground">No skills match "{taxSearch}".</p>
-            )}
-          </div>
         </div>
       </div>
     </AppShell>
@@ -830,11 +983,9 @@ export default function SkillGraph() {
 }
 
 /**
- * E5: a focused ego-network rendered as SVG. Only the center skill and its
- * DIRECT neighbors are drawn — never the whole taxonomy. Outgoing edges go
- * right, incoming edges come from the left. Clicking a neighbor re-centers the
- * network on it. The relationship lists below the SVG remain the accessible
- * table/list alternative.
+ * A focused ego-network rendered as SVG. Only the center skill and its DIRECT
+ * neighbors are drawn — never the whole taxonomy. Outgoing edges go right,
+ * incoming edges come from the left. Clicking a neighbor re-centers the network.
  */
 function EgoNetwork({
   center,
@@ -863,12 +1014,12 @@ function EgoNetwork({
 
   const outPos = uniqueOut.map((s, i) => {
     const n = uniqueOut.length;
-    const angle = -Math.PI / 2 + (n > 1 ? (i / (n - 1)) * Math.PI : 0); // right half
+    const angle = -Math.PI / 2 + (n > 1 ? (i / (n - 1)) * Math.PI : 0);
     return { skill: s, x: CX + 150 + Math.cos(angle) * 70, y: CY + Math.sin(angle) * 90, center: false };
   });
   const inPos = uniqueIn.map((s, i) => {
     const n = uniqueIn.length;
-    const angle = -Math.PI / 2 + (n > 1 ? (i / (n - 1)) * Math.PI : 0); // left half
+    const angle = -Math.PI / 2 + (n > 1 ? (i / (n - 1)) * Math.PI : 0);
     return { skill: s, x: CX - 150 - Math.cos(angle) * 70, y: CY + Math.sin(angle) * 90, center: false };
   });
   const all = [{ skill: center, x: CX, y: CY, center: true }, ...outPos, ...inPos];
@@ -881,23 +1032,16 @@ function EgoNetwork({
   return (
     <div className="mt-4 rounded-lg bg-white/10 p-3">
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label={`Connection network around ${center}`}>
-        {/* outgoing edges */}
         {outgoing.map((e) => {
           const t = outPos.find((p) => p.skill.toLowerCase() === e.target_skill.toLowerCase());
           if (!t) return null;
-          return (
-            <line key={`o-${e.target_skill}-${e.type}`} x1={CX} y1={CY} x2={t.x} y2={t.y} {...edgeStyle(e.type)} />
-          );
+          return <line key={`o-${e.target_skill}-${e.type}`} x1={CX} y1={CY} x2={t.x} y2={t.y} {...edgeStyle(e.type)} />;
         })}
-        {/* incoming edges */}
         {incoming.map((e) => {
           const f = inPos.find((p) => p.skill.toLowerCase() === e.from.toLowerCase());
           if (!f) return null;
-          return (
-            <line key={`i-${e.from}-${e.type}`} x1={f.x} y1={f.y} x2={CX} y2={CY} {...edgeStyle(e.type)} />
-          );
+          return <line key={`i-${e.from}-${e.type}`} x1={f.x} y1={f.y} x2={CX} y2={CY} {...edgeStyle(e.type)} />;
         })}
-        {/* nodes */}
         {all.map((n) => (
           <g key={n.skill} transform={`translate(${n.x}, ${n.y})`}>
             <circle
@@ -920,7 +1064,6 @@ function EgoNetwork({
           </g>
         ))}
       </svg>
-      {/* legend */}
       <div className="mt-2 flex flex-wrap items-center gap-4 text-[11px] text-white/80">
         {Object.entries(EDGE_LEGEND).map(([type, m]) => (
           <span key={type} className="flex items-center gap-1.5">
@@ -936,38 +1079,64 @@ function EgoNetwork({
   );
 }
 
+/** Distinct SVG node shapes per support classification (shape + color, so the
+ *  legend is never color-only). */
+function NodeShape({ cls, color, x, y }: { cls: FitClassification; color: string; x: number; y: number }) {
+  const fill = cls === "missing" ? "transparent" : color;
+  const stroke = color;
+  switch (cls) {
+    case "verified_direct":
+      return <circle cx={x} cy={y} r={14} fill={fill} stroke={stroke} strokeWidth={2} />;
+    case "provisional_direct":
+      return <circle cx={x} cy={y} r={14} fill={fill} stroke={stroke} strokeWidth={2} strokeDasharray="4 3" />;
+    case "below_target":
+      return (
+        <g transform={`translate(${x}, ${y})`}>
+          <rect x={-12} y={-12} width={24} height={24} rx={3} fill={fill} stroke={stroke} strokeWidth={2} />
+        </g>
+      );
+    case "adjacent_support":
+      return (
+        <g transform={`translate(${x}, ${y})`}>
+          <polygon points="0,-13 13,9 -13,9" fill={fill} stroke={stroke} strokeWidth={2} />
+        </g>
+      );
+    case "transferable_foundation":
+      return (
+        <g transform={`translate(${x}, ${y})`}>
+          <polygon points="0,13 13,-9 -13,-9" fill={fill} stroke={stroke} strokeWidth={2} strokeDasharray="4 3" />
+        </g>
+      );
+    case "missing":
+      return (
+        <g transform={`translate(${x}, ${y})`} stroke={stroke} strokeWidth={2.5} strokeLinecap="round">
+          <line x1={-9} y1={-9} x2={9} y2={9} />
+          <line x1={9} y1={-9} x2={-9} y2={9} />
+        </g>
+      );
+  }
+}
+
 /**
- * Person skill network: the skills a person maps against a role are laid out on
- * an ellipse around the role (center), and taxonomy relationships between those
- * skills are drawn as real edges. Node color = how the skill supports the match.
+ * Person skill network: requirements mapped against the role (center), colored
+ * and shaped by support classification. Only STORED taxonomy edges between
+ * skills that both appear are drawn. Clicking a node surfaces its detail.
  */
 function PersonSkillNetwork({
   roleTitle,
   items,
   graph,
+  onSelect,
 }: {
   roleTitle: string;
-  items: { skill: string; classification: string }[];
+  items: { skill: string; classification: FitClassification }[];
   graph: GraphNode[];
+  onSelect: (skill: string) => void;
 }) {
-  const CLS_COLOR: Record<string, string> = {
-    direct: "var(--secondary)",
-    adjacent: "var(--accent)",
-    transferable: "var(--primary)",
-    gap: "var(--destructive)",
-  };
-  const CLS_LABEL: Record<string, string> = {
-    direct: "Direct match",
-    adjacent: "Adjacent",
-    transferable: "Transferable",
-    gap: "Gap",
-  };
-
   const unique = [...new Set(items.map((i) => i.skill))];
-  const clsOf = new Map<string, string>();
+  const clsOf = new Map<string, FitClassification>();
   for (const i of items) if (!clsOf.has(i.skill)) clsOf.set(i.skill, i.classification);
 
-  // Edges between skills that are BOTH in this person's mapped set.
   const lower = new Set(unique.map((s) => s.toLowerCase()));
   const edges: { from: string; to: string; type: string }[] = [];
   for (const n of graph) {
@@ -991,7 +1160,6 @@ function PersonSkillNetwork({
   return (
     <div className="mt-4 rounded-lg border border-border bg-muted/40 p-3">
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label={`Skill network for ${roleTitle}`}>
-        {/* edges */}
         {edges.map((e, i) => {
           const f = pos.find((p) => p.skill === e.from);
           const t = pos.find((p) => p.skill === e.to);
@@ -1011,33 +1179,37 @@ function PersonSkillNetwork({
             />
           );
         })}
-        {/* role center */}
         <g transform={`translate(${CX}, ${CY})`}>
           <circle r={30} fill="rgba(109,94,252,0.12)" stroke="var(--primary)" strokeWidth={2} />
           <text textAnchor="middle" dy="0.35em" className="text-[10px] font-bold" fill="var(--primary)">
             {short(roleTitle || "Role")}
           </text>
         </g>
-        {/* skill nodes */}
         {pos.map((p) => {
-          const cls = clsOf.get(p.skill) ?? "gap";
-          const color = CLS_COLOR[cls] ?? "#94a3b8";
+          const cls = clsOf.get(p.skill) ?? "missing";
+          const color = CLASS_META[cls].color;
           return (
-            <g key={p.skill} transform={`translate(${p.x}, ${p.y})`}>
-              <circle r={16} fill={color} fillOpacity={cls === "gap" ? 0.15 : 0.22} stroke={color} strokeWidth={1.6} />
-              <text textAnchor="middle" dy="0.35em" className="text-[9px] font-bold" fill="var(--foreground)">
+            <g
+              key={p.skill}
+              transform={`translate(${p.x}, ${p.y})`}
+              onClick={() => onSelect(p.skill)}
+              style={{ cursor: "pointer" }}
+            >
+              <NodeShape cls={cls} color={color} x={0} y={0} />
+              <text textAnchor="middle" dy="3.4em" className="text-[9px] font-bold" fill="var(--foreground)">
                 {short(p.skill)}
               </text>
             </g>
           );
         })}
       </svg>
-      {/* legend: classifications + edge types */}
-      <div className="mt-2 flex flex-wrap items-center gap-4 text-[11px] text-muted-foreground">
-        {Object.entries(CLS_LABEL).map(([cls, label]) => (
+      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] text-muted-foreground">
+        {(Object.keys(CLASS_META) as FitClassification[]).map((cls) => (
           <span key={cls} className="flex items-center gap-1.5">
-            <span className="inline-block h-3 w-3 rounded-full" style={{ background: CLS_COLOR[cls], opacity: 0.55 }} />
-            {label}
+            <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+              <NodeShape cls={cls} color={CLASS_META[cls].color} x={7} y={7} />
+            </svg>
+            {CLASS_META[cls].label}
           </span>
         ))}
         <span className="text-border">|</span>
@@ -1051,8 +1223,8 @@ function PersonSkillNetwork({
         ))}
       </div>
       <p className="mt-2 text-[11px] leading-snug text-muted-foreground">
-        The role sits at the center; colored dots are this person's skills. Lines are taxonomy relationships between skills
-        that both appear here — a relationship is never proof of mastery in the target skill.
+        The role sits at the center; nodes are this person's requirements. Lines are taxonomy relationships stored in
+        the skill graph between skills that both appear here — a relationship is never proof of mastery in the target skill.
       </p>
     </div>
   );

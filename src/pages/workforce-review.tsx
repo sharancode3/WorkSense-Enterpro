@@ -41,7 +41,6 @@ import {
   type PerformanceSummaryResult,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { supabase } from "@/integrations/supabase/client";
 
 // Canonical review bands — MUST match the backend REVIEW_BANDS so "review bands
@@ -54,12 +53,73 @@ export const REVIEW_BANDS = {
 } as const;
 export type ReviewBand = keyof typeof REVIEW_BANDS;
 
-const PRIORITY_CLS: Record<string, string> = {
-  review: "bg-destructive text-white",
-  high: "bg-destructive/80 text-white",
-  medium: "bg-accent text-foreground",
-  low: "bg-muted text-foreground",
+/** Human labels per band — "High" is renamed to an action prompt, never a
+ *  bare risk verdict; the raw band name stays for the API/filters. */
+const BAND_META: Record<ReviewBand, { label: string; cls: string; hint: string }> = {
+  review: { label: "Review priority", cls: "bg-destructive text-white", hint: "Index ≥ 75 with adequate evidence" },
+  high: { label: "Review prompt", cls: "bg-destructive/70 text-white", hint: "Index 60–74 — warrants a conversation" },
+  medium: { label: "Monitor", cls: "bg-accent text-foreground", hint: "Index 40–59" },
+  low: { label: "On track", cls: "bg-muted text-foreground", hint: "Index 0–39" },
 };
+
+/** Case-level state: "insufficient_history" is SEPARATE from the risk bands.
+ *  A case whose evidence is too thin to judge (fewer than the adequate
+ *  history threshold, or very low completeness) is never presented as normal
+ *  HIGH / REVIEW risk — missing data is not risk. */
+export type CaseState = ReviewBand | "insufficient_history";
+
+const CASE_STATE_META: Record<CaseState, { label: string; cls: string; hint: string }> = {
+  ...BAND_META,
+  insufficient_history: {
+    label: "Insufficient history",
+    cls: "bg-amber-100 text-amber-800",
+    hint: "Too little longitudinal evidence to classify — data gap, not risk",
+  },
+};
+
+function caseState(c: { history_state?: string | null; completeness?: number | null; priority: string }): CaseState {
+  const history = c.history_state ?? "none";
+  const completeness = c.completeness ?? 0;
+  if (history !== "adequate" || completeness < 0.4) return "insufficient_history";
+  return c.priority as ReviewBand;
+}
+
+/** Fair sort: evidence-supported cases first (adequate history), then partial,
+ *  then none; within each tier the index descends. A zero-history worker is
+ *  never sorted above a well-evidenced case. */
+const HISTORY_RANK: Record<string, number> = { adequate: 0, partial: 1, none: 2 };
+
+function caseSortKey(c: { history_state?: string | null; index: number }): { tier: number; index: number } {
+  return { tier: HISTORY_RANK[c.history_state ?? "none"] ?? 2, index: c.index };
+}
+
+/** Deterministic predictive-model readiness — an honest statement about what
+ *  the review index can and cannot do. Readiness is never claimed without
+ *  adequate longitudinal history + a labeled outcome baseline. */
+function modelReadiness(d: {
+  history_state?: string | null;
+  data_completeness?: number;
+  freshness?: { months_since_latest?: number | null; stale?: boolean };
+}): { level: "not_ready" | "provisional" | "heuristic_only"; note: string } {
+  const history = d.history_state ?? "none";
+  const completeness = d.data_completeness ?? 0;
+  if (history === "none") {
+    return { level: "not_ready", note: "No longitudinal observation history exists. The index reflects profile snapshots only and cannot be treated as a risk signal." };
+  }
+  if (history === "partial" || completeness < 0.6) {
+    return { level: "not_ready", note: `Observation history is incomplete (${Math.round(completeness * 100)}% complete, ${history} history). Not enough evidence to classify a review priority — treat as a data gap.` };
+  }
+  if (d.freshness?.stale) {
+    return { level: "not_ready", note: `Observations are stale (${d.freshness.months_since_latest} months). The index is outdated and not review-ready.` };
+  }
+  return { level: "heuristic_only", note: "Evidence is adequate to review — but this remains a documented heuristic composite, never a calibrated prediction. No validated predictive (attrition) model exists." };
+}
+
+const MODEL_READINESS_META = {
+  not_ready: { label: "Not review-ready", cls: "bg-amber-100 text-amber-800" },
+  provisional: { label: "Provisional", cls: "bg-accent text-foreground" },
+  heuristic_only: { label: "Heuristic only", cls: "bg-secondary text-white" },
+} as const;
 
 const CONFIDENCE_CLS: Record<string, string> = {
   high: "bg-secondary text-white",
@@ -161,6 +221,7 @@ export default function WorkforceReview() {
   const [q, setQ] = useState("");
   const [deptFilter, setDeptFilter] = useState("all");
   const [bandFilter, setBandFilter] = useState<"all" | ReviewBand>("all");
+  const [historyFilter, setHistoryFilter] = useState<"all" | "adequate" | "insufficient">("all");
   const [completenessFilter, setCompletenessFilter] = useState<"all" | "50" | "75">("all");
   const [periodFilter, setPeriodFilter] = useState<string>("all");
 
@@ -190,12 +251,23 @@ export default function WorkforceReview() {
 
   const filteredCases = useMemo(() => {
     const text = q.trim().toLowerCase();
-    return cases.filter((c) => {
+    const filtered = cases.filter((c) => {
       if (text && !c.name.toLowerCase().includes(text)) return false;
       if (deptFilter !== "all" && (members.data?.get(c.twin_id) ?? "—") !== deptFilter) return false;
+      const state = caseState(c);
+      if (historyFilter === "adequate" && state === "insufficient_history") return false;
+      if (historyFilter === "insufficient" && state !== "insufficient_history") return false;
       return true;
     });
-  }, [cases, q, deptFilter, members.data]);
+    // Fair sort: evidence-supported cases first (adequate history), then
+    // partial, then none — never a zero-history worker above a well-evidenced case.
+    return [...filtered].sort((a, b) => {
+      const ka = caseSortKey(a);
+      const kb = caseSortKey(b);
+      if (ka.tier !== kb.tier) return ka.tier - kb.tier;
+      return kb.index - ka.index;
+    });
+  }, [cases, q, deptFilter, members.data, historyFilter]);
 
   const departments = useMemo(() => {
     const seen = new Set<string>();
@@ -390,6 +462,16 @@ export default function WorkforceReview() {
                 ))}
               </select>
               <select
+                value={historyFilter}
+                onChange={(e) => setHistoryFilter(e.target.value as "all" | "adequate" | "insufficient")}
+                aria-label="Filter by evidence history"
+                className="h-9 rounded-md border border-border bg-white px-2 text-sm font-medium text-foreground focus:border-primary focus:outline-none"
+              >
+                <option value="all">Any history</option>
+                <option value="adequate">Adequate history only</option>
+                <option value="insufficient">Insufficient history</option>
+              </select>
+              <select
                 value={completenessFilter}
                 onChange={(e) => setCompletenessFilter(e.target.value as "all" | "50" | "75")}
                 aria-label="Filter by data completeness"
@@ -418,7 +500,10 @@ export default function WorkforceReview() {
             </div>
             <ul ref={caseListRef} className="max-h-72 divide-y divide-border overflow-y-auto">
               {filteredCases.map((c) => {
-                const gaugeCls = c.priority === "high" || c.priority === "review" ? "bg-destructive" : c.priority === "medium" ? "bg-accent" : "bg-secondary";
+                const state = caseState(c);
+                const meta = CASE_STATE_META[state];
+                const insufficient = state === "insufficient_history";
+                const gaugeCls = insufficient ? "bg-amber-400" : c.priority === "high" || c.priority === "review" ? "bg-destructive" : c.priority === "medium" ? "bg-accent" : "bg-secondary";
                 const dept = members.data?.get(c.twin_id) ?? "—";
                 return (
                   <li key={c.twin_id} data-case={c.twin_id}>
@@ -436,9 +521,12 @@ export default function WorkforceReview() {
                         </p>
                       </div>
                       <div className="flex shrink-0 items-center gap-2">
-                        {c.history_state === "none" && (
-                          <span className="rounded-md bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-700" title="Zero longitudinal observation history">
-                            no history
+                        {insufficient && (
+                          <span
+                            className="rounded-md bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-700"
+                            title="Separate state — missing data is not risk; this case is not classified as a normal HIGH/REVIEW band"
+                          >
+                            insufficient history
                           </span>
                         )}
                         {c.seeking_growth && (
@@ -446,14 +534,17 @@ export default function WorkforceReview() {
                             <TrendingUp className="h-3 w-3" /> growth interest
                           </span>
                         )}
-                        <span className={`rounded-md px-2.5 py-1 text-xs font-bold uppercase tracking-wider ${PRIORITY_CLS[c.priority] ?? "bg-muted text-foreground"}`}>
-                          {c.priority}
+                        <span
+                          className={`rounded-md px-2.5 py-1 text-xs font-bold uppercase tracking-wider ${meta.cls}`}
+                          title={meta.hint}
+                        >
+                          {meta.label}
                         </span>
                         <div className="flex w-24 items-center gap-2">
                           <span className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
-                            <span className={`block h-full ${gaugeCls}`} style={{ width: `${c.index}%` }} />
+                            <span className={`block h-full ${gaugeCls}`} style={{ width: `${Math.min(100, c.index)}%` }} />
                           </span>
-                          <span className="w-12 text-right text-sm font-extrabold text-foreground">{c.index}</span>
+                          <span className={`w-12 text-right text-sm font-extrabold ${insufficient ? "text-amber-700" : "text-foreground"}`}>{c.index}</span>
                         </div>
                       </div>
                     </button>
@@ -467,13 +558,40 @@ export default function WorkforceReview() {
           </div>
         )}
 
-        {/* Master/detail: the list stays visible and the detail opens in a bounded
-          pane — no scroll-hunt below a long list. Mobile gets a near-full sheet. */}
-      <Dialog open={detailOpen} onOpenChange={(o) => { setDetailOpen(o); if (!o) setSelectedId(null); }}>
-        <DialogContent className="flex max-w-4xl max-h-[calc(100dvh-2rem)] flex-col p-0">
-          <div className="min-h-0 flex-1 overflow-y-auto p-6">
+        {/* Master/detail: the list stays visible; detail opens in a right-side
+          drawer (mobile: near-full sheet) with a sticky header + action footer. */}
+      {detailOpen && (
+        <>
+          <div
+            className="fixed inset-0 z-40 bg-black/50"
+            onClick={() => { setDetailOpen(false); setSelectedId(null); }}
+            aria-hidden="true"
+          />
+          <aside
+            role="dialog"
+            aria-modal="true"
+            aria-label="Review case detail"
+            className="fixed right-0 top-0 z-50 flex h-full w-full max-w-3xl flex-col bg-white shadow-2xl"
+          >
+            <header className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-border bg-white px-6 py-4">
+              <div className="min-w-0">
+                <p className="truncate text-base font-extrabold text-foreground">{selected?.name ?? "Employee"} — review case</p>
+                <p className="text-xs text-muted-foreground">
+                  Index {detail?.index ?? "…"}/100 · {CASE_STATE_META[detail ? caseState(detail) : "low"].label}
+                  {detail && caseState(detail) === "insufficient_history" ? " · insufficient history is a data gap, not risk" : ""}
+                </p>
+              </div>
+              <button
+                onClick={() => { setDetailOpen(false); setSelectedId(null); }}
+                className="rounded-md bg-muted px-3 py-1.5 text-xs font-bold text-foreground hover:bg-muted/70"
+                aria-label="Close case detail"
+              >
+                Close
+              </button>
+            </header>
+            <div className="min-h-0 flex-1 overflow-y-auto p-6">
       {/* Detail */}
-        <div className="mt-8 flex flex-col gap-6">
+        <div className="mt-2 flex flex-col gap-6">
           {caseQuery.isLoading || (isEmployee && !caseQuery.data) ? (
             <div className="flex items-center gap-3 rounded-lg bg-muted p-8 text-sm text-muted-foreground">
               <Loader2 className="h-5 w-5 animate-spin text-primary" /> Computing the review case…
@@ -510,8 +628,8 @@ export default function WorkforceReview() {
                   <div>
                     <p className="text-xs font-bold uppercase tracking-wider text-white/60">Workforce Review Index</p>
                     <p className="mt-1 text-4xl font-extrabold tracking-tight">{detail.index}/100</p>
-                    <span className={`mt-2 inline-block rounded-md px-2.5 py-1 text-xs font-bold uppercase tracking-wider ${PRIORITY_CLS[detail.priority] ?? "bg-muted text-foreground"}`}>
-                      Review priority: {detail.priority}
+                    <span className={`mt-2 inline-block rounded-md px-2.5 py-1 text-xs font-bold uppercase tracking-wider ${CASE_STATE_META[caseState(detail)].cls}`} title={CASE_STATE_META[caseState(detail)].hint}>
+                      {caseState(detail) === "insufficient_history" ? "Insufficient history" : `Review ${detail.priority}`}
                     </span>
                   </div>
                   <div className="flex flex-col items-end gap-2 text-sm text-white/80">
@@ -549,6 +667,23 @@ export default function WorkforceReview() {
                   data gaps (shown above), never poor performance.
                 </p>
               </div>
+
+              {/* Predictive model readiness — honest, deterministic */}
+              {(() => {
+                const mr = modelReadiness(detail);
+                const mm = MODEL_READINESS_META[mr.level];
+                return (
+                  <div className="rounded-lg bg-foreground p-4 text-white">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-wider text-white/60">
+                        <Cpu className="h-4 w-4" /> Predictive model readiness
+                      </p>
+                      <span className={`rounded-md px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider ${mm.cls}`}>{mm.label}</span>
+                    </div>
+                    <p className="mt-2 text-xs leading-relaxed text-white/85">{mr.note}</p>
+                  </div>
+                );
+              })()}
 
               {/* Why a conversation is suggested */}
               {detail.case_rationale.length > 0 && (
@@ -634,16 +769,13 @@ export default function WorkforceReview() {
                 </div>
               </div>
 
-              {/* Reviewer actions (dismiss/defer) */}
+              {/* Reviewer actions (dismiss/defer) — trigger lives in the sticky footer */}
               {isReviewer && (
                 <div className="rounded-lg bg-white p-5">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <h3 className="flex items-center gap-2 text-sm font-extrabold uppercase tracking-wider text-foreground">
-                      <CalendarClock className="h-4 w-4 text-primary" /> Reviewer action
+                      <CalendarClock className="h-4 w-4 text-primary" /> Reviewer actions on record
                     </h3>
-                    <Button size="sm" onClick={() => { setActionKind("deferred"); setActionOpen(true); }}>
-                      <ThumbsDown className="h-4 w-4" /> Dismiss / defer case
-                    </Button>
                   </div>
                   {(detail.actions ?? []).length > 0 && (
                     <ul className="mt-3 flex flex-col gap-1.5">
@@ -888,9 +1020,20 @@ export default function WorkforceReview() {
             </>
           )}
         </div>
-      </div>
-      </DialogContent>
-    </Dialog>
+        </div>
+            {isReviewer && detail && (
+              <footer className="sticky bottom-0 z-10 flex flex-wrap items-center justify-between gap-3 border-t border-border bg-white px-6 py-3">
+                <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                  <Info className="h-3.5 w-3.5 shrink-0" /> Actions are tracked; later observation changes are labeled observed-after, never causation.
+                </p>
+                <Button size="sm" onClick={() => { setActionKind("deferred"); setActionOpen(true); }}>
+                  <ThumbsDown className="h-4 w-4" /> Dismiss / defer case
+                </Button>
+              </footer>
+            )}
+          </aside>
+        </>
+      )}
     </div>
 
       {/* Dismiss / defer dialog */}

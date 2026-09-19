@@ -84,6 +84,29 @@ const TYPE_ICON: Record<PlanTaskView["task_type"], typeof GraduationCap> = {
   onboarding_admin: FileCheck2,
 };
 
+/**
+ * Semantic badge — derived from task type (+ owner), NEVER a blanket "security
+ * requirement". Payroll/orientation admin tasks are administrative setup, not
+ * security controls.
+ */
+function taskCategory(task: { task_type: PlanTaskView["task_type"]; owner_role: PlanTaskView["owner_role"] }): { label: string; cls: string } {
+  if (task.task_type === "provisioning") return { label: "Administrative setup", cls: "bg-muted text-foreground" };
+  if (task.task_type === "onboarding_admin") {
+    return task.owner_role === "manager"
+      ? { label: "Manager orientation", cls: "bg-accent text-foreground" }
+      : { label: "Administrative setup", cls: "bg-muted text-foreground" };
+  }
+  if (task.task_type === "access") return { label: "Access provisioning", cls: "bg-secondary text-white" };
+  if (task.task_type === "policy") return { label: "Security control", cls: "bg-destructive/10 text-destructive" };
+  if (task.task_type === "learning") {
+    return task.owner_role === "manager"
+      ? { label: "Manager orientation", cls: "bg-accent text-foreground" }
+      : { label: "Role capability", cls: "bg-primary/10 text-primary" };
+  }
+  if (task.task_type === "verification") return { label: "Role capability", cls: "bg-primary/10 text-primary" };
+  return { label: "Task", cls: "bg-muted text-foreground" };
+}
+
 function fmt(d: string | null | undefined) {
   if (!d) return "—";
   const t = new Date(d);
@@ -224,9 +247,12 @@ function TaskCard({
               </span>
               {task.non_waivable && (
                 <span className="rounded bg-destructive/10 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-destructive">
-                  Mandatory Security Requirement
+                  Non-waivable
                 </span>
               )}
+              <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${taskCategory(task).cls}`}>
+                {taskCategory(task).label}
+              </span>
             </div>
           </div>
         </div>
@@ -434,7 +460,7 @@ function TaskCard({
             <DialogTitle>Waive: {task.title}</DialogTitle>
             <DialogDescription>
               {task.non_waivable
-                ? "This is a mandatory security requirement — an HR Executive waiver with a policy basis and reason is required."
+                ? `This task is a non-waivable ${taskCategory(task).label.toLowerCase()} requirement — an HR Executive waiver with a policy basis and reason is required.`
                 : "A reason is required. A policy basis citation is recommended."}
             </DialogDescription>
           </DialogHeader>

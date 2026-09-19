@@ -264,16 +264,12 @@ Deno.serve(async (req) => {
           target: { type: "requisition", id: req.id, title: req.title },
           scenario: "future",
         });
-        const cls = fit.classification;
-        const direct = cls.direct.find((i) => i.skill.toLowerCase() === fs.skill.toLowerCase());
-        if (direct) {
-          const p = direct.candidate_proficiency ?? 0;
+        const item = fit.scoring.requirements.find((i) => i.skill.toLowerCase() === fs.skill.toLowerCase());
+        if (item && item.relationship === "direct") {
+          const p = item.candidate_proficiency ?? 0;
           if (p >= fs.target_proficiency) buckets.ready += 1;
           else buckets.below_target += 1;
-        } else if (
-          cls.adjacent.some((i) => i.skill.toLowerCase() === fs.skill.toLowerCase()) ||
-          cls.transferable.some((i) => i.skill.toLowerCase() === fs.skill.toLowerCase())
-        ) {
+        } else if (item && (item.relationship === "adjacent" || item.relationship === "transferable")) {
           buckets.adjacent_support += 1;
         } else if (claimsByTwin.get(twin.id)?.has(fs.skill.toLowerCase()) || claimsByTwin.get(twin.id)?.has(fs.skill)) {
           buckets.insufficient_evidence += 1;

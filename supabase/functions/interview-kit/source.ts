@@ -133,7 +133,7 @@ Deno.serve(async (req) => {
   }
 
   // 2) Fit card (persisted) — reuse the Skill Graph output to bias the probes.
-  const fits = (twin.computed_fits ?? []) as { target_id: string; scenario: string; score: number; classification: { adjacent: { skill: string }[]; transferable: { skill: string }[]; gaps: { skill: string }[] } }[];
+  const fits = (twin.computed_fits ?? []) as { target_id: string; scenario: string; score: number; classification: { adjacent_support: { skill: string }[]; transferable_foundation: { skill: string }[]; missing: { skill: string }[] } }[];
   let fit = fits.find((f) => f.target_id === reqId && f.scenario === "current");
   if (!fit) {
     const { data: graphRows } = await supabase
@@ -163,7 +163,7 @@ Deno.serve(async (req) => {
       .eq("id", twinId);
   }
 
-  const focusItems = [...(fit.classification.gaps ?? []), ...(fit.classification.adjacent ?? []), ...(fit.classification.transferable ?? [])].slice(0, 3);
+  const focusItems = [...(fit.classification.missing ?? []), ...(fit.classification.adjacent_support ?? []), ...(fit.classification.transferable_foundation ?? [])].slice(0, 3);
 
   // One 6.2 call, biased toward the candidate's top focus item from their Fit card.
   let biasedProbe: { competency: string; question: string; follow_up_probes: string[]; rubric: Record<string, string> } | null = null;

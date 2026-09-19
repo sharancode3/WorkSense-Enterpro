@@ -7,11 +7,14 @@ import {
   graphContentHash,
   personContextHash,
   requisitionContentHash,
+  resolveFutureRequirements,
   authorizeSkillMatch,
   DEFAULT_EVIDENCE_THRESHOLD,
+  evidenceDetailHash,
   type FitRecord,
+  type RequiredSkill,
 } from "../_shared/skill-graph-engine.ts";
-import { resolveEvidenceArtifacts, resolveLineage, resolveSkillClaims } from "../_shared/evidence.ts";
+import { resolveEvidenceArtifacts, resolveLineage, resolveSkillClaims, type AssertionRow, type EvidenceRow } from "../_shared/evidence.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -48,6 +51,39 @@ async function isTeamMember(supabase, rootTwinId: string, rootOrgId: string, che
     for (const c of children.get(cur) ?? []) stack.push(c);
   }
   return seen.has(checkTwinId);
+}
+
+/**
+ * Phase 9: per-requirement evidence detail for the engine — freshness of the
+ * newest supporting assertion and the source artifact key. Both feed the
+ * matrix and the fingerprint (via evidenceDetailHash on the raw lineage).
+ */
+function evidenceDetailFor(
+  assertions: AssertionRow[],
+  evidence: EvidenceRow[]
+): Record<string, { captured_at?: string | null; artifact_key?: string | null }> {
+  const evidenceById = new Map(evidence.map((e) => [e.id, e]));
+  const artifactKey = (e: EvidenceRow) =>
+    e.source_id ? `artifact:${e.source_type ?? "unknown"}|${e.source_id}` : `item:${e.id}`;
+  const out: Record<string, { captured_at?: string | null; artifact_key?: string | null }> = {};
+  for (const a of assertions) {
+    const name = (a.skill_name ?? "").trim();
+    if (!name) continue;
+    const firstEvidence = (a.evidence_ids ?? [])
+      .map((id) => evidenceById.get(id))
+      .filter((e): e is EvidenceRow => Boolean(e));
+    const newest = firstEvidence.length > 0
+      ? firstEvidence.reduce((acc, e) => (!acc || (e.captured_at ?? "") > (acc.captured_at ?? "") ? e : acc))
+      : undefined;
+    const key = name.toLowerCase();
+    const cur = out[key];
+    const candCaptured = newest?.captured_at ?? a.created_at ?? null;
+    const candArtifact = firstEvidence.length > 0 ? artifactKey(firstEvidence[0]) : null;
+    if (!cur || (candCaptured ?? "") > (cur.captured_at ?? "")) {
+      out[key] = { captured_at: candCaptured, artifact_key: candArtifact };
+    }
+  }
+  return out;
 }
 
 Deno.serve(async (req) => {
@@ -95,12 +131,6 @@ Deno.serve(async (req) => {
   }
 
   // Visibility (server-side; never decided on the client):
-  //   hr_executive  — authorized organization scope.
-  //   hr_partner    — authorized organization workforce scope (no candidates).
-  //   recruiter     — authorized candidates only.
-  //   manager       — self or permitted team member (same org).
-  //   employee      — self (same org).
-  //   everything else (IT, candidate callers, cross-org) — denied.
   const scope = authorizeSkillMatch({
     callerRole: caller.role,
     callerOrgId: caller.org_id,
@@ -127,19 +157,33 @@ Deno.serve(async (req) => {
     return jsonResponse({ error: "FORBIDDEN" }, 403);
   }
 
-  const requiredSkills = scenario === "future" ? reqRow.future_skills : reqRow.required_skills;
-  const requisitionVersion = requisitionContentHash(
-    reqRow.required_skills ?? [],
-    reqRow.future_skills ?? [],
-    reqRow.seniority_level ?? 3
-  );
+  const currentSkills = (reqRow.required_skills ?? []) as RequiredSkill[];
+  const futureSkills = (reqRow.future_skills ?? []) as RequiredSkill[];
+
+  // Phase 9: the future scenario evaluates the RESOLVED 12–24 month target
+  // (current still-relevant + additions + raised targets). Missing future
+  // definition is handled by the caller (page): no fit is produced.
+  const derivation = resolveFutureRequirements(currentSkills, futureSkills, []);
+  const requiredSkills =
+    scenario === "future" ? derivation.resolved : currentSkills;
+
+  // Phase 9: the requisition fingerprint covers the normalized current AND
+  // resolved-future sets (mandatory status, target, weight), plus seniority.
+  const requisitionVersion = requisitionContentHash({
+    current: currentSkills,
+    future: futureSkills,
+    resolvedFuture: derivation.resolved,
+    seniorityLevel: reqRow.seniority_level ?? 3,
+  });
 
   const claims = await resolveSkillClaims(supabase, { id: targetTwin.id, verified_skills: targetTwin.verified_skills });
+  const lineage = await resolveLineage(supabase, targetTwin.id);
   const artifacts = await resolveEvidenceArtifacts(supabase, targetTwin.id);
+  const evidenceDetail = evidenceDetailFor(lineage.assertions, lineage.evidence);
+  // Phase 9: evidence fingerprint covers assertion ids, review states,
+  // proficiency, artifact ids, captured_at/expiry.
+  const evidenceVersion = evidenceDetailHash(lineage);
 
-  // Batch E (E3): the full fingerprint — engine, claims (skills/proficiency/
-  // review state), requisition content + seniority, the graph relationships,
-  // and the person-level context (seniority + independent artifact count).
   const { data: graphRows, error: graphErr } = await supabase
     .from("skill_graph")
     .select("skill, category, outgoing_edges")
@@ -152,17 +196,17 @@ Deno.serve(async (req) => {
     claims.length
   );
   const current = {
-    engine: "2",
-    evidence: claimHash(claims),
+    engine: "3",
+    evidence: evidenceVersion,
     requisition: requisitionVersion,
     graph: graphVersion,
     context: contextVersion,
+    plan: "none",
   };
 
   // Cache: durable skill_fits row (atomic upsert => no concurrent
   // read-modify-write that could overwrite another stored result), with a
-  // legacy fallback to twin.computed_fits. Recompute only when missing, stale
-  // (engine / evidence / requisition / graph / context changed) or force.
+  // legacy fallback to twin.computed_fits.
   const { data: storedRows } = await supabase
     .from("skill_fits")
     .select("fit")
@@ -181,7 +225,6 @@ Deno.serve(async (req) => {
   const stale = fitIsStale(cached, current);
 
   if (cached && !body.force && !stale) {
-    const lineage = await resolveLineage(supabase, targetTwin.id);
     return jsonResponse({
       ok: true,
       cached: true,
@@ -197,18 +240,21 @@ Deno.serve(async (req) => {
   const fit = computeFit({
     candidateSkills: claims,
     candidateLevel: targetTwin.seniority_level ?? 3,
-    requiredSkills: requiredSkills ?? [],
+    requiredSkills,
     roleLevel: reqRow.seniority_level ?? 3,
     skillGraph: graphRows ?? [],
     target: { type: "requisition", id: reqRow.id, title: reqRow.title },
     scenario,
     computedAt: now,
     evidenceArtifactCount: artifacts.count,
+    evidenceDetail,
+    evidenceVersion,
     requisitionVersion,
+    planVersion: "none",
+    derivation: scenario === "future" ? derivation : undefined,
   });
 
-  // Durable write: atomic upsert — two concurrent recomputes for different
-  // targets both persist; nothing is lost (no read-modify-write on an array).
+  // Durable write: atomic upsert.
   const { error: upErr } = await supabase
     .from("skill_fits")
     .upsert(
@@ -225,8 +271,7 @@ Deno.serve(async (req) => {
     );
   if (upErr) throw upErr;
 
-  // Best-effort legacy mirror into twin.computed_fits (same key replaced,
-  // other keys preserved). The durable source of truth is skill_fits.
+  // Best-effort legacy mirror into twin.computed_fits.
   const key = fitKey(fit);
   const nextFits = fits.filter((f) => fitKey(f) !== key).concat(fit);
   const nextAudit = [
@@ -234,7 +279,7 @@ Deno.serve(async (req) => {
     {
       actor: caller.email ?? uid,
       action: scenario === "future" ? "match_future_computed" : "match_computed",
-      note: `Match vs ${reqRow.title} (${scenario}): ${fit.score.toFixed(3)} — engine v${fit.versions?.engine}, evidence ${fit.versions?.evidence ?? "?"}, requisition ${fit.versions?.requisition ?? "?"}.`,
+      note: `Match vs ${reqRow.title} (${scenario}): verified ${fit.score.toFixed(3)} · profile ${fit.profile_match.toFixed(3)} — engine v${fit.versions?.engine}, evidence ${fit.versions?.evidence ?? "?"}, requisition ${fit.versions?.requisition ?? "?"}.`,
       timestamp: now,
     },
   ];
@@ -243,7 +288,6 @@ Deno.serve(async (req) => {
     .update({ computed_fits: nextFits, audit_events: nextAudit })
     .eq("id", targetTwin.id);
 
-  const lineage = await resolveLineage(supabase, targetTwin.id);
   return jsonResponse({
     ok: true,
     cached: false,

@@ -172,8 +172,9 @@ export function scanForRecommendations(inputs: ScanInputs): RecCandidate[] {
           target: { type: "requisition", id: req.id, title: req.title },
           scenario: "current",
         });
-        const soft = fit.classification.adjacent.length + fit.classification.transferable.length;
-        const direct = fit.classification.direct.length;
+        const soft =
+          fit.classification.adjacent_support.length + fit.classification.transferable_foundation.length;
+        const direct = fit.classification.verified_direct.length + fit.classification.provisional_direct.length + fit.classification.below_target.length;
         const total = (req.required_skills ?? []).length;
         const covered = direct + soft;
         const covered_ratio = total > 0 ? covered / total : 0;

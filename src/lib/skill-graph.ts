@@ -2,15 +2,37 @@ import { supabase } from "@/integrations/supabase/client";
 
 // Frontend mirror of the engine's FitRecord shape (persisted in
 // digital_twins.computed_fits[] and returned by the skill-match function).
-export type FitClassification = "direct" | "adjacent" | "transferable" | "gap";
+// Phase 9: requirement-centered scoring — see skill-graph-engine.ts.
+
+export type FitClassification =
+  | "verified_direct"
+  | "provisional_direct"
+  | "below_target"
+  | "adjacent_support"
+  | "transferable_foundation"
+  | "missing";
+
+export type FitRelationship = "direct" | "adjacent" | "transferable" | "none";
 
 export interface FitItem {
   skill: string;
   classification: FitClassification;
+  relationship: FitRelationship;
+  mandatory: boolean;
   required_proficiency: number;
   candidate_proficiency: number | null;
-  edge: { from_skill: string; type: string; weight: number } | null;
+  effective_proficiency: number;
+  gap: number;
+  evidence_state: string | null;
+  evidence_source: string | null;
+  freshness_days: number | null;
+  evidence_factor: number;
+  verified_contribution: number | null;
   contribution: number | null;
+  verified: boolean;
+  provisional: boolean;
+  next_action: string;
+  edge: { from_skill: string; type: string; weight: number } | null;
   reason: string;
   limitation?: string | null;
 }
@@ -20,20 +42,37 @@ export interface FitRecord {
   target_id: string;
   target_title: string;
   scenario: "current" | "future";
+  /** Verified readiness — accepted independent evidence only. */
   score: number;
-  sections: {
-    direct: { value: number; items: FitItem[] };
-    adjacent: { value: number; items: FitItem[] };
-    evidence: { value: number; artifact_count: number; threshold: number };
-    seniority: { value: number; candidate_level: number; role_level: number };
+  /** Provisional profile match — all live claims, evidence-attenuated. */
+  profile_match: number;
+  /** Weighted mean evidence factor over contributing requirements. */
+  evidence_confidence: number;
+  mandatory_gate: {
+    met: boolean;
+    unmet_skills: string[];
+    count: number;
+    note: string;
   };
-  classification: {
-    direct: FitItem[];
-    adjacent: FitItem[];
-    transferable: FitItem[];
-    gaps: FitItem[];
+  contextual_alignment: {
+    candidate_level: number;
+    role_level: number;
+    note: string;
   };
-  versions?: { engine: string; evidence: string; requisition: string; graph?: string; context?: string };
+  scoring: {
+    requirements: FitItem[];
+    mandatory: { count: number; met: number; unmet: number; unmet_skills: string[]; gated: boolean; readiness: number | null };
+    preferred: { count: number; readiness: number | null } | null;
+    verified: { readiness: number };
+    provisional: { readiness: number };
+    confidence: number;
+    group_weights: { mandatory: number; preferred: number };
+    evidence_artifacts: { count: number; threshold: number };
+    resolved_from: "current" | "resolved-future";
+    derivation?: { kept: string[]; added: string[]; raised: string[]; obsolete: string[] };
+  };
+  classification: Record<FitClassification, FitItem[]>;
+  versions?: { engine: string; evidence: string; requisition: string; graph?: string; context?: string; plan?: string };
   assumptions?: { horizon: string; note: string };
   computed_at: string;
 }
@@ -99,6 +138,4 @@ export function fitBand(score: number): "high" | "mid" | "low" {
   return "low";
 }
 
-// Batch E (E1/E2): pure helpers live in a client-free module (unit-testable);
-// re-exported here so the page keeps a single import path.
-export { coverageBreakdown, futureRequirementDiff, projectedFutureReadiness } from "./skill-graph-metrics";
+export { coverageBreakdown, futureRequirementDiff, resolvedFutureRequirements, developmentForecast } from "./skill-graph-metrics";

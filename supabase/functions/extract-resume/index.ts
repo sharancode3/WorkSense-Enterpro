@@ -8,17 +8,48 @@
 // into digital_twins.computed_fits[] and, for skill-match, the durable
 // skill_fits table.
 //
-// Phase 8: every fit is versioned against the engine, the person's evidence
-// and the requisition content; cached results are marked stale when any of
-// them change. Adjacency and transferable support carry explicit limitations
-// (never direct equivalence). The evidence section counts DISTINCT artifacts,
-// not skill assertions.
+// Phase 9 (audit rework, engine v3): the score is REQUIREMENT-CENTERED and
+// EVIDENCE-CONDITIONED. Every point comes from a requirement being satisfied
+// (direct or accepted-adjacent). There is NO global evidence-count component
+// and NO seniority component — unrelated evidence or a seniority match can
+// never manufacture match points. Evidence quality is an *attenuation factor*
+// on each requirement's contribution, and the person's evidence base is
+// reported separately (confidence + artifact count) instead of being folded
+// into the score.
+//
+// Two numbers are computed from the same requirement loop:
+//   score            = "verified readiness"  — accepted independent evidence
+//                      only (reviewer_confirmed / assessment_supported).
+//   profile_match    = "provisional profile match" — all live claims, each
+//                      attenuated by the evidence factor of its review state.
+//
+// Mandatory requirements are normalized in their own section and gated: if a
+// mandatory requirement has no accepted evidence, mandatory_gate is unmet and
+// the readiness is flagged (an unmet mandatory can never raise the number it
+// is gated on). Preferred requirements are normalized separately.
 // ---------------------------------------------------------------------------
 
 export type VerificationRigor = "low" | "medium" | "high";
 
 /** Bump when the scoring semantics change — stale cached fits are recomputed. */
-export const ENGINE_VERSION = "2";
+export const ENGINE_VERSION = "3";
+
+/** Evidence factor by assertion state: how much of a claim's contribution
+ *  counts toward the *provisional* profile match. Verified readiness only
+ *  accepts the two reviewed states (factor 1). */
+export const EVIDENCE_FACTOR: Record<string, number> = {
+  reviewer_confirmed: 1,
+  assessment_supported: 0.85,
+  extracted: 0.5,
+  claimed: 0.4,
+  // invalidated states never score (expired/disputed/superseded) — factor 0
+  expired: 0,
+  disputed: 0,
+  superseded: 0,
+};
+
+/** States treated as accepted, independent evidence. */
+export const ACCEPTED_STATES = new Set(["reviewer_confirmed", "assessment_supported"]);
 
 export interface SkillClaim {
   name: string;
@@ -44,53 +75,120 @@ export interface GraphSkill {
 export interface RequiredSkill {
   skill: string;
   target_proficiency: number;
+  /** Default true. Preferred criteria are normalized in their own section. */
+  mandatory?: boolean;
+  /** Optional explicit weight; otherwise normalized equally within the group. */
+  criterion_weight?: number;
+  /** Explicitly obsolete — removed from the resolved future target. */
+  obsolete?: boolean;
 }
 
-export type Classification = "direct" | "adjacent" | "transferable" | "gap";
+/**
+ * Phase 9: six honest support classifications.
+ *  - verified_direct       direct evidence, accepted, at/above target
+ *  - provisional_direct    direct evidence, NOT accepted, at/above target
+ *  - below_target          direct evidence exists but below the target bar
+ *  - adjacent_support      no direct skill; a real ADJACENT_TO edge from a claim
+ *  - transferable_foundation  weakest signal: no proficiency, development only
+ *  - missing               no direct, adjacent, or transferable path
+ */
+export type Classification =
+  | "verified_direct"
+  | "provisional_direct"
+  | "below_target"
+  | "adjacent_support"
+  | "transferable_foundation"
+  | "missing";
+
+export type Relationship = "direct" | "adjacent" | "transferable" | "none";
 
 export interface FitItem {
   skill: string;
   classification: Classification;
+  relationship: Relationship;
+  mandatory: boolean;
   required_proficiency: number;
+  /** Observed level (direct claim, or the supporting claim for adjacent). */
   candidate_proficiency: number | null;
-  edge: { from_skill: string; type: EdgeType; weight: number } | null;
+  /** The level credit actually applied toward the requirement (0 when none). */
+  effective_proficiency: number;
+  /** Target minus effective credit, floored at 0. */
+  gap: number;
+  /** Direct acceptance state of the best supporting assertion (null = none). */
+  evidence_state: string | null;
+  /** Source artifact key or evidence source behind the best supporting claim. */
+  evidence_source: string | null;
+  /** Age in days of the newest supporting assertion (null = unknown). */
+  freshness_days: number | null;
+  /** Evidence factor (0-1) attenuating the provisional credit. */
+  evidence_factor: number;
+  /** Verified credit (0-1): accepted direct ratio or accepted-adjacent value. */
+  verified_contribution: number | null;
+  /** Provisional credit (0-1): full credit attenuated by evidence factor. */
   contribution: number | null;
+  /** Counts toward verified readiness. */
+  verified: boolean;
+  /** Counts toward the provisional profile match. */
+  provisional: boolean;
+  /** Deterministic next action for this requirement. */
+  next_action: string;
+  edge: { from_skill: string; type: EdgeType; weight: number } | null;
   reason: string;
-  /** Phase 8: honest limitation of this classification (never equivalence).
-   *  Optional so legacy generated fits remain valid. */
+  /** Honest limitation of this classification (never equivalence). */
   limitation?: string | null;
 }
+
+/** One row of the requirement-by-requirement matrix. */
+export type RequirementScore = FitItem;
 
 export interface FitRecord {
   target_type: "requisition";
   target_id: string;
   target_title: string;
   scenario: "current" | "future";
+  /** Verified readiness (0-1, 3dp) — today's accepted evidence vs the
+   *  requirement set this scenario evaluates. */
   score: number;
-  sections: {
-    direct: { value: number; items: FitItem[] };
-    adjacent: { value: number; items: FitItem[] };
-    evidence: { value: number; artifact_count: number; threshold: number };
-    seniority: { value: number; candidate_level: number; role_level: number };
+  /** Provisional profile match (0-1, 3dp) — all live claims, attenuated. */
+  profile_match: number;
+  /** Weighted mean evidence factor over contributing requirements (0-1). */
+  evidence_confidence: number;
+  /** Mandatory gate: met only when every mandatory requirement has a
+   *  non-zero verified contribution. */
+  mandatory_gate: {
+    met: boolean;
+    unmet_skills: string[];
+    count: number;
+    note: string;
   };
-  classification: {
-    direct: FitItem[];
-    adjacent: FitItem[];
-    transferable: FitItem[];
-    gaps: FitItem[];
+  /** Seniority is informational context, never part of the score. */
+  contextual_alignment: {
+    candidate_level: number;
+    role_level: number;
+    note: string;
   };
-  /** Phase 8 / Batch E: what the fit is versioned against (stale detection).
-   *  Optional so legacy generated fits remain valid; missing versions are
-   *  treated as stale. graph + context were added in Batch E — fits computed
-   *  before them are recomputed once. */
+  scoring: {
+    requirements: RequirementScore[];
+    mandatory: { count: number; met: number; unmet: number; unmet_skills: string[]; gated: boolean; readiness: number | null };
+    preferred: { count: number; readiness: number | null } | null;
+    verified: { readiness: number };
+    provisional: { readiness: number };
+    confidence: number;
+    group_weights: { mandatory: number; preferred: number };
+    evidence_artifacts: { count: number; threshold: number };
+    resolved_from: "current" | "resolved-future";
+    /** For the future scenario: how the evaluated set was derived. */
+    derivation?: { kept: string[]; added: string[]; raised: string[]; obsolete: string[] };
+  };
+  classification: Record<Classification, FitItem[]>;
   versions?: {
     engine: string;
     evidence: string;
     requisition: string;
     graph?: string;
     context?: string;
+    plan?: string;
   };
-  /** Phase 8: named horizon + assumption the fit was computed under. */
   assumptions?: {
     horizon: string;
     note: string;
@@ -98,14 +196,15 @@ export interface FitRecord {
   computed_at: string;
 }
 
-// Validated weights — do not change.
-export const MATCH_WEIGHTS = {
-  direct: 0.5,
-  adjacent: 0.25,
-  evidence: 0.15,
-  seniority: 0.1,
+/** Group weights between the mandatory and preferred sections. Within each
+ *  section, requirements are normalized by count (or their criterion_weight). */
+export const GROUP_WEIGHTS = {
+  mandatory: 0.7,
+  preferred: 0.3,
 } as const;
 
+/** Informational only (artifact count / evidence confidence) — this is NOT a
+ *  score component anymore. Kept for display of the evidence base. */
 export const DEFAULT_EVIDENCE_THRESHOLD = 5;
 
 const norm = (s: string) => s.trim().toLowerCase();
@@ -124,6 +223,7 @@ export function findEdge(
 }
 
 const round3 = (n: number) => Math.round(n * 1000) / 1000;
+const mean = (xs: number[]) => (xs.length === 0 ? 0 : xs.reduce((a, b) => a + b, 0) / xs.length);
 
 /** Deterministic FNV-1a hex (uniquely named to avoid bundle collisions). */
 export function graphFnv1aHex(str: string): string {
@@ -135,31 +235,64 @@ export function graphFnv1aHex(str: string): string {
   return (h >>> 0).toString(16).padStart(8, "0");
 }
 
-/** Version hash over the requisition's skill content (phase 8 stale check). */
-export function requisitionContentHash(
-  requiredSkills: RequiredSkill[],
-  futureSkills: RequiredSkill[],
-  seniorityLevel: number
-): string {
+/**
+ * Version hash over the requisition's skill content. Phase 9: covers the
+ * normalized current set, the resolved future set, mandatory/preferred status,
+ * target proficiency, criterion weight, seniority target and obsolete list —
+ * any change invalidates cached fits.
+ */
+export function requisitionContentHash(params: {
+  current: RequiredSkill[];
+  future: RequiredSkill[];
+  resolvedFuture: RequiredSkill[];
+  seniorityLevel: number;
+  obsolete?: RequiredSkill[];
+}): string {
+  const line = (s: RequiredSkill, tag: string) =>
+    `${tag}:${norm(s.skill)}|t${s.target_proficiency}|m${s.mandatory === false ? 0 : 1}|w${s.criterion_weight ?? ""}`;
   const payload = [
-    ...(requiredSkills ?? []).map((s) => `${s.skill}|${s.target_proficiency}`).sort(),
-    ...(futureSkills ?? []).map((s) => `future:${s.skill}|${s.target_proficiency}`).sort(),
-    `level:${seniorityLevel}`,
+    ...(params.current ?? []).map((s) => line(s, "cur")).sort(),
+    ...(params.future ?? []).map((s) => line(s, "fut")).sort(),
+    ...(params.resolvedFuture ?? []).map((s) => line(s, "res")).sort(),
+    ...(params.obsolete ?? []).map((s) => line(s, "obs")).sort(),
+    `level:${params.seniorityLevel}`,
   ].join(";");
   return graphFnv1aHex(payload);
 }
 
-/** Version hash over the person's resolved skill claims (evidence version). */
+/** Version hash over the person's resolved skill claims. */
 export function claimHash(claims: SkillClaim[]): string {
   const payload = (claims ?? [])
-    .map((c) => `${c.name}|${c.proficiency}|${c.evidence_source}|${c.verification_rigor}`)
+    .map((c) => `${norm(c.name)}|${c.proficiency}|${c.evidence_source}|${c.verification_rigor}`)
     .sort()
     .join(";");
   return graphFnv1aHex(payload);
 }
 
-/** Batch E (E3): version hash over the whole graph (nodes + typed edges), so a
- *  taxonomy change invalidates fits that relied on those edges. */
+/**
+ * Phase 9: the full evidence fingerprint. Covers assertion ids, review states,
+ * effective proficiency, evidence ids, artifact keys and captured_at/expiry —
+ * so accepting, correcting, rejecting, expiring or replacing any assertion or
+ * artifact invalidates every cached fit that depended on it.
+ */
+export function evidenceDetailHash(lineage: {
+  assertions: { id: string; skill_id?: string; claimed_proficiency: number; review_state: string; evidence_ids?: string[]; created_at?: string }[];
+  evidence: { id: string; source_type?: string | null; source_id?: string | null; captured_at?: string | null; review_state?: string }[];
+}): string {
+  const artifactKey = (e: { source_type?: string | null; source_id?: string | null; id: string }) =>
+    e.source_id ? `artifact:${e.source_type ?? "unknown"}|${e.source_id}` : `item:${e.id}`;
+  const parts = [
+    ...(lineage.assertions ?? []).map((a) =>
+      `a:${a.id}|s${a.skill_id ?? ""}|p${a.claimed_proficiency}|r${a.review_state}|e[${(a.evidence_ids ?? []).sort().join(",")}]|c${a.created_at ?? ""}`
+    ),
+    ...(lineage.evidence ?? []).map((e) =>
+      `ev:${e.id}|k${artifactKey(e)}|c${e.captured_at ?? ""}|r${e.review_state ?? ""}`
+    ),
+  ].sort();
+  return graphFnv1aHex(parts.join(";"));
+}
+
+/** Version hash over the whole graph (nodes + typed edges). */
 export function graphContentHash(
   graph: { skill: string; outgoing_edges: { target_skill: string; type: string; weight: number }[] }[]
 ): string {
@@ -173,36 +306,304 @@ export function graphContentHash(
   return graphFnv1aHex(payload);
 }
 
-/** Batch E (E3): person-level context that changes the score but is not part
- *  of the claim set — seniority and the number of independent evidence
- *  artifacts behind the claims. */
+/** Person-level context that affects the *display* (contextual alignment,
+ *  evidence base) — not the score itself. Kept in the fingerprint so the
+ *  cached result is recomputed when this context changes. */
 export function personContextHash(candidateLevel: number, evidenceArtifactCount: number | undefined, claimCount: number): string {
   const artifacts = evidenceArtifactCount !== undefined ? evidenceArtifactCount : claimCount;
   return graphFnv1aHex(`level:${candidateLevel}|artifacts:${artifacts}`);
 }
 
-/** Phase 8 / Batch E: a cached fit is stale when the engine, the person's
- *  evidence, the requisition content, the skill graph, or the person-level
- *  context (seniority / evidence artifact count) changed since it was
- *  computed. */
 export function fitIsStale(
   fit: FitRecord | null,
-  current: { engine: string; evidence: string; requisition: string; graph?: string; context?: string }
+  current: { engine: string; evidence: string; requisition: string; graph?: string; context?: string; plan?: string }
 ): boolean {
   if (!fit) return true;
   const v = fit.versions;
   if (!v) return true; // pre-version fits are always stale
   if (v.engine !== current.engine || v.evidence !== current.evidence || v.requisition !== current.requisition) return true;
-  // Batch E: legacy fits lack graph/context fingerprints -> stale once.
   if (current.graph !== undefined && (v.graph ?? undefined) !== current.graph) return true;
   if (current.context !== undefined && (v.context ?? undefined) !== current.context) return true;
+  if (current.plan !== undefined && (v.plan ?? "none") !== current.plan) return true;
   return false;
 }
 
 const HORIZON_LABEL: Record<string, string> = {
-  current: "Current requirements — as recorded on the requisition today.",
-  future: "12–24 month outlook — derived from the requisition's future_skills. Assumption: these skills are the expected demand; edit the requisition to change them.",
+  current: "Current requirements — as recorded on the requisition today. Verified readiness answers: how much of today's requirement is already backed by accepted evidence?",
+  future: "Resolved 12–24 month target — today's still-relevant requirements plus future additions, with raised targets applied. Verified readiness answers: how much of the future target is already backed by accepted evidence TODAY (no assumed learning)?",
 };
+
+/** Map a claim's evidence_source/rigor to {accepted, factor, state}. */
+function evidenceMeta(source: string, rigor: VerificationRigor): { accepted: boolean; factor: number; state: string } {
+  const s = (source ?? "").toLowerCase();
+  if (s === "evidence_review") return { accepted: true, factor: EVIDENCE_FACTOR.reviewer_confirmed, state: "reviewer_confirmed" };
+  if (s === "assessment") return { accepted: true, factor: EVIDENCE_FACTOR.assessment_supported, state: "assessment_supported" };
+  if (s === "resume_extraction") return { accepted: false, factor: EVIDENCE_FACTOR.extracted, state: "extracted" };
+  if (s === "self_report") return { accepted: false, factor: EVIDENCE_FACTOR.claimed, state: "claimed" };
+  if (rigor === "high") return { accepted: true, factor: EVIDENCE_FACTOR.reviewer_confirmed, state: "reviewer_confirmed" };
+  if (rigor === "medium") return { accepted: true, factor: EVIDENCE_FACTOR.assessment_supported, state: "assessment_supported" };
+  return { accepted: false, factor: EVIDENCE_FACTOR.claimed, state: "claimed" };
+}
+
+/** Dedup claims per skill (case-insensitive), keeping the strongest evidence
+ *  first, then the highest proficiency. Defends against legacy duplicates. */
+function dedupeClaims(claims: SkillClaim[]): SkillClaim[] {
+  const best = new Map<string, SkillClaim>();
+  for (const c of claims ?? []) {
+    const key = norm(c.name);
+    if (!key) continue;
+    const cur = best.get(key);
+    const rank = (x: SkillClaim) => {
+      const m = evidenceMeta(x.evidence_source, x.verification_rigor);
+      return m.accepted ? (m.factor === 1 ? 3 : 2) : 1;
+    };
+    if (!cur || rank(c) > rank(cur) || (rank(c) === rank(cur) && c.proficiency > cur.proficiency)) {
+      best.set(key, c);
+    }
+  }
+  return [...best.values()];
+}
+
+const NEXT_ACTION: Record<Classification, string> = {
+  verified_direct: "None — requirement met with accepted evidence.",
+  provisional_direct: "Verify evidence — accepted evidence would confirm this match.",
+  below_target: "Close the gap to the target level, then re-verify.",
+  adjacent_support: "Capability in the required skill itself is not yet evidenced — confirm via an assessment.",
+  transferable_foundation: "No proficiency yet — a development candidate, not capability.",
+  missing: "No evidence or path — needs an assessment or structured learning.",
+};
+
+/** Age of the newest supporting assertion in days (null when unknown). */
+function freshnessDays(capturedAt: string | null | undefined, computedAt: string | undefined): number | null {
+  if (!capturedAt) return null;
+  const now = computedAt ? new Date(computedAt).getTime() : Date.now();
+  const then = new Date(capturedAt).getTime();
+  if (Number.isNaN(then)) return null;
+  return Math.max(0, Math.round((now - then) / 86400000));
+}
+
+function evaluateRequirement(
+  req: RequiredSkill,
+  claims: SkillClaim[],
+  graph: GraphSkill[],
+  evidenceDetail: Record<string, { captured_at?: string | null; artifact_key?: string | null }>,
+  computedAt: string | undefined
+): FitItem {
+  const target = req.target_proficiency;
+  const mandatory = req.mandatory !== false;
+  const detail = evidenceDetail?.[norm(req.skill)];
+
+  // ---- Direct claim for the required skill ----
+  const own = claims.find((s) => norm(s.name) === norm(req.skill));
+  if (own) {
+    const meta = evidenceMeta(own.evidence_source, own.verification_rigor);
+    const ratio = Math.min(1, own.proficiency / target);
+    const verifiedContribution = meta.accepted ? ratio : 0;
+    const provisionalContribution = ratio * meta.factor;
+    const effective = Math.min(own.proficiency, target);
+    const classification: Classification =
+      own.proficiency >= target
+        ? meta.accepted
+          ? "verified_direct"
+          : "provisional_direct"
+        : "below_target";
+    return {
+      skill: req.skill,
+      classification,
+      relationship: "direct",
+      mandatory,
+      required_proficiency: target,
+      candidate_proficiency: own.proficiency,
+      effective_proficiency: effective,
+      gap: Math.max(0, target - effective),
+      evidence_state: meta.state,
+      evidence_source: detail?.artifact_key ?? meta.state,
+      freshness_days: freshnessDays(detail?.captured_at, computedAt),
+      evidence_factor: meta.factor,
+      verified_contribution: round3(verifiedContribution),
+      contribution: round3(provisionalContribution),
+      verified: verifiedContribution > 0,
+      provisional: true,
+      next_action: NEXT_ACTION[classification],
+      edge: null,
+      reason: `Holds ${req.skill} at ${own.proficiency}/${target} required — evidence state: ${meta.state}.`,
+      limitation: null,
+    };
+  }
+
+  // ---- Adjacent: no direct skill, but a real ADJACENT_TO edge from a claim ----
+  let bestAdj: { from: string; edge: GraphEdge; value: number; claim: SkillClaim } | null = null;
+  for (const claim of claims) {
+    const edge = findEdge(graph, claim.name, req.skill, "ADJACENT_TO");
+    if (edge) {
+      const value = Math.min(1, (claim.proficiency / 5) * edge.weight);
+      if (!bestAdj || value > bestAdj.value) bestAdj = { from: claim.name, edge, value, claim };
+    }
+  }
+  if (bestAdj) {
+    const meta = evidenceMeta(bestAdj.claim.evidence_source, bestAdj.claim.verification_rigor);
+    const verifiedContribution = meta.accepted ? bestAdj.value : 0;
+    const provisionalContribution = bestAdj.value * meta.factor;
+    const effective = Math.min(bestAdj.value * target, target);
+    return {
+      skill: req.skill,
+      classification: "adjacent_support",
+      relationship: "adjacent",
+      mandatory,
+      required_proficiency: target,
+      candidate_proficiency: bestAdj.claim.proficiency,
+      effective_proficiency: round3(effective),
+      gap: round3(Math.max(0, target - effective)),
+      evidence_state: meta.state,
+      evidence_source: detail?.artifact_key ?? meta.state,
+      freshness_days: freshnessDays(detail?.captured_at, computedAt),
+      evidence_factor: meta.factor,
+      verified_contribution: round3(verifiedContribution),
+      contribution: round3(provisionalContribution),
+      verified: verifiedContribution > 0,
+      provisional: true,
+      next_action: NEXT_ACTION.adjacent_support,
+      edge: { from_skill: bestAdj.from, type: "ADJACENT_TO", weight: bestAdj.edge.weight },
+      reason: `No direct ${req.skill}; backed by ${bestAdj.from} → ${req.skill} (ADJACENT_TO, ${bestAdj.edge.weight.toFixed(2)}).`,
+      limitation: "Adjacent support is NOT direct equivalence: this person has no evidence for the required skill itself. Confirm real capability before relying on it.",
+    };
+  }
+
+  // ---- Transferable: no direct/adjacent edge, but a TRANSFERABLE_TO edge or
+  //      strong same-category relationship. Never contributes points. ----
+  let transfer: { from: string; edge: GraphEdge | null; via: string } | null = null;
+  for (const claim of claims) {
+    const edge = findEdge(graph, claim.name, req.skill, "TRANSFERABLE_TO");
+    if (edge) {
+      transfer = { from: claim.name, edge, via: "edge" };
+      break;
+    }
+    if (!transfer) {
+      const ownNode = graph.find((n) => norm(n.skill) === norm(claim.name));
+      const reqNode = graph.find((n) => norm(n.skill) === norm(req.skill));
+      if (ownNode && reqNode && ownNode.category && ownNode.category === reqNode.category) {
+        transfer = { from: claim.name, edge: null, via: `same category (${ownNode.category})` };
+      }
+    }
+  }
+  if (transfer) {
+    return {
+      skill: req.skill,
+      classification: "transferable_foundation",
+      relationship: "transferable",
+      mandatory,
+      required_proficiency: target,
+      candidate_proficiency: null,
+      effective_proficiency: 0,
+      gap: target,
+      evidence_state: null,
+      evidence_source: null,
+      freshness_days: null,
+      evidence_factor: 0,
+      verified_contribution: 0,
+      contribution: 0,
+      verified: false,
+      provisional: false,
+      next_action: NEXT_ACTION.transferable_foundation,
+      edge: transfer.edge
+        ? { from_skill: transfer.from, type: "TRANSFERABLE_TO", weight: transfer.edge.weight }
+        : null,
+      reason: transfer.edge
+        ? `No direct or adjacent path; ${transfer.from} → ${req.skill} is transferable.`
+        : `No direct or adjacent path; ${transfer.from} shares the ${transfer.via}.`,
+      limitation: "Transferable support is the weakest signal: it establishes no proficiency in the required skill and contributes no points to the score. Treat it as a development candidate, not capability.",
+    };
+  }
+
+  // ---- Missing ----
+  return {
+    skill: req.skill,
+    classification: "missing",
+    relationship: "none",
+    mandatory,
+    required_proficiency: target,
+    candidate_proficiency: null,
+    effective_proficiency: 0,
+    gap: target,
+    evidence_state: null,
+    evidence_source: null,
+    freshness_days: null,
+    evidence_factor: 0,
+    verified_contribution: 0,
+    contribution: 0,
+    verified: false,
+    provisional: false,
+    next_action: NEXT_ACTION.missing,
+    edge: null,
+    reason: `No direct, adjacent, or transferable path found for ${req.skill}.`,
+    limitation: null,
+  };
+}
+
+/** Build the canonical requirement list for a scenario. For "future" the
+ *  caller passes the RESOLVED future target (see resolveFutureRequirements).
+ *  Defaults: skills carry mandatory=true unless flagged. */
+export function normalizeRequirements(skills: RequiredSkill[]): RequiredSkill[] {
+  const seen = new Map<string, RequiredSkill>();
+  for (const s of skills ?? []) {
+    const key = norm(s.skill);
+    if (!key) continue;
+    seen.set(key, {
+      skill: s.skill,
+      target_proficiency: s.target_proficiency,
+      mandatory: s.mandatory !== false,
+      criterion_weight: s.criterion_weight,
+      obsolete: s.obsolete,
+    });
+  }
+  return [...seen.values()];
+}
+
+/**
+ * Phase 9: the resolved 12–24 month target.
+ *   = current requirements (minus explicitly-obsolete) + future additions,
+ *     with future targets applied (raised targets raise, additions are future
+ *     capability signals → preferred).
+ * A current skill missing from the future list is KEPT unless explicitly
+ * marked obsolete — removals only happen on explicit intent.
+ */
+export function resolveFutureRequirements(
+  current: RequiredSkill[],
+  future: RequiredSkill[],
+  obsolete: RequiredSkill[] = []
+): { resolved: RequiredSkill[]; kept: string[]; added: string[]; raised: string[]; obsolete: string[] } {
+  const curList = normalizeRequirements(current);
+  const futList = normalizeRequirements(future);
+  const obsKeys = new Set(normalizeRequirements(obsolete).map((o) => norm(o.skill)));
+  const curMap = new Map(curList.map((r) => [norm(r.skill), r]));
+  const futMap = new Map(futList.map((r) => [norm(r.skill), r]));
+
+  const resolved: RequiredSkill[] = [];
+  const kept: string[] = [];
+  const added: string[] = [];
+  const raised: string[] = [];
+
+  for (const cur of curList) {
+    const key = norm(cur.skill);
+    if (obsKeys.has(key)) continue;
+    const fut = futMap.get(key);
+    if (fut) {
+      resolved.push({ ...cur, target_proficiency: fut.target_proficiency });
+      if (fut.target_proficiency > cur.target_proficiency) raised.push(cur.skill);
+      else kept.push(cur.skill);
+    } else {
+      resolved.push(cur);
+      kept.push(cur.skill);
+    }
+  }
+  for (const fut of futList) {
+    const key = norm(fut.skill);
+    if (curMap.has(key)) continue;
+    resolved.push({ ...fut, mandatory: false }); // future capability signal
+    added.push(fut.skill);
+  }
+  return { resolved, kept, added, raised, obsolete: [...obsKeys] };
+}
 
 export function computeFit(params: {
   candidateSkills: SkillClaim[];
@@ -214,195 +615,132 @@ export function computeFit(params: {
   target: { type: "requisition"; id: string; title: string };
   scenario: "current" | "future";
   computedAt?: string;
-  /** Phase 8: distinct artifact count behind the claims (dedup, never
-   *  one-per-assertion). Falls back to claim count when not supplied. */
+  /** Distinct artifact count behind the claims (display only now). */
   evidenceArtifactCount?: number;
-  /** Phase 8: requisition content hash (stale detection). */
+  /** Per-requirement evidence detail (freshness / artifact source). */
+  evidenceDetail?: Record<string, { captured_at?: string | null; artifact_key?: string | null }>;
+  /** Pre-computed evidence fingerprint (superset of claimHash). */
+  evidenceVersion?: string;
+  /** Requisition content hash (stale detection). */
   requisitionVersion?: string;
+  /** Optional development-plan version; "none" when no plan is approved. */
+  planVersion?: string;
+  /** Derivation metadata for the future scenario. */
+  derivation?: { kept: string[]; added: string[]; raised: string[]; obsolete: string[] };
 }): FitRecord {
   const threshold = params.threshold ?? DEFAULT_EVIDENCE_THRESHOLD;
-  const graph = params.skillGraph;
+  const claims = dedupeClaims(params.candidateSkills);
+  const required = normalizeRequirements(params.requiredSkills ?? []);
+  const computedAt = params.computedAt ?? new Date().toISOString();
 
-  const directItems: FitItem[] = [];
-  const adjacentItems: FitItem[] = [];
-  const transferableItems: FitItem[] = [];
-  const gapItems: FitItem[] = [];
-  const directValues: number[] = [];
-  const adjacentValues: number[] = [];
+  const items: FitItem[] = required.map((r) =>
+    evaluateRequirement(r, claims, params.skillGraph, params.evidenceDetail ?? {}, computedAt)
+  );
 
-  let ownedCount = 0;
-  for (const req of params.requiredSkills) {
-    const own = params.candidateSkills.find((s) => norm(s.name) === norm(req.skill));
-    const ownProficiency = own?.proficiency ?? 0;
+  const mandatoryItems = items.filter((i) => i.mandatory);
+  const preferredItems = items.filter((i) => !i.mandatory);
 
-    // S_direct: min(1, candidate/required) across ALL required skills — 0 for
-    // skills not owned; partial proficiency still contributes its ratio.
-    const ratio = own ? Math.min(1, ownProficiency / req.target_proficiency) : 0;
-    directValues.push(ratio);
+  const groupVerified = (list: FitItem[]) =>
+    list.length === 0 ? null : mean(list.map((i) => i.verified_contribution ?? 0));
+  const groupProvisional = (list: FitItem[]) =>
+    list.length === 0 ? null : mean(list.map((i) => i.contribution ?? 0));
 
-    if (own) {
-      ownedCount++;
-      if (ownProficiency >= req.target_proficiency) {
-        directItems.push({
-          skill: req.skill,
-          classification: "direct",
-          required_proficiency: req.target_proficiency,
-          candidate_proficiency: ownProficiency,
-          edge: null,
-          contribution: ratio,
-          reason: `Holds ${req.skill} at ${ownProficiency}/${req.target_proficiency} required.`,
-          limitation: null,
-        });
-      } else {
-        directItems.push({
-          skill: req.skill,
-          classification: "direct",
-          required_proficiency: req.target_proficiency,
-          candidate_proficiency: ownProficiency,
-          edge: null,
-          contribution: ratio,
-          reason: `Holds ${req.skill} at ${ownProficiency}/${req.target_proficiency} — below the required bar.`,
-          limitation: null,
-        });
-      }
-      continue;
-    }
+  const mVerified = groupVerified(mandatoryItems);
+  const pVerified = groupVerified(preferredItems);
+  const mProvisional = groupProvisional(mandatoryItems);
+  const pProvisional = groupProvisional(preferredItems);
 
-    // Adjacent: no direct skill, but a real ADJACENT_TO edge exists (with the
-    // candidate's proficiency weighting the edge). Never a direct equivalence.
-    let bestAdj: { from: string; edge: GraphEdge; value: number } | null = null;
-    for (const claim of params.candidateSkills) {
-      const edge = findEdge(graph, claim.name, req.skill, "ADJACENT_TO");
-      if (edge) {
-        const value = (claim.proficiency / 5) * edge.weight;
-        if (!bestAdj || value > bestAdj.value) bestAdj = { from: claim.name, edge, value };
-      }
-    }
-    if (bestAdj) {
-      adjacentValues.push(bestAdj.value);
-      adjacentItems.push({
-        skill: req.skill,
-        classification: "adjacent",
-        required_proficiency: req.target_proficiency,
-        candidate_proficiency: ownProficiency || null,
-        edge: { from_skill: bestAdj.from, type: "ADJACENT_TO", weight: bestAdj.edge.weight },
-        contribution: bestAdj.value,
-        reason: `No direct ${req.skill}; backed by ${bestAdj.from} → ${req.skill} (ADJACENT_TO, ${bestAdj.edge.weight.toFixed(2)}).`,
-        limitation: "Adjacent support is NOT direct equivalence: this person has no evidence for the required skill itself. Confirm real capability before relying on it.",
-      });
-      continue;
-    }
+  const { mandatory: wM, preferred: wP } = GROUP_WEIGHTS;
+  const verifiedReadiness =
+    mVerified !== null && pVerified !== null
+      ? wM * mVerified + wP * pVerified
+      : mVerified ?? pVerified ?? 0;
+  const provisionalReadiness =
+    mProvisional !== null && pProvisional !== null
+      ? wM * mProvisional + wP * pProvisional
+      : mProvisional ?? pProvisional ?? 0;
 
-    // Transferable: no direct/adjacent edge, but a TRANSFERABLE_TO edge or a
-    // strong same-category relationship exists.
-    let transfer: { from: string; edge: GraphEdge | null; via: string } | null = null;
-    for (const claim of params.candidateSkills) {
-      const edge = findEdge(graph, claim.name, req.skill, "TRANSFERABLE_TO");
-      if (edge) {
-        transfer = { from: claim.name, edge, via: "edge" };
-        break;
-      }
-      if (!transfer) {
-        const ownNode = graph.find((n) => norm(n.skill) === norm(claim.name));
-        const reqNode = graph.find((n) => norm(n.skill) === norm(req.skill));
-        if (ownNode && reqNode && ownNode.category && ownNode.category === reqNode.category) {
-          transfer = { from: claim.name, edge: null, via: `same category (${ownNode.category})` };
-        }
-      }
-    }
-    if (transfer) {
-      transferableItems.push({
-        skill: req.skill,
-        classification: "transferable",
-        required_proficiency: req.target_proficiency,
-        candidate_proficiency: ownProficiency || null,
-        edge: transfer.edge
-          ? { from_skill: transfer.from, type: "TRANSFERABLE_TO", weight: transfer.edge.weight }
-          : null,
-        contribution: null,
-        reason: transfer.edge
-          ? `No direct or adjacent path; ${transfer.from} → ${req.skill} is transferable.`
-          : `No direct or adjacent path; ${transfer.from} shares the ${transfer.via}.`,
-        limitation: "Transferable support is the weakest signal: it does not establish any proficiency in the required skill and contributes no points to the score. Treat it as a development candidate, not capability.",
-      });
-      continue;
-    }
+  // Evidence confidence: weighted mean factor over requirements with any
+  // contribution — a measure of the evidence BASE, not a score component.
+  const contributing = items.filter((i) => (i.contribution ?? 0) > 0);
+  const confidence = contributing.length === 0 ? 0 : mean(contributing.map((i) => i.evidence_factor));
 
-    gapItems.push({
-      skill: req.skill,
-      classification: "gap",
-      required_proficiency: req.target_proficiency,
-      candidate_proficiency: ownProficiency || null,
-      edge: null,
-      contribution: null,
-      reason: `No direct, adjacent, or transferable path found for ${req.skill}.`,
-      limitation: null,
-    });
-  }
+  // Mandatory gate: every mandatory requirement needs accepted evidence.
+  const unmetMandatory = mandatoryItems.filter((i) => (i.verified_contribution ?? 0) <= 0);
+  const gate = {
+    met: unmetMandatory.length === 0,
+    unmet_skills: unmetMandatory.map((i) => i.skill),
+    count: mandatoryItems.length,
+    note:
+      unmetMandatory.length === 0
+        ? mandatoryItems.length === 0
+          ? "No mandatory criteria are defined for this demand."
+          : "Every mandatory requirement has accepted evidence (direct or accepted-adjacent)."
+        : `Unmet: ${unmetMandatory.map((i) => i.skill).join(", ")}. Without accepted evidence these cannot raise verified readiness.`,
+  };
 
-  const S_direct =
-    directValues.length > 0
-      ? directValues.reduce((a, b) => a + b, 0) / directValues.length
-      : 0;
+  const classification: Record<Classification, FitItem[]> = {
+    verified_direct: items.filter((i) => i.classification === "verified_direct"),
+    provisional_direct: items.filter((i) => i.classification === "provisional_direct"),
+    below_target: items.filter((i) => i.classification === "below_target"),
+    adjacent_support: items.filter((i) => i.classification === "adjacent_support"),
+    transferable_foundation: items.filter((i) => i.classification === "transferable_foundation"),
+    missing: items.filter((i) => i.classification === "missing"),
+  };
 
-  const missing = params.requiredSkills.length - ownedCount; // skills not owned at all
-  const S_adjacent =
-    missing === 0
-      ? 1 // nothing missing to be adjacent to
-      : adjacentValues.length > 0
-        ? adjacentValues.reduce((a, b) => a + b, 0) / missing
-        : 0;
-
-  // Phase 8: evidence counts DISTINCT artifacts (deduped by source), never one
-  // point per skill assertion. Fallback to the claim count for legacy callers.
+  const evidenceVersion = params.evidenceVersion ?? claimHash(claims);
   const artifactCount =
     params.evidenceArtifactCount !== undefined
       ? params.evidenceArtifactCount
-      : params.candidateSkills.filter((s) => s.verification_rigor === "high" || s.verification_rigor === "medium").length;
-  const S_evidence = Math.min(1, artifactCount / threshold);
-
-  const S_seniority = Math.max(0, 1 - 0.2 * Math.abs(params.candidateLevel - params.roleLevel));
-
-  const score =
-    MATCH_WEIGHTS.direct * S_direct +
-    MATCH_WEIGHTS.adjacent * S_adjacent +
-    MATCH_WEIGHTS.evidence * S_evidence +
-    MATCH_WEIGHTS.seniority * S_seniority;
+      : claims.filter((s) => s.verification_rigor === "high" || s.verification_rigor === "medium").length;
 
   return {
     target_type: params.target.type,
     target_id: params.target.id,
     target_title: params.target.title,
     scenario: params.scenario,
-    score: round3(score),
-    sections: {
-      direct: { value: round3(S_direct), items: directItems },
-      adjacent: { value: round3(S_adjacent), items: adjacentItems },
-      evidence: { value: round3(S_evidence), artifact_count: artifactCount, threshold },
-      seniority: {
-        value: round3(S_seniority),
-        candidate_level: params.candidateLevel,
-        role_level: params.roleLevel,
+    score: round3(verifiedReadiness),
+    profile_match: round3(provisionalReadiness),
+    evidence_confidence: round3(confidence),
+    mandatory_gate: gate,
+    contextual_alignment: {
+      candidate_level: params.candidateLevel,
+      role_level: params.roleLevel,
+      note: `Seniority (${params.candidateLevel} vs ${params.roleLevel} role level) is shown as context only — it never contributes to the match score.`,
+    },
+    scoring: {
+      requirements: items,
+      mandatory: {
+        count: mandatoryItems.length,
+        met: mandatoryItems.length - unmetMandatory.length,
+        unmet: unmetMandatory.length,
+        unmet_skills: unmetMandatory.map((i) => i.skill),
+        gated: unmetMandatory.length > 0,
+        readiness: mVerified === null ? null : round3(mVerified),
       },
+      preferred: preferredItems.length === 0 ? null : { count: preferredItems.length, readiness: pVerified === null ? null : round3(pVerified) },
+      verified: { readiness: round3(verifiedReadiness) },
+      provisional: { readiness: round3(provisionalReadiness) },
+      confidence: round3(confidence),
+      group_weights: { mandatory: wM, preferred: wP },
+      evidence_artifacts: { count: artifactCount, threshold },
+      resolved_from: params.scenario === "future" ? "resolved-future" : "current",
+      ...(params.derivation ? { derivation: params.derivation } : {}),
     },
-    classification: {
-      direct: directItems,
-      adjacent: adjacentItems,
-      transferable: transferableItems,
-      gaps: gapItems,
-    },
+    classification,
     versions: {
       engine: ENGINE_VERSION,
-      evidence: claimHash(params.candidateSkills),
+      evidence: evidenceVersion,
       requisition: params.requisitionVersion ?? "unknown",
-      graph: graphContentHash(graph),
-      context: personContextHash(params.candidateLevel, params.evidenceArtifactCount, params.candidateSkills.length),
+      graph: graphContentHash(params.skillGraph),
+      context: personContextHash(params.candidateLevel, params.evidenceArtifactCount, claims.length),
+      plan: params.planVersion ?? "none",
     },
     assumptions: {
-      horizon: params.scenario === "future" ? "12–24 month outlook" : "Current",
+      horizon: params.scenario === "future" ? "Resolved 12–24 month target" : "Current",
       note: HORIZON_LABEL[params.scenario],
     },
-    computed_at: params.computedAt ?? new Date().toISOString(),
+    computed_at: computedAt,
   };
 }
 
