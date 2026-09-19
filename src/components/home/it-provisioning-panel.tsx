@@ -11,10 +11,10 @@ import { StatBlock } from "./stat-block";
 
 export function ItProvisioningPanel({ queue }: { queue: OnboardingQueue | null }) {
   const now = new Date().toISOString();
-  const items = queue?.provisioning ?? [];
+  const items = useMemo(() => queue?.provisioning ?? [], [queue]);
   const counts = deriveItQueueCounts(items, now);
   const starts = upcomingStarts(queue?.people ?? [], now);
-  const names = new Map((queue?.people ?? []).map((p) => [p.twin_id, p.name]));
+  const names = useMemo(() => new Map((queue?.people ?? []).map((p) => [p.twin_id, p.name])), [queue]);
   const [filter, setFilter] = useState<ItQueueFilter>("all");
   const [search, setSearch] = useState("");
   const visible = useMemo(() => filterItProvisioning(items, names, filter, search, now), [items, names, filter, search, now]);
