@@ -238,32 +238,44 @@ export function NotificationBell() {
     </Button>
   );
 
-  return (
-    <>
-      {/* Desktop popover */}
-      <div className="hidden md:block">
-        <Popover open={open} onOpenChange={setOpen}>
-          <PopoverTrigger asChild>{trigger}</PopoverTrigger>
-          <PopoverContent align="end" sideOffset={8} className="w-[380px] p-0" aria-label="Notifications">
-            <div className="h-[520px]">{drawer}</div>
-          </PopoverContent>
-        </Popover>
-      </div>
+  // Match the desktop breakpoint: render the popover on md+ and the full-height
+  // sheet below it. Rendering BOTH (CSS-hidden) lets the Radix sheet portal open
+  // on desktop too and cover the popover, which reads as an auto-close.
+  const isDesktop = useMediaQuery("(min-width: 768px)");
 
-      {/* Mobile full-height sheet */}
-      <div className="md:hidden">
-        <Sheet open={open} onOpenChange={setOpen}>
-          <SheetTrigger asChild>{trigger}</SheetTrigger>
-          <SheetContent side="right" className="flex w-full max-w-md flex-col gap-0 p-0">
-            <SheetHeader className="border-b border-border px-4 py-3">
-              <SheetTitle className="sr-only">Notifications</SheetTitle>
-            </SheetHeader>
-            <div className="flex-1 overflow-hidden">{drawer}</div>
-          </SheetContent>
-        </Sheet>
-      </div>
-    </>
+  return isDesktop ? (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>{trigger}</PopoverTrigger>
+      <PopoverContent align="end" sideOffset={8} className="w-[380px] p-0" aria-label="Notifications">
+        <div className="h-[520px]">{drawer}</div>
+      </PopoverContent>
+    </Popover>
+  ) : (
+    <Sheet open={open} onOpenChange={setOpen}>
+      <SheetTrigger asChild>{trigger}</SheetTrigger>
+      <SheetContent side="right" className="flex w-full max-w-md flex-col gap-0 p-0">
+        <SheetHeader className="border-b border-border px-4 py-3">
+          <SheetTitle className="sr-only">Notifications</SheetTitle>
+        </SheetHeader>
+        <div className="flex-1 overflow-hidden">{drawer}</div>
+      </SheetContent>
+    </Sheet>
   );
+}
+
+/** SSR-safe media query hook — tracks the desktop breakpoint reactively. */
+function useMediaQuery(query: string): boolean {
+  const [matches, setMatches] = useState(() =>
+    typeof window !== "undefined" ? window.matchMedia(query).matches : false
+  );
+  useEffect(() => {
+    const mql = window.matchMedia(query);
+    const onChange = (e: MediaQueryListEvent) => setMatches(e.matches);
+    setMatches(mql.matches);
+    mql.addEventListener("change", onChange);
+    return () => mql.removeEventListener("change", onChange);
+  }, [query]);
+  return matches;
 }
 
 function NotificationRowItem({

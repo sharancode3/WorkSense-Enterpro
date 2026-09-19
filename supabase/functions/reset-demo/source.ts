@@ -2166,6 +2166,34 @@ async function seedMyDay(supabase, orgId: string) {
     { owner_twin_id: "22222222-2222-2222-2222-222222222203", title: "Stand-up prep", due_at: dayIso(0, 8), status: "todo", recurrence: { freq: "daily", weekdays: [], day_time: "08:30" } },
     { owner_twin_id: "22222222-2222-2222-2222-222222222203", title: "Complete the Kubernetes intro module", due_at: dayIso(1, 17), status: "todo", module: "skill_data", action: "complete", link: "/graph" },
     { owner_twin_id: "22222222-2222-2222-2222-222222222203", title: "Set up the local dev environment", due_at: dayIso(-1, 9), status: "done", completed_at: dayIso(-1, 10), evidence: "Repo + toolchain ready" },
+    { owner_twin_id: "22222222-2222-2222-2222-222222222203", title: "Complete the Go mastery assessment", due_at: dayIso(0, 15), status: "todo", module: "onboarding", action: "complete", link: "/onboarding?twin=22222222-2222-2222-2222-222222222203" },
+    { owner_twin_id: "22222222-2222-2222-2222-222222222203", title: "Submit the onboarding feedback survey", due_at: dayIso(1, 12), status: "todo", module: "onboarding", action: "complete", link: "/onboarding?twin=22222222-2222-2222-2222-222222222203" },
+    { owner_twin_id: "22222222-2222-2222-2222-222222222203", title: "Review the Event-driven architecture notes", due_at: dayIso(0, 13), status: "todo", module: "skill_data", action: "complete", link: "/graph" },
+    // Samira Patel (sam@) — Data Analyst development + project work.
+    { owner_twin_id: "22222222-2222-2222-2222-222222222204", title: "Finish the dbt migration pairing session", due_at: dayIso(0, 10), status: "todo", module: "workforce_review", action: "complete", link: "/graph" },
+    { owner_twin_id: "22222222-2222-2222-2222-222222222204", title: "Prep the quarterly metrics deck", due_at: dayIso(0, 15), status: "todo", module: "admin", action: "review", link: "/workforce" },
+    { owner_twin_id: "22222222-2222-2222-2222-222222222204", title: "Update the data catalog documentation", due_at: dayIso(1, 11), status: "todo", module: "skill_data", action: "complete", link: "/graph" },
+    { owner_twin_id: "22222222-2222-2222-2222-222222222204", title: "Complete the statistics refresher course", due_at: dayIso(1, 17), status: "todo", module: "skill_data", action: "complete", link: "/graph" },
+    { owner_twin_id: "22222222-2222-2222-2222-222222222204", title: "Weekly learning reflection", due_at: dayIso(0, 17), status: "todo", recurrence: { freq: "weekly", weekdays: [4], day_time: "17:00" } },
+    { owner_twin_id: "22222222-2222-2222-2222-222222222204", title: "Submit the engagement survey", due_at: dayIso(-1, 9), status: "done", completed_at: dayIso(-1, 10), evidence: "Survey submitted" },
+    // Elena Voss — access + provisioning hygiene.
+    { owner_twin_id: "22222222-2222-2222-2222-222222222210", title: "Patch the SSO gateway certificate", due_at: dayIso(0, 14), status: "todo", module: "access", action: "audit", link: "/admin/access" },
+    { owner_twin_id: "22222222-2222-2222-2222-222222222210", title: "Weekly access-review audit", due_at: dayIso(0, 9), status: "todo", recurrence: { freq: "weekly", weekdays: [5], day_time: "09:00" } },
+    // Dana Whitmore — governance extras.
+    { owner_twin_id: "22222222-2222-2222-2222-222222222201", title: "Review the updated L&D policy draft", due_at: dayIso(0, 16), status: "todo", module: "policies", action: "review", link: "/policy" },
+    { owner_twin_id: "22222222-2222-2222-2222-222222222201", title: "Approve the new Data team role", due_at: dayIso(1, 9), status: "todo", module: "staffing", action: "review", link: "/staffing" },
+    // Riley Morgan — HR lifecycle extras.
+    { owner_twin_id: "22222222-2222-2222-2222-222222222208", title: "Run the monthly attrition deep-dive", due_at: dayIso(1, 14), status: "todo", module: "workforce_review", action: "review", link: "/workforce" },
+    { owner_twin_id: "22222222-2222-2222-2222-222222222208", title: "Close the open policy escalation", due_at: dayIso(0, 12), status: "todo", module: "policies", action: "review", link: "/policy" },
+    { owner_twin_id: "22222222-2222-2222-2222-222222222208", title: "Weekly HR signals review", due_at: dayIso(0, 9), status: "todo", recurrence: { freq: "weekly", weekdays: [4], day_time: "09:00" } },
+    // Jordan Reyes — team extras.
+    { owner_twin_id: "22222222-2222-2222-2222-222222222202", title: "Approve the upskilling plan for Samira", due_at: dayIso(0, 11), status: "todo", module: "recommendations", action: "approve", link: "/hub" },
+    { owner_twin_id: "22222222-2222-2222-2222-222222222202", title: "Career check-in with Alex Chen", due_at: dayIso(1, 10), status: "todo", module: "workforce_review", action: "review", link: "/workforce?twin=22222222-2222-2222-2222-222222222203" },
+    { owner_twin_id: "22222222-2222-2222-2222-222222222202", title: "Review the Data team delivery retro", due_at: dayIso(0, 15), status: "todo", module: "workforce_review", action: "review", link: "/workforce" },
+    // Chris Okafor — pipeline extras.
+    { owner_twin_id: "22222222-2222-2222-2222-222222222209", title: "Send assessment invites for the Backend req", due_at: dayIso(0, 10), status: "todo", module: "recruitment", action: "advance", link: "/recruitment?req=33333333-3333-3333-3333-333333333301" },
+    { owner_twin_id: "22222222-2222-2222-2222-222222222209", title: "Prepare the offer package for Priya", due_at: dayIso(1, 16), status: "todo", module: "recruitment", action: "review", link: "/recruitment?req=33333333-3333-3333-3333-333333333301" },
+    { owner_twin_id: "22222222-2222-2222-2222-222222222209", title: "Weekly pipeline capacity review", due_at: dayIso(0, 9), status: "todo", recurrence: { freq: "weekly", weekdays: [2], day_time: "09:00" } },
   ];
   const { error } = await supabase.from("myday_personal_tasks").insert(
     rows.map((r) => ({
@@ -2266,7 +2294,7 @@ Deno.serve(async (req) => {
         applications: fx.requisitions.reduce((n, r) => n + (r.applicants ?? []).length, 0) + 6,
         workforce_observations: fx.observations.length,
         workforce_review_cases: fx.employees.filter((p) => p.role === "employee" || p.role === "manager").length,
-        myday_personal_tasks: 32,
+        myday_personal_tasks: 54,
       },
     });
   } catch (err) {
