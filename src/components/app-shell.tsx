@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { LogOut, Menu, PanelLeftClose, PanelLeftOpen, RotateCcw } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
-import { can, ROLE_BADGE_CLASS, ROLE_LABEL, type Role } from "@/lib/rbac";
+import { can, ROLE_BADGE_CLASS, ROLE_LABEL, ROLE_SCOPE_NOTE, type Role } from "@/lib/rbac";
 import { breadcrumbFor, type NavSection, visibleSections } from "@/lib/navigation";
 import { fetchHealth, resetDemo } from "@/lib/api";
 import { BUILD_INFO } from "@/generated/build-info";
@@ -236,6 +236,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <span className={`rounded-md px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wider ${ROLE_BADGE_CLASS[role]}`}>
               {ROLE_LABEL[role]}
             </span>
+            <p className="mt-1 px-0.5 text-[11px] font-medium text-muted-foreground">{ROLE_SCOPE_NOTE[role]}</p>
           </div>
         )}
         <div className={`flex-1 overflow-y-auto pb-4 ${collapsed ? "px-2" : "px-3"}`}>
@@ -268,6 +269,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     <span className={`rounded-md px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wider ${ROLE_BADGE_CLASS[role]}`}>
                       {ROLE_LABEL[role]}
                     </span>
+                    <p className="mt-1 text-[11px] font-medium text-muted-foreground">{ROLE_SCOPE_NOTE[role]}</p>
                   </div>
                 )}
                 <div className="flex-1 overflow-y-auto px-3 pb-4">

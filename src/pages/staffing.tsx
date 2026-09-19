@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/auth-context";
 import { AppShell } from "@/components/app-shell";
+import { RoleScopeCallout } from "@/components/role-scope-callout";
 import { can } from "@/lib/rbac";
 import {
   explainStaffingScenario,
@@ -35,7 +36,6 @@ import {
   Scale,
   SearchCheck,
   Send,
-  ShieldCheck,
   Sparkles,
   TrendingUp,
   Users,
@@ -241,11 +241,7 @@ export default function StaffingPlanner() {
             skill-by-skill with a status of feasible, conditional, infeasible or insufficient data — a 56-day hire is
             never clamped to a 42-day deadline, and a 54% match is never called role-ready.
           </p>
-          <p className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
-            <ShieldCheck className="h-3.5 w-3.5 text-primary" />
-            Your scope: {isManager ? "your team (manager scope is enforced in every query)" : "the organization"}.
-            {isManager && " Candidate pipeline details are not exposed to managers."}
-          </p>
+          <RoleScopeCallout page="staffing" role={role} />
         </div>
 
         {/* Batch F (F2): Define → Compare → Review → Approve stepper */}

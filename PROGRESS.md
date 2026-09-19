@@ -661,3 +661,22 @@ Three workstreams requested for the final presentation.
 **Checks:** lint 0 errors, all tsc green, 45 bundles no drift, `pnpm test` 414/41, `pnpm build` green. Live regression re-run: batch-1..5,7,8,10 all green (12+17+12+12+15+13+8+18 = 107); **batch-6 = 13/14** with the single failing check blocked by an external Qwen gateway outage (`health: gateway "unreachable", model_ready false` — all deterministic handoff checks 6.2/6.3/6.4/6.7 pass). Browser: showcase verified; skill-graph + landing/login/candidate pages verified clean at 1440. Demo left pristine after the final reset.
 
 **Concrete external blocker (only one):** the local Qwen gateway is unreachable, so the live AI-assisted assessment-evaluation leg cannot be exercised (batch-6 model check). Everything deterministic is proven green; the model leg returns to full verification when the gateway recovers.
+
+## 52. Role-unique interfaces: HR vs manager home + scope callouts + nav clarity
+
+The reviewer asked for every role's interface to be unique and working, explicit "how this page differs" hints for judges, and clearer navigation. Delivered in one pass.
+
+**1) Distinct home compositions (role-home.tsx).** `hr_executive`, `hr_partner` and `manager` previously shared the exact same home skeleton (feed → attention strip → dashboard). Now each HR-family role gets a genuinely different first screen:
+- **People Manager**: a new **"My team" roster** derived from the same server-scoped onboarding queue that drives the attention strip — team members with department, start date, a readiness progress bar and a status chip (On track / Awaiting approval / Needs attention), always scoped to the recursive reporting subtree.
+- **HR Business Partner / Administrator**: a new **"Organization lifecycle"** panel — org-wide stage cards (Onboarding journeys, Review cases in scope, Approvals awaiting decision, and admin-only Data quality alerts) each linking to its module, plus a "Journeys needing an HR decision" list.
+- **Administrator** keeps the Platform Operations & Security Governance panel beneath everything.
+
+**2) "How this page differs by role" callouts (new reusable `RoleScopeCallout`).** A light-blue banner rendered on the home, onboarding center, workforce review, recommendation hub and staffing planner. Each instance states the role's title, its real server-enforced scope, and a "Similar page:" contrast line (e.g. "Managers land on the same page, but every panel is filtered to their team only"). Staffing's inline scope line was upgraded to the shared callout; the existing skill-graph scope line was already in place.
+
+**3) Navigation clarity.** Every role badge in the sidebar/drawer now carries a one-line scope descriptor (Administrator "Org-wide view + governance", HR "Org-wide view", Manager "Your team only", Recruiter "Hiring pipeline", Employee "Self-service", IT "Provisioning handoffs") — mirroring server-enforced scope. `navigation.ts` routes and `navigation.test.ts` exact lists untouched.
+
+**4) UX fix found during verification.** The org-wide "waiting on others" feed buried the HR home (page 11,569px tall). The waiting group is informational, so `MyWorkFeed` now caps it at 8 items with an honest "+N more waiting" note; attention and ready items are always shown in full. HR home dropped to ~6,300px with the lifecycle panel immediately reachable.
+
+**Checks:** lint 0 errors, app tsc green, 414 tests / 41 files, `pnpm build` green. Browser-verified at 1440 (manager roster + team attention, HR lifecycle + journeys needing HR decision, admin 4th card + governance panel, recruiter, hub, staffing, onboarding queue team-scoped for manager; sidebar descriptors on every role) and 390 (manager home + callout fit cleanly, no overflow). Demo left pristine.
+
+**Remaining:** none. Concrete blockers: the pre-existing external Qwen gateway outage still blocks only the live model leg (batch-6, 13/14).

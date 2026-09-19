@@ -35,6 +35,7 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/auth-context";
 import { AppShell } from "@/components/app-shell";
+import { RoleScopeCallout } from "@/components/role-scope-callout";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
@@ -1481,6 +1482,9 @@ export default function Onboarding() {  const { role, twin, user } = useAuth();
             requires an authorized owner and genuine evidence.
           </p>
         </div>
+
+        {/* §52: explicit scope hint — manager team vs HR org vs employee self. */}
+        <RoleScopeCallout page="onboarding" role={role} />
 
         {/* Role-scoped operational queue (Phase 6) */}
         {queue.isPending && (

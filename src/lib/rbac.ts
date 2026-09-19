@@ -69,6 +69,21 @@ export const ROLE_BADGE_CLASS: Record<Role, string> = {
 };
 
 /**
+ * One-line scope descriptor shown under the role badge in the app shell so
+ * the navigation reads as role-specific, not a shared "featureal mesh".
+ * Mirrors the server-enforced scope of the signed-in role.
+ */
+export const ROLE_SCOPE_NOTE: Record<Role, string> = {
+  hr_executive: "Org-wide view + governance",
+  hr_partner: "Org-wide view",
+  manager: "Your team only",
+  recruiter: "Hiring pipeline",
+  employee: "Self-service",
+  candidate: "Candidate status",
+  it_security: "Provisioning handoffs",
+};
+
+/**
  * Role -> landing route. Enforcement of these actions ALSO happens server-side
  * (RLS policies + backend functions); this map only drives client routing.
  */

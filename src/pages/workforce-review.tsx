@@ -26,6 +26,7 @@ import {
   Users,
 } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
+import { RoleScopeCallout } from "@/components/role-scope-callout";
 import { useAuth } from "@/contexts/auth-context";
 import { can } from "@/lib/rbac";
 import {
@@ -348,6 +349,9 @@ export default function WorkforceReview() {
             stale data or development interest are never treated as risk.
           </p>
         </div>
+
+        {/* §52: explicit scope hint — manager team vs HR org vs employee self. */}
+        <RoleScopeCallout page="workforce" role={role} />
 
         {/* List (HR / manager) */}
         {!isEmployee && (

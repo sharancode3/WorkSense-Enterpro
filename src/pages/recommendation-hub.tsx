@@ -22,6 +22,7 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/auth-context";
 import { AppShell } from "@/components/app-shell";
+import { RoleScopeCallout } from "@/components/role-scope-callout";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -649,6 +650,9 @@ export default function RecommendationHub() {
             deterministic. Workforce interventions record observations, never causality.
           </p>
         </div>
+
+        {/* §52: explicit scope hint — manager team vs HR org. */}
+        <RoleScopeCallout page="hub" role={role} />
 
         {(role === "hr_executive" || role === "hr_partner") && (
           <div className="mt-6 flex items-center justify-between gap-4 rounded-lg bg-foreground p-5 text-white">

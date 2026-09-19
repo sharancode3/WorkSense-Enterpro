@@ -90,6 +90,12 @@ function WorkItemCard({ item }: { item: WorkItem }) {
 
 function WorkGroupList({ group, items }: { group: WorkGroup; items: WorkItem[] }) {
   if (items.length === 0) return null;
+  // §52: the "waiting on others" group is informational and can be very large
+  // for org-wide roles (HR). Cap it so it cannot bury the role-specific panels
+  // below the feed; attention and ready items are always shown in full.
+  const waitingCap = group === "waiting" ? 8 : Number.MAX_SAFE_INTEGER;
+  const shown = items.slice(0, waitingCap);
+  const hidden = items.length - shown.length;
   return (
     <div className="flex flex-col gap-2">
       <h2 className={`flex items-center gap-2 text-xs font-bold uppercase tracking-wider ${GROUP_TONE[group]}`}>
@@ -97,10 +103,15 @@ function WorkGroupList({ group, items }: { group: WorkGroup; items: WorkItem[] }
         {GROUP_LABEL[group]} · {items.length}
       </h2>
       <div className="flex flex-col gap-2">
-        {items.map((item) => (
+        {shown.map((item) => (
           <WorkItemCard key={item.id} item={item} />
         ))}
       </div>
+      {hidden > 0 && (
+        <p className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">
+          {hidden} more item{hidden === 1 ? "" : "s"} waiting on others — they appear once a required owner acts.
+        </p>
+      )}
     </div>
   );
 }
