@@ -697,3 +697,33 @@ Reviewed the whole product against the Track-1 HR problem statement (8 systems) 
 **Checks:** lint 0 errors, app tsc green, 418 tests / 41 files, `pnpm build` green. Live: verify-53.mjs green; existing suites unaffected (no function changes this turn — the projection lives in the frontend pure module). Browser: graph toolbar fix + all audited pages verified at 1440; trajectory verified at the data level (real backend fits) and via unit tests — the interactive select-then-compute flow itself is unchanged.
 
 **Remaining:** none. Concrete blockers: pre-existing external Qwen gateway outage still blocks only the live model leg (batch-6, 13/14).
+
+## 54. Codebase restructure + README + final audit confirmation
+
+Reviewer's closing pass: "check final properly, structure the codebase properly, update README properly."
+
+**1) Restructure — `role-home.tsx` slimmed 1,098 → 407 lines.** Seven self-contained panels
+that were inlined in the page were extracted into `src/components/home/` (each with its own
+imports, verified by tsc + eslint): `stat-block`, `my-action-tasks`, `admin-governance-panel`,
+`journey-attention-strip`, `it-provisioning-panel`, `manager-team-panel`, `hr-lifecycle-panel`.
+`role-home.tsx` now keeps only the page composition (queries + per-role render). Behaviour is
+pixel-identical — browser-verified manager and HR homes render exactly as before (HR page
+height 6348px unchanged; manager differs only by post-reset demo data). No function/test files
+touched; 418 tests still pass.
+
+**2) README.md rewritten** from the generic Enter template to a proper WorkSense document:
+the eight PS systems mapped to routes with how each computes (not hard-codes) its output, the
+persona table with server-enforced scopes, architecture + directory map, local dev + quality
+gate (`pnpm check` / `pnpm build`) + live verification scripts, and honest notes (AI gateway
+dependency, attrition/future-score semantics, fictional data + reset).
+
+**3) Final audit confirmation** (re-checked this turn): no dummy output anywhere (all feature
+pages query-driven), no UI breakage found beyond the already-fixed skill-graph toolbar button,
+realistic seeded data throughout, and the skill-graph development trajectory verified again on
+live rows (verify-53.mjs 4/4, projected ≥ future for all 12 matches, demo reset pristine).
+
+**Checks:** lint 0 errors, all tsc green, **418 tests / 41 files**, `pnpm build` green.
+Browser: manager + HR homes verified after the refactor. Demo left pristine.
+
+**Remaining:** none. Concrete blockers: pre-existing external Qwen gateway outage (affects only
+the live model-written leg, batch-6 13/14); all deterministic functionality proven green.

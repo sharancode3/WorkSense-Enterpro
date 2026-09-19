@@ -1,151 +1,130 @@
-# Welcome to your Enter project
+# WorkSense — AI-Driven Workforce Management Platform
 
 [![Built with enter.pro](https://img.shields.io/badge/Build%20with-Enter.pro-FC5776?style=for-the-badge&labelColor=1F1F1F)](https://enter.pro)
 
-*Automatically synced with your [enter.pro](https://enter.pro) workspace* 
+WorkSense is a **Track-1 HR** intelligent workforce management platform. It reasons over
+multiple HR data sources (digital-twin employee records, skill evidence, onboarding plans,
+requisitions, candidate sessions, policy documents, performance and review signals) and
+recommends **actions** — every recommendation is approved by a human before it moves.
+
+It is a full demo: the data is **real, seeded dummy data** stored in the backend and served
+through real queries and computation. Nothing shown is a hard-coded output — scores, counts,
+fit percentages and statuses are computed by backend functions from the seeded rows.
 
 ---
 
-## Overview
+## The eight problem-statement systems
 
-This repository is automatically linked to your app on [enter.pro](https://enter.pro).  
-Every change you make in Enter will be reflected here — and any updates you push to this repo will sync back seamlessly.  
+| PS capability | Where it lives | How it works (computed, never hard-coded) |
+|---|---|---|
+| **AI Recruitment Intelligence Engine** | `/recruitment` (Recruiter) | Candidates ranked by `skill-match` against requisition `required_skills` using the Skill Graph (direct / adjacent / transferable / gap), evidence rigor and seniority. |
+| **Adaptive Onboarding Agent** | `/onboarding` (Employee / Manager / HR / IT) | Personalized adaptive plans built from role + department + profile, scheduled as a DAG with enforced owner/evidence, versioned approvals and a role-scoped queue. |
+| **HR Policy Reasoning Agent** | `/policy` (Policy Studio) | Deterministic retrieval with verbatim quotes, date-aware applicability filters; the model grounds answers in citations or honestly abstains. |
+| **Employee Attrition Prediction** | `/workforce` (Workforce Review) | A Workforce Review Index (0–100) built from workforce patterns + engagement signals — decision support, honestly labeled as not a probability. |
+| **AI Performance Intelligence** | `/workforce` reviewer drafts | Goals/feedback/performance history synthesized into strengths + improvement areas; drafts are human-confirmed, never auto-finalized. |
+| **Workforce Skill Graph** | `/graph` (Skill Graph) | Maps verified skills vs current and **future** requirements with evidence lineage, taxonomy edges, and a computed **development trajectory** (Today → Future target → Projected with planned development). |
+| **Intelligent Interview Agent** | `/recruitment` (Recruitment & Interview Studio) | Role-specific question kits, rubric-based assessment, structured insights; sessions are human-reviewed end to end. |
+| **HR Decision Dashboard** | `/app` home + `/workforce` | Combines onboarding, workforce review, hiring funnel, future-skill readiness heatmap and recommendations into actionable panels, server-scoped per role. |
 
-Enter.pro helps you **build, edit, and deploy full-stack web apps by prompting**.  
-Just describe what you want — Enter turns ideas into production-ready code.
+Also on the platform: **staffing planner** (constrained scenario engine), **recommendation &
+action hub** (enforced lifecycle + idempotent actions), **access & governance console**, **system
+health telemetry**, **data-quality engine**, and a public **candidate portal**.
+
+> The whole PS map is also on the app itself at `/showcase`.
 
 ---
 
-## Project URLs
+## Personas (demo sign-in)
 
-**Live app:** https://<project-id>-latest.preview.enter.pro  
-**Edit & build in Enter:** https://enter.pro/project/<project-id>
+Sign in from the login page with any of these (password `WorkSenseDemo!2026`), or use the
+quick-access cards:
 
+| Role | Person | Scope |
+|---|---|---|
+| Administrator | Dana Whitmore (`dana@worksense.demo`) | Org-wide + governance |
+| HR Business Partner | Riley Morgan (`riley@worksense.demo`) | Org-wide |
+| People Manager | Jordan Lee (`jordan@worksense.demo`) | Own team only |
+| Technical Recruiter | Chris Okafor (`chris@worksense.demo`) | Hiring pipeline |
+| Employee | Alex Chen (`alex@worksense.demo`) | Self-service |
+| IT Provisioning | Elena Costa (`elena@worksense.demo`) | Provisioning handoffs |
+| Candidate | Priya Nair (`priya@worksense.demo`) | Candidate portal |
+
+**Role scope is enforced server-side** (RLS policies + backend function gates). A manager can
+never widen a query to the full org; a recruiter never sees employee twins. The sidebar badge
+shows each role's scope, and every shared page carries a "How this page differs by role" hint.
 
 ---
 
-## Continue building
+## Architecture
 
-Keep developing your app directly in [Enter.pro](https://enter.pro/project/<project-id>).  
-Prompt new features, refine the UI, or connect integrations — all changes are versioned and synced automatically to GitHub.
+```
+src/                        Vite + React + TypeScript frontend
+  pages/                    Route-level pages (role-home, onboarding, recruitment, …)
+  components/               Shared UI (app-shell, fit-card, my-work-feed, …)
+    home/                   Role-home panels (extracted from role-home.tsx)
+  lib/                      Client logic: api.ts (backend-function clients + contracts),
+                            rbac.ts, navigation.ts, skill-graph.ts, onboarding-progress.ts, …
+supabase/functions/         Backend functions (Deno edge functions) — auth, DB, computation
+  _shared/                  Pure engines + unit tests (skill-graph-engine, onboarding-v2,
+                            my-work-engine, staffing-review, recommendation-engine, …)
+  migrations/               Versioned schema + RLS migrations
+scripts/                    Verification suites (verify-batch-*.mjs, check-functions.mjs)
+docs/coverage-matrix.md     Batch-by-batch PS coverage ledger
+PROGRESS.md                 Delivery log (§1–§54)
+```
+
+Design principles:
+
+- **Deterministic engines, zero LLM in the loop** for anything that can be computed (fits,
+  queues, readiness, review index, staffing feasibility). The LLM writes prose (policy answers,
+  interview evaluation) and the facts are still deterministic.
+- **Versioned results** — fits, plans and proposals carry fingerprints (engine/evidence/
+  requisition/graph), so caches recompute automatically when underlying data changes.
+- **Role-scoped everything** — the client can ask, but only the server grants.
 
 ---
 
 ## Local development
 
-Prefer to work locally? You can clone this repo and start developing right away:
+```bash
+pnpm install
+pnpm dev          # start Vite (frontend)
+```
+
+The backend is the managed Enter Cloud instance wired through `src/integrations/supabase/client.ts`.
+
+**Quality gate** (runs lint + TypeScript for app/functions + function manifest checks + unit tests):
 
 ```bash
-# Step 1: Clone your project repository
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate into the project folder
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install all dependencies
-pnpm install
-
-# Step 4: Start the local development server
-pnpm dev
+pnpm check
+pnpm build        # production build (frontend)
 ```
 
-Push your commits — Enter.pro will automatically detect and sync your latest changes.
+**Live verification** (against the deployed backend, ends with a pristine demo reset):
 
----
-
-## i18n
-
-This template ships a minimal browser-side i18n baseline built on:
-
-- `i18next`
-- `react-i18next`
-- `i18next-http-backend`
-- `i18next-browser-languagedetector`
-
-### Source-of-truth files
-
-The template only owns three pieces of i18n data:
-
-- `i18n.config.json` — language manifest (`fallbackLng`, `languages[].{code,label,detect,dir}`)
-- `public/locales/{code}.json` — flat dotted-key translations, one file per language
-- `src/i18n/config.ts` + `src/i18n/util.ts` — runtime entry and pure helpers
-- `src/components/language-switcher.tsx` — neutral-themed UI sample
-
-### Runtime behavior
-
-- reads the manifest from `i18n.config.json`
-- loads translations from `public/locales/{code}.json` via `i18next-http-backend`
-- detects language from cookie, browser, then html tag; caches in the `i18next` cookie
-- normalizes unsupported languages to `fallbackLng` (no invalid values stored in cookies)
-- syncs `<html lang>` and `<html dir>` on init and on `languageChanged`
-- treats keys as flat strings: both `keySeparator` and `nsSeparator` are disabled
-
-### Using translations in components
-
-Import directly from `react-i18next`. No project-specific hook or cast is needed.
-
-```tsx
-import { useTranslation } from "react-i18next";
-
-const Title = () => {
-  const { t } = useTranslation();
-  return <h1>{t("home.hero.title")}</h1>;
-};
+```bash
+node scripts/verify-batch-1.mjs   # …batch-2 …batch-8, batch-10, verify-53.mjs
 ```
 
-For language switching, the `i18n` instance also comes from `useTranslation()`:
-
-```tsx
-const { i18n } = useTranslation();
-void i18n.changeLanguage("zh-CN");
-```
-
-`languageOptions`, `normalizeLanguage`, `getLanguageDirection`, and `fallbackLng` can be imported from `@/i18n/config` (re-exports from `util.ts`).
-
-### Adding a language
-
-1. Add an entry under `languages` in `i18n.config.json` with `code`, `label`, `detect`, `dir`.
-2. Create `public/locales/{code}.json` with the same key set as `public/locales/{fallbackLng}.json`.
-3. Translate values, preserving any `{{variables}}` and `<tag>...</tag>` structures.
-
-### Adding a translation key
-
-1. Add the key to `public/locales/{fallbackLng}.json` first.
-2. Add the same key to every other locale file with its translated value.
-3. Use it via `t("group.key")` in components.
-
-### Backend handoff (temporary in-repo files)
-
-The following files are **temporary copies kept in the repo only until backend integration is complete**. The backend will eventually own validation, statistics, completion-rate dashboards, scan-for-new-strings, and auto-translate. After that integration lands, these files (and the corresponding `package.json` scripts) will be removed:
-
-- `scripts/check-i18n.mjs`, `scripts/scan-i18n.mjs`, `scripts/i18n-utils.mjs`, `scripts/i18n-source-usage.mjs`
-- `i18n.scan.json`
-- `reports/i18n/`
-- `docs/i18n-agent-spec.md`, `docs/i18n-contract.md`
-- `package.json` scripts: `i18n:check`, `i18n:scan`, and the `check` aggregate
-
-Until removed, you can still run `pnpm i18n:check` and `pnpm i18n:scan` locally; the canonical computation is the backend's responsibility.
+The test suite (Vitest) currently covers **418 unit tests across 41 files**, including the pure
+engines and the skill-graph future projection.
 
 ---
 
-## Tech stack
+## Honesty notes
 
-This project uses:
-
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
-
----
-
-## Deployment
-
-To deploy, open your Enter.pro project and click "Publish"
-
-Your app will automatically build and go live at your production URL.
+- The **AI gateway** is an external dependency; when it is unreachable, model-written prose
+  features degrade gracefully (deterministic parts keep working). The status page
+  (`/status`) shows live telemetry.
+- Attrition is **decision support**, not a probability. The future skill score answers "today's
+  profile vs tomorrow's requirements"; the development trajectory models evidence-grounded
+  growth on top of it.
+- All data is fictional and seeded for this preview. `Reset demo` (account menu, admin roles)
+  restores the known-good state.
 
 ---
 
-✨ Keep prompting, keep building — Enter.pro handles the rest.
+## Continue building
+
+Keep developing this app in Enter.pro — prompt new features, refine the UI, or connect
+integrations. All changes are versioned and synced automatically.
