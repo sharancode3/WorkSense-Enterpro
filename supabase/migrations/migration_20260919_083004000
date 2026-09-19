@@ -1,0 +1,38 @@
+-- Apply migration_20260918_181500000 (Phase 7 defensibility) to the live instance with idempotent guards.
+create table if not exists public.review_case_actions (
+  id uuid primary key default gen_random_uuid(),
+  org_id uuid not null references public.organizations(id) on delete cascade,
+  case_id uuid references public.workforce_review_cases(id) on delete cascade,
+  twin_id uuid not null references public.digital_twins(id) on delete cascade,
+  action text not null check (action in ('acknowledged','dismissed','deferred')),
+  reason text not null,
+  follow_up_at timestamptz,
+  acted_by uuid not null references public.digital_twins(id),
+  acted_at timestamptz not null default now(),
+  created_at timestamptz not null default now()
+);
+do $$ begin
+  if not exists (select 1 from pg_indexes where indexname = 'review_case_actions_org_idx') then
+    create index review_case_actions_org_idx on public.review_case_actions (org_id, twin_id, acted_at desc);
+  end if;
+  if not exists (select 1 from pg_policies where schemaname='public' and tablename='review_case_actions' and policyname='review_case_actions_read') then
+    alter table public.review_case_actions enable row level security;
+    create policy review_case_actions_read on public.review_case_actions for select using (
+      exists (select 1 from public.current_twin() ct where ct.org_id = public.review_case_actions.org_id)
+    );
+  end if;
+end $$;
+alter table public.performance_summaries
+  add column if not exists reviewer_draft jsonb not null default '{}'::jsonb,
+  add column if not exists reviewer_draft_by uuid references public.digital_twins(id) on delete set null,
+  add column if not exists reviewer_draft_at timestamptz,
+  add column if not exists strengths jsonb not null default '[]'::jsonb,
+  add column if not exists improvement_areas jsonb not null default '[]'::jsonb,
+  add column if not exists development_actions jsonb not null default '[]'::jsonb;
+alter table public.workforce_review_cases
+  add column if not exists confidence text not null default 'low' check (confidence in ('high','medium','low')),
+  add column if not exists confidence_reason text,
+  add column if not exists history_state text not null default 'none' check (history_state in ('none','partial','adequate')),
+  add column if not exists data_quality jsonb not null default '{}'::jsonb,
+  add column if not exists freshness jsonb not null default '{}'::jsonb,
+  add column if not exists case_rationale jsonb not null default '[]'::jsonb;

@@ -5979,7 +5979,13 @@ function twinRow(p: TwinSeedRow, orgId: string, authIds: Record<string, string>,
 async function tearDownDemo(supabase, authIds: Record<string, string>) {
   const orgs = [DEMO_ORG_ID, SECOND_ORG_ID];
   for (const orgId of orgs) {
-    await supabase.from("action_tasks").delete().eq("org_id", orgId);
+    // Phase 33 "My Day" is a personal layer on top of canonical records, so it
+  // must be wiped before the twins/orgs it references.
+  await supabase.from("myday_item_state").delete().eq("org_id", orgId);
+  await supabase.from("myday_recurrence_instances").delete().eq("org_id", orgId);
+  await supabase.from("myday_prefs").delete().eq("org_id", orgId);
+  await supabase.from("myday_personal_tasks").delete().eq("org_id", orgId);
+  await supabase.from("action_tasks").delete().eq("org_id", orgId);
     await supabase.from("workflow_events").delete().eq("org_id", orgId);
     await supabase.from("admin_actions").delete().eq("org_id", orgId);
     await supabase.from("llm_cache").delete().eq("org_id", orgId);
@@ -7037,6 +7043,11 @@ async function reseed(supabase, authIds: Record<string, string>) {
   await seedDemoStories(supabase, DEMO_ORG_ID, fx.clock);
   await seedDemoResumes(supabase, DEMO_ORG_ID, fx.clock);
 
+  // Phase 33: "My Day" personal layer — coherent fictional examples per
+  // persona, deep-linked to canonical records. Uses real "now" so the walk-
+  // through lands on a live "today" (unlike fx.clock which freezes the org).
+  await seedMyDay(supabase, DEMO_ORG_ID);
+
   // 9d) Batch 7 (late): differentiated candidate-session states for Ravi.
   // Runs AFTER seedDemoStories — Ravi's WS-SYN-* application is a story row.
   // Reuses the blueprint objects already resolved above (same scope).
@@ -7919,6 +7930,68 @@ Education: B.Sc. Information Systems, NUS (2016 - 2020)`,
   }
 }
 
+// ---------------------------------------------------------------------------
+// Phase 33 — "My Day" personal layer seed. Coherent fictional examples per
+// persona, deep-linked to canonical records, dated relative to REAL now so a
+// live walk-through lands on a "today" day view. tearDownDemo wipes the
+// myday_* tables first, so re-seeding never duplicates.
+// ---------------------------------------------------------------------------
+async function seedMyDay(supabase, orgId: string) {
+  const NOW_MS = Date.now();
+  const dayIso = (days: number, hour: number) => {
+    const key = new Date(NOW_MS + days * 86400000).toISOString().slice(0, 10);
+    return `${key}T${String(hour).padStart(2, "0")}:00:00.000Z`;
+  };
+  const rows = [
+    // Dana Whitmore (hr_executive) — governance + approvals.
+    { owner_twin_id: "22222222-2222-2222-2222-222222222201", title: "Approve the Samira Patel onboarding plan", due_at: dayIso(0, 9), status: "todo", module: "onboarding", action: "approve", link: "/onboarding?twin=22222222-2222-2222-2222-222222222204" },
+    { owner_twin_id: "22222222-2222-2222-2222-222222222201", title: "Review Q3 workforce review cases before the board pack", due_at: dayIso(0, 14), status: "todo", module: "workforce_review", action: "review", link: "/workforce" },
+    { owner_twin_id: "22222222-2222-2222-2222-222222222201", title: "Governance sweep — pending access & user changes", due_at: dayIso(-1, 16), status: "done", completed_at: dayIso(0, 8), evidence: "Cleared 3 pending changes", module: "admin", action: "review", link: "/admin/access" },
+    // Riley Morgan (hr_partner) — data quality + lifecycle approvals.
+    { owner_twin_id: "22222222-2222-2222-2222-222222222208", title: "Follow up on the data-quality claims queue", due_at: dayIso(0, 11), status: "todo", module: "skill_data", action: "review", link: "/workforce/data-quality" },
+    { owner_twin_id: "22222222-2222-2222-2222-222222222208", title: "Approve Diego's Product Designer plan", due_at: dayIso(0, 9), status: "done", completed_at: dayIso(0, 8), evidence: "Approved plan v1", module: "onboarding", action: "approve", link: "/onboarding?twin=6786033d-78a9-41ab-af1f-2f1982e02f1d" },
+    // Jordan Reyes (manager) — team blocker + personal daily routine.
+    { owner_twin_id: "22222222-2222-2222-2222-222222222202", title: "1:1 prep — Alex Chen's onboarding blocker", due_at: dayIso(0, 10), status: "todo", notes: "IT blocker on access_sso needs a decision", module: "onboarding", action: "review", link: "/onboarding?twin=22222222-2222-2222-2222-222222222203" },
+    { owner_twin_id: "22222222-2222-2222-2222-222222222202", title: "Team stand-up notes", due_at: dayIso(0, 9), status: "todo", recurrence: { freq: "daily", weekdays: [], day_time: "09:00" } },
+    { owner_twin_id: "22222222-2222-2222-2222-222222222202", title: "Check in on the Data team review signals", due_at: dayIso(-1, 12), status: "done", completed_at: dayIso(-1, 13), evidence: "Covered in weekly 1:1", module: "workforce_review", action: "review", link: "/workforce" },
+    // Chris Okafor (recruiter) — scorecards + assessment invites.
+    { owner_twin_id: "22222222-2222-2222-2222-222222222209", title: "Finalize the interview scorecard for Priya Singh", due_at: dayIso(0, 16), status: "todo", module: "recruitment", action: "review", link: "/recruitment?req=33333333-3333-3333-3333-333333333301" },
+    { owner_twin_id: "22222222-2222-2222-2222-222222222209", title: "Resend the work-sample invite to Maya", due_at: dayIso(0, 9), status: "done", completed_at: dayIso(0, 8), evidence: "Invite re-sent (WS-MAYA-2026)", module: "recruitment", action: "advance", link: "/recruitment?req=33333333-3333-3333-3333-333333333302" },
+    // Alex Chen (employee) — own onboarding + development routine.
+    { owner_twin_id: "22222222-2222-2222-2222-222222222203", title: "Complete the security briefing evidence", due_at: dayIso(0, 17), status: "todo", notes: "Evidence ref REF-SEC-2026", module: "onboarding", action: "complete", link: "/onboarding?twin=22222222-2222-2222-2222-222222222203" },
+    { owner_twin_id: "22222222-2222-2222-2222-222222222203", title: "Weekly learning reflection", due_at: dayIso(0, 17), status: "todo", recurrence: { freq: "weekly", weekdays: [4], day_time: "17:00" } },
+    { owner_twin_id: "22222222-2222-2222-2222-222222222203", title: "Intro call with the platform team", due_at: dayIso(0, 11), status: "done", completed_at: dayIso(0, 9), evidence: "Done — notes in Slack" },
+    { owner_twin_id: "22222222-2222-2222-2222-222222222203", title: "Submit the payroll enrolment form", due_at: dayIso(-1, 9), status: "done", completed_at: dayIso(-1, 10), evidence: "Form submitted", module: "onboarding", action: "complete", link: "/onboarding?twin=22222222-2222-2222-2222-222222222203" },
+    // Elena Voss (it_security) — access review + provisioning handoff.
+    { owner_twin_id: "22222222-2222-2222-2222-222222222210", title: "Ship the Q3 access review packet", due_at: dayIso(0, 15), status: "todo", module: "access", action: "audit", link: "/admin/access" },
+    { owner_twin_id: "22222222-2222-2222-2222-222222222210", title: "Provision laptop for the Data Analyst starter", due_at: dayIso(0, 9), status: "done", completed_at: dayIso(0, 8), evidence: "Handed to IT admin", module: "access", action: "provision", link: "/onboarding?twin=22222222-2222-2222-2222-222222222204" },
+  ];
+  const { error } = await supabase.from("myday_personal_tasks").insert(
+    rows.map((r) => ({
+      org_id: orgId,
+      owner_twin_id: r.owner_twin_id,
+      title: r.title,
+      notes: r.notes ?? null,
+      due_at: r.due_at,
+      recurrence: r.recurrence ?? null,
+      status: r.status,
+      snoozed_until: null,
+      state_note: null,
+      completed_at: r.completed_at ?? null,
+      completion_evidence: r.evidence ?? null,
+      original_due_at: null,
+      rollover_count: 0,
+      source_module: r.module ?? null,
+      source_resource_type: r.module ? "source_item" : null,
+      source_resource_id: null,
+      canonical_action: r.action ?? null,
+      deep_link: r.link ?? null,
+      version: 1,
+    }))
+  );
+  if (error) throw new Error(`myday seed insert: ${error.message}`);
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
@@ -7992,6 +8065,7 @@ Deno.serve(async (req) => {
         applications: fx.requisitions.reduce((n, r) => n + (r.applicants ?? []).length, 0) + 6,
         workforce_observations: fx.observations.length,
         workforce_review_cases: fx.employees.filter((p) => p.role === "employee" || p.role === "manager").length,
+        myday_personal_tasks: 16,
       },
     });
   } catch (err) {

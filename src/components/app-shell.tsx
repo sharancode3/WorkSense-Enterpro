@@ -6,7 +6,7 @@ import { LogOut, Menu, PanelLeftClose, PanelLeftOpen, RotateCcw } from "lucide-r
 import { useAuth } from "@/contexts/auth-context";
 import { can, ROLE_BADGE_CLASS, ROLE_LABEL, ROLE_SCOPE_NOTE, type Role } from "@/lib/rbac";
 import { breadcrumbFor, type NavSection, visibleSections } from "@/lib/navigation";
-import { fetchHealth, resetDemo } from "@/lib/api";
+import { fetchHealth, fetchMyDaySummary, resetDemo } from "@/lib/api";
 import { BUILD_INFO } from "@/generated/build-info";
 import { Button } from "@/components/ui/button";
 import {
@@ -32,11 +32,13 @@ function SectionList({
   pathname,
   onNavigate,
   collapsed = false,
+  badges = {},
 }: {
   section: NavSection;
   pathname: string;
   onNavigate?: () => void;
   collapsed?: boolean;
+  badges?: Record<string, number>;
 }) {
   return (
     <div className="flex flex-col gap-0.5">
@@ -51,6 +53,7 @@ function SectionList({
       <nav aria-label={section.label} className="flex flex-col gap-0.5">
         {section.items.map((item) => {
           const active = pathname === item.to;
+          const badge = item.badgeKey ? (badges[item.badgeKey] ?? 0) : 0;
           return (
             <Link
               key={item.to}
@@ -62,6 +65,14 @@ function SectionList({
             >
               <item.icon className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden="true" />
               <span className={`truncate ${collapsed ? "sr-only" : ""}`}>{item.label}</span>
+              {!collapsed && badge > 0 && (
+                <span className="ml-auto rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-extrabold leading-none text-white" title={`${badge} actionable item${badge > 1 ? "s" : ""}`}>
+                  {badge > 99 ? "99+" : badge}
+                </span>
+              )}
+              {collapsed && badge > 0 && (
+                <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-primary" aria-label={`${badge} actionable items`} />
+              )}
             </Link>
           );
         })}
@@ -209,6 +220,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const breadcrumb = breadcrumbFor(location.pathname);
   const showBreadcrumb = breadcrumb && breadcrumb.crumb !== breadcrumb.label;
 
+  // Phase 33: "My Day" actionable badge (attention + due today only). Bounded
+  // refresh on focus; never a polling loop.
+  const myDayBadge = useQuery({
+    queryKey: ["my-day-badge", user?.id ?? "anon"],
+    queryFn: fetchMyDaySummary,
+    enabled: !!user && !!role && role !== "candidate",
+    staleTime: 30_000,
+    refetchOnWindowFocus: true,
+    retry: false,
+  });
+  const badges: Record<string, number> = myDayBadge.data ? { "my-day": myDayBadge.data.badge } : {};
+
   return (
     <div className="flex min-h-screen bg-canvas">
       {/* Desktop sidebar — independently scrollable, account controls pinned.
@@ -241,7 +264,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         )}
         <div className={`flex-1 overflow-y-auto pb-4 ${collapsed ? "px-2" : "px-3"}`}>
           {sections.map((s) => (
-            <SectionList key={s.key} section={s} pathname={location.pathname} collapsed={collapsed} />
+            <SectionList key={s.key} section={s} pathname={location.pathname} collapsed={collapsed} badges={badges} />
           ))}
         </div>
         <AccountFooter compact={collapsed} />
@@ -279,6 +302,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                       section={s}
                       pathname={location.pathname}
                       onNavigate={() => setDrawerOpen(false)}
+                      badges={badges}
                     />
                   ))}
                 </div>

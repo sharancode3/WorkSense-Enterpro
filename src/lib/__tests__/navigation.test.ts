@@ -9,17 +9,18 @@ function routesFor(role: Role): string[] {
 
 describe("role-aware navigation (Batch 1.1)", () => {
   it("filters items individually, not only whole sections", () => {
-    // IT may open Overview + Onboarding only — "My work" must NOT drag in the
-    // Recommendation hub, and no other section may appear.
-    expect(routesFor("it_security")).toEqual(["/app", "/onboarding"]);
+    // IT may open Overview + My Day + Onboarding only — "My work" must NOT
+    // drag in the Recommendation hub, and no other section may appear.
+    expect(routesFor("it_security")).toEqual(["/app", "/my-day", "/onboarding"]);
 
     // Recruiter must NOT see Workforce review just because Skill graph is
     // visible inside the same "People" section.
-    expect(routesFor("recruiter")).toEqual(["/app", "/graph", "/recruitment", "/policy"]);
+    expect(routesFor("recruiter")).toEqual(["/app", "/my-day", "/graph", "/recruitment", "/policy"]);
 
     // HR partner gets graph access but no recruitment or administration.
     expect(routesFor("hr_partner")).toEqual([
       "/app",
+      "/my-day",
       "/onboarding",
       "/hub",
       "/workforce",
@@ -31,6 +32,7 @@ describe("role-aware navigation (Batch 1.1)", () => {
     // Administrator keeps the full workspace including Administration.
     expect(routesFor("hr_executive")).toEqual([
       "/app",
+      "/my-day",
       "/onboarding",
       "/hub",
       "/workforce",
@@ -44,10 +46,10 @@ describe("role-aware navigation (Batch 1.1)", () => {
     ]);
 
     // Manager: team-focused, no recruitment or administration.
-    expect(routesFor("manager")).toEqual(["/app", "/onboarding", "/hub", "/workforce", "/graph", "/staffing", "/policy"]);
+    expect(routesFor("manager")).toEqual(["/app", "/my-day", "/onboarding", "/hub", "/workforce", "/graph", "/staffing", "/policy"]);
 
     // Employee: self-service home, onboarding, workforce (self) and graph (self).
-    expect(routesFor("employee")).toEqual(["/app", "/onboarding", "/workforce", "/graph", "/policy"]);
+    expect(routesFor("employee")).toEqual(["/app", "/my-day", "/onboarding", "/workforce", "/graph", "/policy"]);
 
     // Candidate has no app-shell destinations.
     expect(routesFor("candidate")).toEqual([]);
@@ -70,7 +72,7 @@ describe("role-aware navigation (Batch 1.1)", () => {
     // Items that a role cannot open are simply absent from the returned model.
     for (const s of visibleSections("it_security")) {
       for (const item of s.items) {
-        expect(["/app", "/onboarding"]).toContain(item.to);
+        expect(["/app", "/my-day", "/onboarding"]).toContain(item.to);
       }
     }
   });

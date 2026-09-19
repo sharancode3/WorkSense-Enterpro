@@ -8,6 +8,9 @@ import {
   interviewKitSchema,
   meResultSchema,
   myWorkSchema,
+  myDayMutationSchema,
+  myDayResultSchema,
+  myDaySummarySchema,
   onboardingQueueSchema,
   overviewSearchResultSchema,
   policyConversationLinkSchema,
@@ -19,9 +22,14 @@ import {
   recommendationCommentResultSchema,
   type AssessmentQueueResult,
   type CandidateCompare,
+  type MyDayItem,
+  type MyDayResult,
+  type MyDaySummary,
   type OnboardingQueue,
 } from "./contracts";
 import type { z } from "zod";
+
+export type { MyDayItem, MyDayResult, MyDaySummary } from "./contracts";
 
 export interface Twin {
   id: string;
@@ -1124,6 +1132,53 @@ export interface MyWorkResult {
 }
 
 export const fetchMyWork = () => invoke<MyWorkResult>("my-work", {}, myWorkSchema, "my-work");
+
+// ---- Phase 33: "My Day" orchestration layer ----
+
+export const myDayViewParam = () => ({ tz_offset_minutes: new Date().getTimezoneOffset() });
+
+export const fetchMyDay = (view: "today" | "week" | "all") =>
+  invoke<MyDayResult>("my-day", { view, ...myDayViewParam() }, myDayResultSchema, "my-day");
+
+/** Lightweight sidebar badge — counts only actionable items. */
+export const fetchMyDaySummary = () =>
+  invoke<{ ok: true; badge: number; summary: MyDaySummary; role: string; generated_at: string; today_date: string; tz_offset_minutes: number }>(
+    "my-day",
+    { action: "summary", ...myDayViewParam() },
+    myDaySummarySchema,
+    "my-day.summary"
+  );
+
+export const myDayCreateTask = (payload: {
+  title: string;
+  notes?: string;
+  due_at?: string | null;
+  recurrence?: { freq: "daily" | "weekly"; weekdays?: number[]; day_time?: string } | null;
+  assoc_item_id?: string | null;
+}) =>
+  invoke<{ ok: true; created_id?: string; already?: boolean; transitioned?: { key: string; to: string }; result: MyDayResult }>(
+    "my-day",
+    { action: "create_task", ...myDayViewParam(), ...payload },
+    myDayMutationSchema,
+    "my-day.create"
+  );
+
+export const myDayTransition = (payload: {
+  target: "personal" | "instance" | "source";
+  key: string;
+  to: "todo" | "in_progress" | "waiting" | "blocked" | "done" | "dismissed" | "snoozed";
+  version?: number;
+  note?: string;
+  snooze_until?: string;
+}) => invoke<{ ok: true; already?: boolean; transitioned?: { key: string; to: string }; result: MyDayResult }>(
+  "my-day",
+  { action: "transition", ...myDayViewParam(), ...payload },
+  myDayMutationSchema,
+  "my-day.transition"
+);
+
+export const myDayUpdatePrefs = (payload: { rollover_enabled?: boolean; workday_start_hour?: number }) =>
+  invoke<{ ok: true; result: MyDayResult }>("my-day", { action: "update_prefs", ...myDayViewParam(), ...payload }, myDayMutationSchema, "my-day.prefs");
 
 // ---- Phase 4: file-based resume ingestion & evidence review ----
 

@@ -14,6 +14,7 @@ import StaffingPlanner from "./pages/staffing";
 import AdminAccess from "./pages/admin-access";
 import SystemStatus from "./pages/status";
 import DataQuality from "./pages/data-quality";
+import MyDay from "./pages/my-day";
 import NotFound from "./pages/NotFound";
 import { ProtectedRoute } from "./components/protected-route";
 
@@ -49,6 +50,15 @@ export const routers = [
     element: (
       <ProtectedRoute>
         <RoleHome />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: "/my-day",
+    name: "my-day",
+    element: (
+      <ProtectedRoute>
+        <MyDay />
       </ProtectedRoute>
     ),
   },

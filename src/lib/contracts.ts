@@ -729,3 +729,212 @@ export type QueueSessionItem = z.infer<typeof queueSessionItemSchema>;
 export type AwaitingReviewItem = z.infer<typeof awaitingReviewItemSchema>;
 export type FailedJobItem = z.infer<typeof failedJobItemSchema>;
 
+// ---------------------------------------------------------------------------
+// Phase 33 — "My Day" contract.
+// ---------------------------------------------------------------------------
+
+export const myDayPrioritySchema = z.object({
+  band: z.enum(["Critical", "Due soon", "Normal", "Waiting"]),
+  value: z.number(),
+  reason: z.string(),
+  signals: z.array(z.string()),
+  calc_version: z.number(),
+});
+
+export const myDayBlockerSchema = z.object({
+  reason: z.string(),
+  owner_label: z.string().nullable(),
+  recorded_at: z.string().nullable(),
+  next_action: z.string(),
+  downstream_impact: z.string().nullable(),
+});
+
+export const myDayItemSchema = z.object({
+  id: z.string(),
+  origin: z.enum([
+    "workflow_task",
+    "approval",
+    "review",
+    "assessment",
+    "requisition",
+    "data_quality",
+    "personal",
+    "recurring_routine",
+    "informational",
+  ]),
+  type: z.string(),
+  title: z.string(),
+  subject: z.string(),
+  subject_id: z.string(),
+  owner_label: z.string(),
+  status: z.enum(["todo", "in_progress", "waiting", "blocked", "done", "dismissed", "snoozed"]),
+  source_group: z.enum(["attention", "ready", "waiting", "none"]),
+  group: z.enum(["attention", "today", "in_progress", "waiting", "later", "completed"]),
+  priority: myDayPrioritySchema,
+  due_at: z.string().nullable(),
+  due_key: z.string().nullable(),
+  overdue_days: z.number(),
+  deep_link: z.string().nullable(),
+  canonical_action: z.string().nullable(),
+  inline_completable: z.boolean(),
+  blocker: myDayBlockerSchema.nullable(),
+  carried_from: z.object({ original_due_at: z.string(), days: z.number() }).nullable(),
+  recurrence: z.object({ freq: z.enum(["daily", "weekly"]), occurrence_date: z.string() }).nullable(),
+  evidence: z.object({ text: z.string(), at: z.string() }).nullable(),
+  version: z.number(),
+  source: z.object({
+    module: z.string(),
+    resource_type: z.string().nullable(),
+    resource_id: z.string().nullable(),
+    workflow: z.string(),
+    version: z.number().nullable(),
+    ref_id: z.string(),
+  }),
+  can_dismiss: z.boolean(),
+  can_snooze: z.boolean(),
+});
+
+export const myDayResultSchema = z.object({
+  ok: z.literal(true),
+  role: z.string(),
+  name: z.string(),
+  job_title: z.string().nullable(),
+  department: z.string().nullable(),
+  generated_at: z.string(),
+  server_time: z.string(),
+  tz_offset_minutes: z.number(),
+  today_date: z.string(),
+  view: z.enum(["today", "week", "all"]),
+  summary: z.object({
+    total_open: z.number(),
+    attention: z.number(),
+    due_today: z.number(),
+    in_progress: z.number(),
+    waiting: z.number(),
+    completed_today: z.number(),
+    overdue_count: z.number(),
+    blocked_count: z.number(),
+  }),
+  badge: z.number(),
+  groups: z.array(z.enum(["attention", "today", "in_progress", "waiting", "later", "completed"])),
+  items: z.array(myDayItemSchema),
+  dismissed_items: z.array(myDayItemSchema),
+  analytics: z.object({
+    today: z.object({
+      eligible_personal_today: z.number(),
+      done_personal_today: z.number(),
+      completion_pct: z.number().nullable(),
+      open_workflow_today: z.number(),
+      blocked: z.number(),
+      waiting: z.number(),
+      note: z.string(),
+    }),
+    trend7: z.array(z.object({ date: z.string(), done: z.number(), personal: z.number(), routines: z.number() })),
+    modules: z.array(z.object({ module: z.string(), label: z.string(), count: z.number() })),
+    rhythm: z.object({
+      days_active_last7: z.number(),
+      days_total: z.number(),
+      this_week_done: z.number(),
+      private_note: z.string(),
+    }),
+    workflow_health: z.object({ attention: z.number(), ready: z.number(), waiting: z.number(), note: z.string() }),
+    honesty: z.array(z.string()),
+  }),
+  prefs: z.object({ rollover_enabled: z.boolean(), workday_start_hour: z.number() }),
+  personal_count: z.number(),
+  routine_count: z.number(),
+}) as z.ZodType<MyDayResult>;
+
+export const myDaySummarySchema = z.object({
+  ok: z.literal(true),
+  badge: z.number(),
+  summary: z.object({
+    total_open: z.number(),
+    attention: z.number(),
+    due_today: z.number(),
+    in_progress: z.number(),
+    waiting: z.number(),
+    completed_today: z.number(),
+    overdue_count: z.number(),
+    blocked_count: z.number(),
+  }),
+  role: z.string(),
+  generated_at: z.string(),
+  today_date: z.string(),
+  tz_offset_minutes: z.number(),
+}) as z.ZodType<{ ok: true; badge: number; summary: import("./api").MyDaySummary; role: string; generated_at: string; today_date: string; tz_offset_minutes: number }>;
+
+export const myDayMutationSchema = z.object({
+  ok: z.literal(true),
+  already: z.boolean().optional(),
+  created_id: z.string().optional(),
+  transitioned: z.object({ key: z.string(), to: z.string() }).optional(),
+  result: myDayResultSchema,
+}) as z.ZodType<{ ok: true; already?: boolean; created_id?: string; transitioned?: { key: string; to: string }; result: MyDayResult }>;
+
+export interface MyDayResult {
+  ok: true;
+  role: string;
+  name: string;
+  job_title: string | null;
+  department: string | null;
+  generated_at: string;
+  server_time: string;
+  tz_offset_minutes: number;
+  today_date: string;
+  view: "today" | "week" | "all";
+  summary: MyDaySummary;
+  badge: number;
+  groups: ("attention" | "today" | "in_progress" | "waiting" | "later" | "completed")[];
+  items: MyDayItem[];
+  dismissed_items: MyDayItem[];
+  analytics: {
+    today: { eligible_personal_today: number; done_personal_today: number; completion_pct: number | null; open_workflow_today: number; blocked: number; waiting: number; note: string };
+    trend7: { date: string; done: number; personal: number; routines: number }[];
+    modules: { module: string; label: string; count: number }[];
+    rhythm: { days_active_last7: number; days_total: number; this_week_done: number; private_note: string };
+    workflow_health: { attention: number; ready: number; waiting: number; note: string };
+    honesty: string[];
+  };
+  prefs: { rollover_enabled: boolean; workday_start_hour: number };
+  personal_count: number;
+  routine_count: number;
+}
+export interface MyDaySummary {
+  total_open: number;
+  attention: number;
+  due_today: number;
+  in_progress: number;
+  waiting: number;
+  completed_today: number;
+  overdue_count: number;
+  blocked_count: number;
+}
+export interface MyDayItem {
+  id: string;
+  origin: "workflow_task" | "approval" | "review" | "assessment" | "requisition" | "data_quality" | "personal" | "recurring_routine" | "informational";
+  type: string;
+  title: string;
+  subject: string;
+  subject_id: string;
+  owner_label: string;
+  status: "todo" | "in_progress" | "waiting" | "blocked" | "done" | "dismissed" | "snoozed";
+  source_group: "attention" | "ready" | "waiting" | "none";
+  group: "attention" | "today" | "in_progress" | "waiting" | "later" | "completed";
+  priority: { band: "Critical" | "Due soon" | "Normal" | "Waiting"; value: number; reason: string; signals: string[]; calc_version: number };
+  due_at: string | null;
+  due_key: string | null;
+  overdue_days: number;
+  deep_link: string | null;
+  canonical_action: string | null;
+  inline_completable: boolean;
+  blocker: { reason: string; owner_label: string | null; recorded_at: string | null; next_action: string; downstream_impact: string | null } | null;
+  carried_from: { original_due_at: string; days: number } | null;
+  recurrence: { freq: "daily" | "weekly"; occurrence_date: string } | null;
+  evidence: { text: string; at: string } | null;
+  version: number;
+  source: { module: string; resource_type: string | null; resource_id: string | null; workflow: string; version: number | null; ref_id: string };
+  can_dismiss: boolean;
+  can_snooze: boolean;
+}
+

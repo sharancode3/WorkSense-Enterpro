@@ -1,0 +1,9 @@
+-- Mirror migration_20260918_175100000 constraint updates on the live instance (project's own tables; repo code inserts knowledge_assessment sessions).
+alter table public.candidate_sessions drop constraint candidate_sessions_session_type_check;
+alter table public.candidate_sessions
+  add constraint candidate_sessions_session_type_check
+  check (session_type in ('work_sample','interview','knowledge_assessment'));
+alter table public.assessments drop constraint assessments_type_check;
+alter table public.assessments
+  add constraint assessments_type_check
+  check (type in ('interview','work_sample','assessment','knowledge_assessment'));

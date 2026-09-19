@@ -324,7 +324,7 @@ export type Database = {
           },
         ]
       }
-      log_events_227cb353_7526_4ab8_8d43_2fd759b02b75: {
+      log_events_09f745e7_6ec1_496f_b72b_521ab36c70e8: {
         Row: {
           body: Json | null
           event_message: string | null
@@ -345,7 +345,7 @@ export type Database = {
         }
         Relationships: []
       }
-      log_events_4e208327_c7bf_49dd_a80c_359937feedfb: {
+      log_events_0b52bbf4_d365_4971_85e6_bcd372988f7f: {
         Row: {
           body: Json | null
           event_message: string | null
@@ -366,7 +366,7 @@ export type Database = {
         }
         Relationships: []
       }
-      log_events_5661a03a_db61_467c_8240_df509846cdd8: {
+      log_events_458193e4_2b1c_4767_b30c_af1989e6ea9c: {
         Row: {
           body: Json | null
           event_message: string | null
@@ -387,7 +387,7 @@ export type Database = {
         }
         Relationships: []
       }
-      log_events_86e46fa1_6544_45d4_9d7d_bccfc0c400df: {
+      log_events_6727d837_6446_40af_ba6e_a98628eca56b: {
         Row: {
           body: Json | null
           event_message: string | null
@@ -408,7 +408,7 @@ export type Database = {
         }
         Relationships: []
       }
-      log_events_8a39c50b_e689_4472_86bb_40f776e65d5b: {
+      log_events_80206bc7_e1d8_41b5_9609_13f5e6ae7b66: {
         Row: {
           body: Json | null
           event_message: string | null
@@ -429,7 +429,7 @@ export type Database = {
         }
         Relationships: []
       }
-      log_events_c3c0713d_50d6_4de8_b40a_1857d6c50886: {
+      log_events_b9cd888b_2875_41fe_b56b_c3047a312765: {
         Row: {
           body: Json | null
           event_message: string | null
@@ -450,7 +450,7 @@ export type Database = {
         }
         Relationships: []
       }
-      log_events_cd74958d_d1db_40bb_80a4_695e2c6b1574: {
+      log_events_bb54a7b1_d2ef_4b6c_a5fc_8586498f0424: {
         Row: {
           body: Json | null
           event_message: string | null
@@ -471,7 +471,7 @@ export type Database = {
         }
         Relationships: []
       }
-      log_events_dbba075b_88fc_4849_a89c_5bd2b388816c: {
+      log_events_cece1786_9117_442b_bb13_57bcf4fa58d4: {
         Row: {
           body: Json | null
           event_message: string | null
@@ -492,7 +492,7 @@ export type Database = {
         }
         Relationships: []
       }
-      log_events_f71661ad_eba4_40ae_ae4d_d3a8e1539083: {
+      log_events_f32c0fe9_8afe_4fa5_8d4d_30089095f900: {
         Row: {
           body: Json | null
           event_message: string | null
@@ -4094,7 +4094,6 @@ export type Database = {
           id: string
           org_id: string
           required_skills: Json
-          requisition_criteria: Json
           rubrics: Json
           seniority_level: number
           status: string
@@ -4110,7 +4109,6 @@ export type Database = {
           id?: string
           org_id: string
           required_skills?: Json
-          requisition_criteria?: Json
           rubrics?: Json
           seniority_level?: number
           status?: string
@@ -4126,7 +4124,6 @@ export type Database = {
           id?: string
           org_id?: string
           required_skills?: Json
-          requisition_criteria?: Json
           rubrics?: Json
           seniority_level?: number
           status?: string
@@ -4248,6 +4245,274 @@ export type Database = {
             foreignKeyName: "model_jobs_org_id_fkey"
             columns: ["org_id"]
             referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      myday_item_state: {
+        Row: {
+          created_at: string
+          id: string
+          item_key: string
+          note: string | null
+          org_id: string
+          owner_twin_id: string
+          snoozed_until: string | null
+          state: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          item_key: string
+          note?: string | null
+          org_id: string
+          owner_twin_id: string
+          snoozed_until?: string | null
+          state: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          item_key?: string
+          note?: string | null
+          org_id?: string
+          owner_twin_id?: string
+          snoozed_until?: string | null
+          state?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "myday_item_state_org_id_fkey"
+            columns: ["org_id"]
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "myday_item_state_owner_twin_id_fkey"
+            columns: ["owner_twin_id"]
+            referencedRelation: "digital_twins"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      myday_personal_tasks: {
+        Row: {
+          canonical_action: string | null
+          completed_at: string | null
+          completion_evidence: string | null
+          created_at: string
+          deep_link: string | null
+          due_at: string | null
+          id: string
+          notes: string | null
+          org_id: string
+          original_due_at: string | null
+          owner_twin_id: string
+          recurrence: Json | null
+          rollover_count: number
+          snoozed_until: string | null
+          source_module: string | null
+          source_resource_id: string | null
+          source_resource_type: string | null
+          state_note: string | null
+          status: string
+          title: string
+          updated_at: string
+          version: number
+        }
+        Insert: {
+          canonical_action?: string | null
+          completed_at?: string | null
+          completion_evidence?: string | null
+          created_at?: string
+          deep_link?: string | null
+          due_at?: string | null
+          id?: string
+          notes?: string | null
+          org_id: string
+          original_due_at?: string | null
+          owner_twin_id: string
+          recurrence?: Json | null
+          rollover_count?: number
+          snoozed_until?: string | null
+          source_module?: string | null
+          source_resource_id?: string | null
+          source_resource_type?: string | null
+          state_note?: string | null
+          status?: string
+          title: string
+          updated_at?: string
+          version?: number
+        }
+        Update: {
+          canonical_action?: string | null
+          completed_at?: string | null
+          completion_evidence?: string | null
+          created_at?: string
+          deep_link?: string | null
+          due_at?: string | null
+          id?: string
+          notes?: string | null
+          org_id?: string
+          original_due_at?: string | null
+          owner_twin_id?: string
+          recurrence?: Json | null
+          rollover_count?: number
+          snoozed_until?: string | null
+          source_module?: string | null
+          source_resource_id?: string | null
+          source_resource_type?: string | null
+          state_note?: string | null
+          status?: string
+          title?: string
+          updated_at?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "myday_personal_tasks_org_id_fkey"
+            columns: ["org_id"]
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "myday_personal_tasks_owner_twin_id_fkey"
+            columns: ["owner_twin_id"]
+            referencedRelation: "digital_twins"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      myday_prefs: {
+        Row: {
+          org_id: string
+          rollover_enabled: boolean
+          twin_id: string
+          updated_at: string
+          workday_start_hour: number
+        }
+        Insert: {
+          org_id: string
+          rollover_enabled?: boolean
+          twin_id: string
+          updated_at?: string
+          workday_start_hour?: number
+        }
+        Update: {
+          org_id?: string
+          rollover_enabled?: boolean
+          twin_id?: string
+          updated_at?: string
+          workday_start_hour?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "myday_prefs_org_id_fkey"
+            columns: ["org_id"]
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "myday_prefs_twin_id_fkey"
+            columns: ["twin_id"]
+            referencedRelation: "digital_twins"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      myday_recurrence_instances: {
+        Row: {
+          canonical_action: string | null
+          completed_at: string | null
+          completion_evidence: string | null
+          created_at: string
+          deep_link: string | null
+          due_at: string | null
+          freq: string
+          id: string
+          notes: string | null
+          occurrence_date: string
+          org_id: string
+          owner_twin_id: string
+          rollover_count: number
+          rule_key: string
+          rule_type: string
+          snoozed_until: string | null
+          source_module: string | null
+          source_resource_id: string | null
+          source_resource_type: string | null
+          state_note: string | null
+          status: string
+          title: string
+          updated_at: string
+          version: number
+        }
+        Insert: {
+          canonical_action?: string | null
+          completed_at?: string | null
+          completion_evidence?: string | null
+          created_at?: string
+          deep_link?: string | null
+          due_at?: string | null
+          freq?: string
+          id?: string
+          notes?: string | null
+          occurrence_date: string
+          org_id: string
+          owner_twin_id: string
+          rollover_count?: number
+          rule_key: string
+          rule_type: string
+          snoozed_until?: string | null
+          source_module?: string | null
+          source_resource_id?: string | null
+          source_resource_type?: string | null
+          state_note?: string | null
+          status?: string
+          title: string
+          updated_at?: string
+          version?: number
+        }
+        Update: {
+          canonical_action?: string | null
+          completed_at?: string | null
+          completion_evidence?: string | null
+          created_at?: string
+          deep_link?: string | null
+          due_at?: string | null
+          freq?: string
+          id?: string
+          notes?: string | null
+          occurrence_date?: string
+          org_id?: string
+          owner_twin_id?: string
+          rollover_count?: number
+          rule_key?: string
+          rule_type?: string
+          snoozed_until?: string | null
+          source_module?: string | null
+          source_resource_id?: string | null
+          source_resource_type?: string | null
+          state_note?: string | null
+          status?: string
+          title?: string
+          updated_at?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "myday_recurrence_instances_org_id_fkey"
+            columns: ["org_id"]
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "myday_recurrence_instances_owner_twin_id_fkey"
+            columns: ["owner_twin_id"]
+            referencedRelation: "digital_twins"
             referencedColumns: ["id"]
           },
         ]
@@ -4662,46 +4927,6 @@ export type Database = {
           },
         ]
       }
-      policy_conversations: {
-        Row: {
-          created_at: string
-          id: string
-          org_id: string
-          owner_twin_id: string
-          title: string
-          updated_at: string
-        }
-        Insert: {
-          created_at?: string
-          id?: string
-          org_id: string
-          owner_twin_id: string
-          title: string
-          updated_at?: string
-        }
-        Update: {
-          created_at?: string
-          id?: string
-          org_id?: string
-          owner_twin_id?: string
-          title?: string
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "policy_conversations_org_id_fkey"
-            columns: ["org_id"]
-            referencedRelation: "organizations"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "policy_conversations_owner_twin_id_fkey"
-            columns: ["owner_twin_id"]
-            referencedRelation: "digital_twins"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       policy_documents: {
         Row: {
           applicable_locations: Json
@@ -4767,7 +4992,6 @@ export type Database = {
         Row: {
           created_at: string
           created_by: string | null
-          history: Json
           id: string
           org_id: string
           owner_twin_id: string | null
@@ -4775,9 +4999,6 @@ export type Database = {
           reason: string | null
           relevant_sources: Json
           resolved_at: string | null
-          responded_at: string | null
-          responded_by: string | null
-          response_text: string | null
           selected_context: Json
           status: string
           updated_at: string
@@ -4785,7 +5006,6 @@ export type Database = {
         Insert: {
           created_at?: string
           created_by?: string | null
-          history?: Json
           id?: string
           org_id: string
           owner_twin_id?: string | null
@@ -4793,9 +5013,6 @@ export type Database = {
           reason?: string | null
           relevant_sources?: Json
           resolved_at?: string | null
-          responded_at?: string | null
-          responded_by?: string | null
-          response_text?: string | null
           selected_context?: Json
           status?: string
           updated_at?: string
@@ -4803,7 +5020,6 @@ export type Database = {
         Update: {
           created_at?: string
           created_by?: string | null
-          history?: Json
           id?: string
           org_id?: string
           owner_twin_id?: string | null
@@ -4811,9 +5027,6 @@ export type Database = {
           reason?: string | null
           relevant_sources?: Json
           resolved_at?: string | null
-          responded_at?: string | null
-          responded_by?: string | null
-          response_text?: string | null
           selected_context?: Json
           status?: string
           updated_at?: string
@@ -4835,119 +5048,6 @@ export type Database = {
             foreignKeyName: "policy_escalations_owner_twin_id_fkey"
             columns: ["owner_twin_id"]
             referencedRelation: "digital_twins"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "policy_escalations_responded_by_fkey"
-            columns: ["responded_by"]
-            referencedRelation: "digital_twins"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      policy_messages: {
-        Row: {
-          answer: Json | null
-          conversation_id: string
-          created_at: string
-          escalation_id: string | null
-          id: string
-          org_id: string
-          question: string | null
-          request_id: string
-          role: string
-        }
-        Insert: {
-          answer?: Json | null
-          conversation_id: string
-          created_at?: string
-          escalation_id?: string | null
-          id?: string
-          org_id: string
-          question?: string | null
-          request_id: string
-          role: string
-        }
-        Update: {
-          answer?: Json | null
-          conversation_id?: string
-          created_at?: string
-          escalation_id?: string | null
-          id?: string
-          org_id?: string
-          question?: string | null
-          request_id?: string
-          role?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "policy_messages_conversation_id_fkey"
-            columns: ["conversation_id"]
-            referencedRelation: "policy_conversations"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "policy_messages_escalation_id_fkey"
-            columns: ["escalation_id"]
-            referencedRelation: "policy_escalations"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "policy_messages_org_id_fkey"
-            columns: ["org_id"]
-            referencedRelation: "organizations"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      recommendation_comments: {
-        Row: {
-          actor_role: string | null
-          actor_twin_id: string
-          body: string
-          created_at: string
-          id: string
-          org_id: string
-          recommendation_id: string
-          visibility: string
-        }
-        Insert: {
-          actor_role?: string | null
-          actor_twin_id: string
-          body: string
-          created_at?: string
-          id?: string
-          org_id: string
-          recommendation_id: string
-          visibility?: string
-        }
-        Update: {
-          actor_role?: string | null
-          actor_twin_id?: string
-          body?: string
-          created_at?: string
-          id?: string
-          org_id?: string
-          recommendation_id?: string
-          visibility?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "recommendation_comments_actor_twin_id_fkey"
-            columns: ["actor_twin_id"]
-            referencedRelation: "digital_twins"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "recommendation_comments_org_id_fkey"
-            columns: ["org_id"]
-            referencedRelation: "organizations"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "recommendation_comments_recommendation_id_fkey"
-            columns: ["recommendation_id"]
-            referencedRelation: "recommendations"
             referencedColumns: ["id"]
           },
         ]
@@ -5320,61 +5420,6 @@ export type Database = {
           },
         ]
       }
-      skill_fits: {
-        Row: {
-          computed_at: string
-          created_at: string
-          fit: Json
-          id: string
-          org_id: string
-          scenario: string
-          target_id: string
-          target_type: string
-          twin_id: string
-        }
-        Insert: {
-          computed_at?: string
-          created_at?: string
-          fit?: Json
-          id?: string
-          org_id: string
-          scenario: string
-          target_id: string
-          target_type: string
-          twin_id: string
-        }
-        Update: {
-          computed_at?: string
-          created_at?: string
-          fit?: Json
-          id?: string
-          org_id?: string
-          scenario?: string
-          target_id?: string
-          target_type?: string
-          twin_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "skill_fits_org_id_fkey"
-            columns: ["org_id"]
-            referencedRelation: "organizations"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "skill_fits_target_id_fkey"
-            columns: ["target_id"]
-            referencedRelation: "job_requisitions"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "skill_fits_twin_id_fkey"
-            columns: ["twin_id"]
-            referencedRelation: "digital_twins"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       skill_graph: {
         Row: {
           aliases: Json
@@ -5406,128 +5451,6 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "skill_graph_org_id_fkey"
-            columns: ["org_id"]
-            referencedRelation: "organizations"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      staffing_proposals: {
-        Row: {
-          created_at: string
-          id: string
-          option_id: string | null
-          option_label: string | null
-          option_snapshot: Json | null
-          org_id: string
-          review_note: string | null
-          reviewed_at: string | null
-          reviewed_by: string | null
-          scenario_id: string | null
-          scenario_version: string | null
-          status: string
-          submitted_by: string | null
-          updated_at: string
-        }
-        Insert: {
-          created_at?: string
-          id?: string
-          option_id?: string | null
-          option_label?: string | null
-          option_snapshot?: Json | null
-          org_id: string
-          review_note?: string | null
-          reviewed_at?: string | null
-          reviewed_by?: string | null
-          scenario_id?: string | null
-          scenario_version?: string | null
-          status?: string
-          submitted_by?: string | null
-          updated_at?: string
-        }
-        Update: {
-          created_at?: string
-          id?: string
-          option_id?: string | null
-          option_label?: string | null
-          option_snapshot?: Json | null
-          org_id?: string
-          review_note?: string | null
-          reviewed_at?: string | null
-          reviewed_by?: string | null
-          scenario_id?: string | null
-          scenario_version?: string | null
-          status?: string
-          submitted_by?: string | null
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "staffing_proposals_org_id_fkey"
-            columns: ["org_id"]
-            referencedRelation: "organizations"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "staffing_proposals_reviewed_by_fkey"
-            columns: ["reviewed_by"]
-            referencedRelation: "digital_twins"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "staffing_proposals_scenario_id_fkey"
-            columns: ["scenario_id"]
-            referencedRelation: "staffing_scenarios"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "staffing_proposals_submitted_by_fkey"
-            columns: ["submitted_by"]
-            referencedRelation: "digital_twins"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      staffing_scenarios: {
-        Row: {
-          assumptions: Json
-          created_at: string
-          created_by: string | null
-          id: string
-          input_snapshot: Json
-          name: string
-          org_id: string
-          result: Json
-        }
-        Insert: {
-          assumptions?: Json
-          created_at?: string
-          created_by?: string | null
-          id?: string
-          input_snapshot?: Json
-          name: string
-          org_id: string
-          result?: Json
-        }
-        Update: {
-          assumptions?: Json
-          created_at?: string
-          created_by?: string | null
-          id?: string
-          input_snapshot?: Json
-          name?: string
-          org_id?: string
-          result?: Json
-        }
-        Relationships: [
-          {
-            foreignKeyName: "staffing_scenarios_created_by_fkey"
-            columns: ["created_by"]
-            referencedRelation: "digital_twins"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "staffing_scenarios_org_id_fkey"
             columns: ["org_id"]
             referencedRelation: "organizations"
             referencedColumns: ["id"]
@@ -5746,10 +5669,6 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      can_view_twin: {
-        Args: { p_twin_id: string }
-        Returns: boolean
-      }
       convert_candidate_to_employee: {
         Args: { p_req_id: string; p_twin_id: string }
         Returns: Json
@@ -5829,6 +5748,39 @@ export type Database = {
   realtime: {
     Tables: {
       messages: {
+        Row: {
+          event: string | null
+          extension: string
+          id: string
+          inserted_at: string
+          payload: Json | null
+          private: boolean | null
+          topic: string
+          updated_at: string
+        }
+        Insert: {
+          event?: string | null
+          extension: string
+          id?: string
+          inserted_at?: string
+          payload?: Json | null
+          private?: boolean | null
+          topic: string
+          updated_at?: string
+        }
+        Update: {
+          event?: string | null
+          extension?: string
+          id?: string
+          inserted_at?: string
+          payload?: Json | null
+          private?: boolean | null
+          topic?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      messages_2026_09_16: {
         Row: {
           event: string | null
           extension: string
@@ -5961,39 +5913,6 @@ export type Database = {
         Relationships: []
       }
       messages_2026_09_20: {
-        Row: {
-          event: string | null
-          extension: string
-          id: string
-          inserted_at: string
-          payload: Json | null
-          private: boolean | null
-          topic: string
-          updated_at: string
-        }
-        Insert: {
-          event?: string | null
-          extension: string
-          id?: string
-          inserted_at?: string
-          payload?: Json | null
-          private?: boolean | null
-          topic: string
-          updated_at?: string
-        }
-        Update: {
-          event?: string | null
-          extension?: string
-          id?: string
-          inserted_at?: string
-          payload?: Json | null
-          private?: boolean | null
-          topic?: string
-          updated_at?: string
-        }
-        Relationships: []
-      }
-      messages_2026_09_21: {
         Row: {
           event: string | null
           extension: string

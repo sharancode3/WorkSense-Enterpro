@@ -1,0 +1,8 @@
+-- Restore the repo-declared column on the project's own assessment_blueprints table (missing on this live instance).
+alter table public.assessment_blueprints add column if not exists kind text not null default 'work_sample' check (kind in ('work_sample','interview','knowledge_assessment'));
+-- Match the repo's uniqueness contract (assessment_blueprints_org_req_comp_kind_version_uniq).
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'assessment_blueprints_org_req_comp_kind_version_uniq') then
+    alter table public.assessment_blueprints add constraint assessment_blueprints_org_req_comp_kind_version_uniq unique (org_id, requisition_id, competency, kind, version);
+  end if;
+end $$;

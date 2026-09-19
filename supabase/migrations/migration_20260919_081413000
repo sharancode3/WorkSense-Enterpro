@@ -1,0 +1,98 @@
+-- My Day personal work-orchestration tables (Phase 33)
+-- Org-scoped, owner-read-only RLS; ALL writes go through the service-role my-day backend function.
+
+create table public.myday_personal_tasks (
+  id uuid primary key default gen_random_uuid(),
+  org_id uuid not null references public.organizations(id) on delete cascade,
+  owner_twin_id uuid not null references public.digital_twins(id) on delete cascade,
+  title text not null,
+  notes text,
+  due_at timestamptz,
+  recurrence jsonb,
+  status text not null default 'todo' check (status in ('todo','in_progress','waiting','blocked','done','dismissed','snoozed')),
+  snoozed_until timestamptz,
+  state_note text,
+  completed_at timestamptz,
+  completion_evidence text,
+  original_due_at timestamptz,
+  rollover_count int not null default 0,
+  source_module text,
+  source_resource_type text,
+  source_resource_id text,
+  canonical_action text,
+  deep_link text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  version int not null default 1
+);
+create index myday_personal_tasks_owner_idx on public.myday_personal_tasks (org_id, owner_twin_id, due_at);
+alter table public.myday_personal_tasks enable row level security;
+create policy myday_personal_tasks_owner_read on public.myday_personal_tasks for select using (
+  exists (select 1 from public.current_twin() ct
+    where ct.org_id = public.myday_personal_tasks.org_id and ct.id = public.myday_personal_tasks.owner_twin_id)
+);
+
+create table public.myday_recurrence_instances (
+  id uuid primary key default gen_random_uuid(),
+  org_id uuid not null references public.organizations(id) on delete cascade,
+  owner_twin_id uuid not null references public.digital_twins(id) on delete cascade,
+  rule_type text not null check (rule_type in ('personal','system')),
+  rule_key text not null,
+  freq text not null default 'daily' check (freq in ('daily','weekly')),
+  occurrence_date date not null,
+  due_at timestamptz,
+  title text not null,
+  notes text,
+  source_module text,
+  source_resource_type text,
+  source_resource_id text,
+  canonical_action text,
+  deep_link text,
+  status text not null default 'todo' check (status in ('todo','in_progress','done','dismissed','snoozed')),
+  snoozed_until timestamptz,
+  state_note text,
+  completed_at timestamptz,
+  completion_evidence text,
+  rollover_count int not null default 0,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  version int not null default 1,
+  unique (org_id, owner_twin_id, rule_key, occurrence_date)
+);
+create index myday_recurrence_instances_owner_idx on public.myday_recurrence_instances (org_id, owner_twin_id, occurrence_date);
+alter table public.myday_recurrence_instances enable row level security;
+create policy myday_recurrence_instances_owner_read on public.myday_recurrence_instances for select using (
+  exists (select 1 from public.current_twin() ct
+    where ct.org_id = public.myday_recurrence_instances.org_id and ct.id = public.myday_recurrence_instances.owner_twin_id)
+);
+
+create table public.myday_item_state (
+  id uuid primary key default gen_random_uuid(),
+  org_id uuid not null references public.organizations(id) on delete cascade,
+  owner_twin_id uuid not null references public.digital_twins(id) on delete cascade,
+  item_key text not null,
+  state text not null check (state in ('dismissed','snoozed')),
+  snoozed_until timestamptz,
+  note text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (org_id, owner_twin_id, item_key)
+);
+alter table public.myday_item_state enable row level security;
+create policy myday_item_state_owner_read on public.myday_item_state for select using (
+  exists (select 1 from public.current_twin() ct
+    where ct.org_id = public.myday_item_state.org_id and ct.id = public.myday_item_state.owner_twin_id)
+);
+
+create table public.myday_prefs (
+  twin_id uuid primary key references public.digital_twins(id) on delete cascade,
+  org_id uuid not null references public.organizations(id) on delete cascade,
+  rollover_enabled boolean not null default true,
+  workday_start_hour int not null default 9 check (workday_start_hour between 0 and 23),
+  updated_at timestamptz not null default now()
+);
+alter table public.myday_prefs enable row level security;
+create policy myday_prefs_owner_read on public.myday_prefs for select using (
+  exists (select 1 from public.current_twin() ct
+    where ct.org_id = public.myday_prefs.org_id and ct.id = public.myday_prefs.twin_id)
+);

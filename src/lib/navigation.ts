@@ -18,6 +18,7 @@ import {
   ListChecks,
   ScrollText,
   ShieldCheck,
+  Sun,
   TrendingUp,
   UserCog,
   Users,
@@ -30,6 +31,8 @@ export interface NavItem {
   icon: LucideIcon;
   /** Must match the server-enforced action of the destination page. */
   show: (role: Role) => boolean;
+  /** Optional badge source key (the app shell fills counts from My Day). */
+  badgeKey?: string;
 }
 
 export interface NavSection {
@@ -45,6 +48,10 @@ const ITEMS: NavItem[] = [
   // Overview is the landing for every staff role; candidates have their own
   // status workspace and never render this app shell.
   { label: "Overview", to: "/app", icon: Gauge, show: (r) => r !== "candidate" },
+  // Phase 33: "My Day" — personal + role work orchestration. Visible to every
+  // staff role; candidates stay in the candidate portal (their next steps are
+  // simplified and never internal).
+  { label: "My Day", to: "/my-day", icon: Sun, show: (r) => r !== "candidate", badgeKey: "my-day" },
   { label: "Onboarding", to: "/onboarding", icon: ListChecks, show: (r) => can(r, "view_onboarding") },
   { label: "Recommendation hub", to: "/hub", icon: Layers, show: (r) => can(r, "approve_recommendations") },
   { label: "Workforce review", to: "/workforce", icon: Users, show: (r) => can(r, "view_all_workforce") || can(r, "view_team") || r === "employee" },
@@ -65,7 +72,7 @@ export const NAV_SECTIONS: NavSection[] = [
     label: "My work",
     icon: LayoutGrid,
     crumbLabel: "My work",
-    items: ["/app", "/onboarding", "/hub"].map((to) => byTo.get(to)!),
+    items: ["/app", "/my-day", "/onboarding", "/hub"].map((to) => byTo.get(to)!),
   },
   {
     key: "people",

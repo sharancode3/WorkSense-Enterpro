@@ -51,7 +51,8 @@ const policyseed = stripAllImports(read("supabase/functions/_shared/policy-seed.
 
 const planner = stripAllImports(read("supabase/functions/_shared/staffing-planner.ts"));
 const staffingReview = stripAllImports(read("supabase/functions/_shared/staffing-review.ts"));
-const SHARED = { planner, engine, onboarding, onboardingV2, qwen, policy, reviewIndex, performance, recEngine, workflow, jobs, validate, evidence, resume, generated, journey, fixtures, seed, stageEngine, assessment, pcontext, leave, policyseed, llmcache, myWorkEngine, candidateCompare, onboardingQueue, assessmentQueue, fitStore, staffingReview };
+const myDayEngine = stripAllImports(read("supabase/functions/_shared/my-day-engine.ts"));
+const SHARED = { planner, engine, onboarding, onboardingV2, qwen, policy, reviewIndex, performance, recEngine, workflow, jobs, validate, evidence, resume, generated, journey, fixtures, seed, stageEngine, assessment, pcontext, leave, policyseed, llmcache, myWorkEngine, candidateCompare, onboardingQueue, assessmentQueue, fitStore, staffingReview, myDayEngine };
 
 // Function -> shared dependencies (in import order) it needs inlined.
 const FNS = {
@@ -81,6 +82,7 @@ const FNS = {
   "recommendation-scan": ["engine", "recEngine", "reviewIndex", "workflow", "qwen", "validate"],
   "dashboard": ["engine", "reviewIndex"],
   "my-work": ["reviewIndex", "myWorkEngine"],
+  "my-day": ["reviewIndex", "myWorkEngine", "myDayEngine"],
   "staffing-comparison": ["planner", "qwen", "staffingReview"],
   "overview-search": [],
   "policy-conversation": [],

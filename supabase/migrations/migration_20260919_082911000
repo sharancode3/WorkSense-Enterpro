@@ -1,0 +1,6 @@
+-- Mirror the repo migration (migration_20260918_175100000) exactly: drop the old uniqueness that predates blueprint 'kind' now that the kind-based constraint exists. No data change.
+do $$ begin
+  if exists (select 1 from pg_constraint where conname = 'assessment_blueprints_org_id_requisition_id_competency_vers_key') then
+    alter table public.assessment_blueprints drop constraint assessment_blueprints_org_id_requisition_id_competency_vers_key;
+  end if;
+end $$;
