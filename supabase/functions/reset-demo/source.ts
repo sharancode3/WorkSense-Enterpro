@@ -1738,60 +1738,307 @@ async function seedDemoResumes(supabase, orgId: string, clock: string) {
     return (h >>> 0).toString(16).padStart(8, "0");
   };
   await supabase.storage.createBucket("resumes", { public: false }).catch(() => undefined);
-  const RESUMES: { twin_id: string; name: string; code: string; text: string }[] = [
-    { twin_id: "22222222-2222-2222-2222-222222222205", name: "Priya Rana", code: "WS-PRIYA-2026", text: "Priya Rana — Backend Engineer. 4 years building Go services. Skills: Go, REST APIs, PostgreSQL, Docker. Project: payments service (idempotent webhook processing)." },
-    { twin_id: "22222222-2222-2222-2222-222222222240", name: "Ravi Shah", code: "WS-SYN-RAVI-2026", text: "Ravi Shah — Senior Backend Engineer. 7 years, Go microservices, event-driven design, REST APIs at scale, PostgreSQL. Led a payments platform reaching 40M requests/day." },
-    { twin_id: "22222222-2222-2222-2222-222222222241", name: "Juno Park", code: "WS-SYN-JUNO-2026", text: "Juno Park — Backend Engineer. Keywords: Go, Kubernetes, PostgreSQL, Python, REST APIs, AWS. No project dates or verifiable roles described." },
-    { twin_id: "22222222-2222-2222-2222-222222222242", name: "Maya Lindqvist", code: "WS-SYN-MAYA-2026", text: "Maya Lindqvist — Frontend Engineer. TypeScript, React, Node.js. Built design systems and accessible dashboards." },
-    { twin_id: "22222222-2222-2222-2222-222222222243", name: "Theo Brandt", code: "WS-SYN-THEO-2026", text: "Theo Brandt — Junior Developer. Beginner Go, Docker basics. One internship. Applying for a senior role." },
-    { twin_id: "22222222-2222-2222-2222-222222222244", name: "Elena Dubois", code: "WS-SYN-ELENA2-2026", text: "Elena Dubois — Data Engineer. Python, SQL, dbt, data visualization. Moving toward backend engineering." },
+  const RESUMES: { twin_id: string; name: string; code: string; partial?: boolean; text: string }[] = [
+    {
+      twin_id: "22222222-2222-2222-2222-222222222205", name: "Priya Nair", code: "WS-PRIYA-2026",
+      text: `PRIYA NAIR — Backend Engineer
+Summary: Backend engineer with 4 years building Go and PostgreSQL services. Strong focus on API design, idempotent payment processing and reliability.
+
+Experience
+Lumina Payments (2023 - Present) — Backend Engineer
+- Built a payments orchestration service in Go handling webhook idempotency via unique constraint keys.
+- Reduced p95 latency on the settlement path by 38% through connection pooling and query tuning.
+- Designed REST APIs with versioned contracts consumed by 3 internal teams.
+Northwind Analytics (2021 - 2023) — Software Engineer
+- Shipped ETL ingestion pipelines in Go + PostgreSQL; wrote integration tests for every endpoint.
+- Introduced Docker-based local dev environments adopted across the backend guild.
+
+Projects
+- Go Payments Service: idempotent webhook processing with exactly-once delivery semantics.
+- Open-source REST client for PostgreSQL — 400+ GitHub stars.
+
+Skills: Go, REST APIs, PostgreSQL, Docker, SQL, gRPC, Event-driven architecture
+
+Education: B.Tech Computer Science, IIT Delhi (2017 - 2021)`,
+    },
+    {
+      twin_id: "22222222-2222-2222-2222-222222222240", name: "Ravi Shah", code: "WS-SYN-RAVI-2026",
+      text: `RAVI SHAH — Senior Backend Engineer
+Summary: Senior backend engineer with 7 years across Go microservices, event-driven systems and high-scale APIs. Led a payments platform reaching 40M requests/day.
+
+Experience
+Meridian Fintech (2021 - Present) — Staff Backend Engineer
+- Owned the core payments API in Go serving 40M requests/day with 99.98% uptime.
+- Led the migration from monolith to event-driven microservices on Kafka, cutting deploy time from 45m to 8m.
+- Designed idempotent ingestion with unique constraints; retries use bounded exponential backoff.
+Nimbus Cloud (2019 - 2021) — Senior Backend Engineer
+- Built REST APIs and gRPC services for a multi-tenant platform in Go.
+- Introduced Postgres partitioning that reduced query latency on the largest table by 60%.
+
+Projects
+- Event-driven payment settlement: exactly-once semantics with outbox pattern.
+- Kubernetes rollout strategy for zero-downtime deploys.
+
+Skills: Go, REST APIs, PostgreSQL, Docker, Kubernetes, Kafka, Event-driven architecture, gRPC, Redis
+
+Education: M.S. Computer Science, TU Munich (2017 - 2019)`,
+    },
+    {
+      twin_id: "22222222-2222-2222-2222-222222222241", name: "Juno Park", code: "WS-SYN-JUNO-2026", partial: true,
+      text: `JUNO PARK — Backend Engineer
+Keywords: Go, Kubernetes, PostgreSQL, Python, REST APIs, AWS. No project dates or verifiable roles described.`,
+    },
+    {
+      twin_id: "22222222-2222-2222-2222-222222222242", name: "Maya Lindqvist", code: "WS-SYN-MAYA-2026",
+      text: `MAYA LINDQVIST — Frontend Engineer
+Summary: Frontend engineer focused on design systems and accessible, high-performance dashboards in React and TypeScript.
+
+Experience
+Fjord Labs (2022 - Present) — Frontend Engineer
+- Built and maintained an internal design system in React + TypeScript used by 6 product teams.
+- Improved dashboard bundle size by 44% with code splitting and memoization.
+Nordic Retail Group (2020 - 2022) — UI Engineer
+- Delivered accessible e-commerce checkout flows; WCAG 2.1 AA compliant.
+- Introduced Tailwind-based tokens that cut styling inconsistency reports by 70%.
+
+Skills: TypeScript, React, HTML & CSS, Tailwind CSS, Accessibility, Design Systems, Node.js
+
+Education: B.Sc. Interaction Design, KTH Royal Institute of Technology (2016 - 2020)`,
+    },
+    {
+      twin_id: "22222222-2222-2222-2222-222222222243", name: "Theo Brandt", code: "WS-SYN-THEO-2026",
+      text: `THEO BRANDT — Junior Developer
+Summary: Junior developer with one internship. Beginner Go and Docker experience; eager to grow into a production backend role.
+
+Experience
+StartUp Ventures (2025) — Software Engineering Intern (3 months)
+- Wrote unit tests and small Go endpoints for an internal tool.
+- Helped containerize a Node service with Docker.
+
+Education: B.Sc. Computer Science, University of Amsterdam (2022 - 2026, expected)
+
+Skills: Go (beginner), Docker (beginner), JavaScript, HTML & CSS`,
+    },
+    {
+      twin_id: "22222222-2222-2222-2222-222222222244", name: "Elena Dubois", code: "WS-SYN-ELENA2-2026",
+      text: `ELENA DUBOIS — Data Engineer
+Summary: Data engineer with 5 years in Python, SQL and dbt, moving toward backend engineering and product data platforms.
+
+Experience
+Atlas Insights (2021 - Present) — Data Engineer
+- Owned dbt transformation layer for the core analytics warehouse (150+ models).
+- Built Python ingestion services syncing 20+ source systems into PostgreSQL.
+Blue Stream (2019 - 2021) — Data Analyst
+- Delivered dashboards in Tableau and Looker for finance and product teams.
+
+Skills: Python, SQL, dbt, PostgreSQL, Tableau, Data Modeling, ETL, REST APIs
+
+Education: M.Sc. Data Science, EPFL (2017 - 2019)`,
+    },
+    {
+      twin_id: "22222222-2222-2222-2222-222222222206", name: "Dev Sharma", code: "WS-DEV-2026",
+      text: `DEV SHARMA — Backend / Full-Stack Engineer
+Summary: Product-minded engineer with 3 years shipping Go + React features end to end.
+
+Experience
+Kite Commerce (2023 - Present) — Full-Stack Engineer
+- Designed REST APIs in Go for order and inventory services.
+- Built React admin panels for operations teams; cut manual ops time by half.
+Harbor Softworks (2021 - 2023) — Backend Developer
+- Maintained PostgreSQL schemas and wrote efficient queries for reporting.
+
+Skills: Go, REST APIs, PostgreSQL, React, TypeScript, Docker, Node.js
+
+Education: B.E. Software Engineering, NIT Trichy (2017 - 2021)`,
+    },
+    {
+      twin_id: "22222222-2222-2222-2222-222222222207", name: "Maya Kapoor", code: "WS-MAYA-2026",
+      text: `MAYA KAPOOR — Data Analyst
+Summary: Data analyst turning messy data into decisions — 4 years of SQL, Python and dashboard work.
+
+Experience
+Greenfield Bank (2022 - Present) — Senior Data Analyst
+- Built the loan-portfolio reporting suite in Tableau used by the executive team weekly.
+- Wrote complex SQL (window functions, CTEs) on a 2B-row warehouse.
+Metric & Co (2020 - 2022) — Data Analyst
+- Automated weekly KPI packs in Python, saving 10 analyst-hours a week.
+
+Skills: SQL, Python, Tableau, Data Visualization, Data Modeling, Statistics, Storytelling with Data
+
+Education: B.B.A Business Analytics, Narsee Monjee (2016 - 2020)`,
+    },
+    {
+      twin_id: "a1053a07-c6c2-4511-a567-c76b1267c78b", name: "Priya Singh", code: "WS-PRIYA-S-2026",
+      text: `PRIYA SINGH — Backend / Data Engineer
+Summary: Engineer with 3 years across Go APIs and Python data pipelines.
+
+Experience
+Zenith Fintech (2023 - Present) — Backend Engineer
+- Built Go services for risk scoring APIs consuming Kafka event streams.
+- Optimized PostgreSQL queries serving a 5M-user ledger.
+CloudCart (2021 - 2023) — Data Engineer
+- Python + dbt pipelines feeding the product analytics warehouse.
+
+Skills: Go, Python, PostgreSQL, SQL, Docker, Kafka, REST APIs, dbt
+
+Education: B.Tech Computer Science, VIT Vellore (2017 - 2021)`,
+    },
+    {
+      twin_id: "9f0536e1-a33b-4929-a33c-3ea4724240c9", name: "Adrian Lopez", code: "WS-ADRIAN-2026",
+      text: `ADRIAN LOPEZ — Machine Learning Engineer
+Summary: ML engineer with 4 years shipping models into production, strong on serving infra and evaluation.
+
+Experience
+Tensor Retail (2022 - Present) — ML Engineer
+- Deployed recommendation models on Kubernetes with A/B evaluation in production.
+- Built Python feature pipelines and offline/online evaluation dashboards.
+Signal Labs (2020 - 2022) — ML Engineer
+- Trained and served fraud-detection models; reduced false positives by 30%.
+
+Skills: Python, Machine Learning fundamentals, Kubernetes, Docker, Feature Engineering, SQL, REST APIs
+
+Education: M.S. Machine Learning, Georgia Tech (2018 - 2020)`,
+    },
+    {
+      twin_id: "22222222-2222-2222-2222-222222222299", name: "Test Candidate", code: "WS-DISPOSABLE-2026",
+      text: `TEST CANDIDATE — Full-Stack Engineer
+Summary: Disposable demo fixture candidate with a broad full-stack profile.
+
+Experience
+Disposable Corp (2022 - Present) — Full-Stack Engineer
+- Go backend services plus React frontends.
+- PostgreSQL schema design and REST API delivery.
+
+Skills: Go, React, TypeScript, PostgreSQL, Docker, REST APIs
+
+Education: B.Sc. Computer Science (2021)`,
+    },
+    {
+      twin_id: "22222222-2222-2222-2222-222222222203", name: "Alex Chen", code: "WS-ALEX-2026",
+      text: `ALEX CHEN — Senior Backend Engineer
+Summary: Backend engineer with 6 years in Go, event-driven systems and Kubernetes at scale.
+
+Experience
+WorkSense (2025 - Present) — Backend Engineer
+- Onboarding into the platform engineering team; Kubernetes and event-driven architecture focus.
+Northbay Systems (2021 - 2025) — Senior Backend Engineer
+- Led the API platform team (Go) serving 20M requests/day.
+- Migrated services to Kubernetes with automated canary deploys.
+
+Skills: Go, REST APIs, PostgreSQL, Docker, Kubernetes, Event-driven architecture, Redis
+
+Education: B.S. Computer Science, University of Waterloo (2015 - 2019)`,
+    },
+    {
+      twin_id: "22222222-2222-2222-2222-222222222204", name: "Samira Patel", code: "WS-SAMIRA-2026",
+      text: `SAMIRA PATEL — Data Analyst
+Summary: Data analyst with 6 years of experience turning workforce and product data into decisions.
+
+Experience
+WorkSense (2025 - Present) — People Data Analyst
+- Analytics for the People Operations team; attrition signal analysis.
+Metric & Co (2021 - 2025) — Senior Data Analyst
+- Built the executive KPI dashboard (Tableau + SQL) used across the org.
+
+Skills: SQL, Python, Tableau, Data Visualization, Statistics, Workforce Analytics
+
+Education: M.A. Economics, LSE (2017 - 2018)`,
+    },
+    {
+      twin_id: "6786033d-78a9-41ab-af1f-2f1982e02f1d", name: "Diego Mensah", code: "WS-DIEGO-2026",
+      text: `DIEGO MENSAH — Senior Backend Engineer
+Summary: Backend engineer with 5 years in Go and distributed systems.
+
+Experience
+WorkSense (2025 - Present) — Backend Engineer (internal move from engineering track)
+Orbital Systems (2021 - 2025) — Backend Engineer
+- Built Go microservices for the logistics platform; owned the order-state service.
+- Reduced incident count 40% through better observability and testing.
+
+Skills: Go, REST APIs, PostgreSQL, Docker, Kubernetes, Event-driven architecture
+
+Education: B.E. Computer Engineering, KNUST (2016 - 2020)`,
+    },
+    {
+      twin_id: "e52c3027-6da7-4177-a588-8b275252d347", name: "Fatima Kowalski", code: "WS-FATIMA-2026",
+      text: `FATIMA KOWALSKI — Data Engineer
+Summary: Data engineer with 5 years building reliable pipelines in Python, SQL and dbt.
+
+Experience
+WorkSense (2025 - Present) — Data Engineer (people data warehouse)
+Nordic Data Co (2021 - 2025) — Data Engineer
+- Maintained 200+ dbt models and Python ingestion services.
+
+Skills: Python, SQL, dbt, PostgreSQL, ETL, Data Modeling, Tableau
+
+Education: M.Sc. Data Engineering, TU Delft (2019 - 2021)`,
+    },
+    {
+      twin_id: "e42c2e94-e7bb-44d0-aa03-97639ecbe77b", name: "Wei Fernandez", code: "WS-WEI-2026",
+      text: `WEI FERNANDEZ — Analyst / Data Specialist
+Summary: Analyst blending SQL, Python and Tableau with a strong eye for workforce and operations data.
+
+Experience
+WorkSense (2025 - Present) — Operations Analyst
+Blue Horizon (2020 - 2025) — Data Analyst
+- Built operational dashboards and automated weekly reporting.
+
+Skills: SQL, Python, Tableau, Data Visualization, Statistics
+
+Education: B.Sc. Information Systems, NUS (2016 - 2020)`,
+    },
   ];
   for (const r of RESUMES) {
+    const partial = r.partial === true;
     const body = "SYNTHETIC DEMO RESUME — FICTIONAL DATA ONLY.\n\n" + r.text;
     const file = `demo-${r.code}.txt`;
     const path = `orgs/${orgId}/twins/${r.twin_id}/${file}`;
+    // Replace any previously seeded demo resume for this twin (idempotent:
+    // exactly one canonical document per applied candidate — the checksum
+    // guard alone would accumulate stale duplicates whenever the fixture text
+    // changes between releases).
+    const { data: prior } = await supabase
+      .from("resume_documents")
+      .select("id, storage_path")
+      .eq("org_id", orgId)
+      .eq("twin_id", r.twin_id)
+      .like("file_name", "demo-%");
+    for (const p of prior ?? []) {
+      if (p.storage_path) await supabase.storage.from("resumes").remove([p.storage_path]).catch(() => undefined);
+      await supabase.from("resume_versions").delete().eq("document_id", p.id);
+      await supabase.from("resume_documents").delete().eq("id", p.id);
+    }
     const bytes = new TextEncoder().encode(body);
     await supabase.storage.from("resumes").upload(path, bytes, { contentType: "text/plain", upsert: true }).catch(() => undefined);
     const checksum = fnv(body);
-    const { data: existing } = await supabase.from("resume_documents").select("id").eq("org_id", orgId).eq("twin_id", r.twin_id).eq("checksum", checksum).maybeSingle();
-    let docId = existing?.id ?? null;
-    if (!docId) {
-      const { data: doc, error: docErr } = await supabase
-        .from("resume_documents")
-        .insert({
-          org_id: orgId,
-          twin_id: r.twin_id,
-          storage_path: path,
-          file_name: file,
-          content_type: "text/plain",
-          size_bytes: bytes.length,
-          checksum,
-          status: "low_text",
-          low_text: true,
-          page_count: 1,
-          extracted_text: body,
-          text_pages: [{ page: 1, text: body }],
-          error_code: null,
-          error_message: null,
-        })
-        .select("id")
-        .single();
-      if (docErr || !doc) continue;
-      docId = doc.id;
-    }
-    const { data: maxVer } = await supabase
-      .from("resume_versions")
-      .select("version")
-      .eq("document_id", docId)
-      .order("version", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    const { data: doc, error: docErr } = await supabase
+      .from("resume_documents")
+      .insert({
+        org_id: orgId,
+        twin_id: r.twin_id,
+        storage_path: path,
+        file_name: file,
+        content_type: "text/plain",
+        size_bytes: bytes.length,
+        checksum,
+        status: partial ? "low_text" : "extracted",
+        low_text: partial,
+        page_count: partial ? 1 : 2,
+        extracted_text: body,
+        text_pages: [{ page: 1, text: body }],
+        error_code: null,
+        error_message: null,
+      })
+      .select("id")
+      .single();
+    if (docErr || !doc) continue;
+    const docId = doc.id;
     const { error: verErr } = await supabase.from("resume_versions").upsert(
       {
         org_id: orgId,
         twin_id: r.twin_id,
         document_id: docId,
-        version: (maxVer?.version ?? 0) + 1,
+        version: 1,
         source_hash: checksum,
         review_state: "draft",
         reviewed_at: null,

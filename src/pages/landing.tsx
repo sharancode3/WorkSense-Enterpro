@@ -103,6 +103,11 @@ export default function Landing() {
                   Choose your role
                 </Button>
               </a>
+              <Link to="/showcase">
+                <Button variant="ghost" size="lg">
+                  How this maps to the brief <CircleDot className="h-4 w-4" />
+                </Button>
+              </Link>
             </div>
             <p className="mt-4 text-xs text-muted-foreground">
               Fictional demonstration data — seeded personas, real role-based access control.

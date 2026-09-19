@@ -1,6 +1,6 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { BadgeCheck, Info, Loader2, Lock, Search, Share2, ShieldCheck, Sparkles, Workflow } from "lucide-react";
+import { BadgeCheck, Info, Loader2, Lock, Search, Share2, ShieldCheck, Sparkles, Target, Workflow } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/auth-context";
 import { AppShell } from "@/components/app-shell";
@@ -183,6 +183,17 @@ export default function SkillGraph() {
       if (runIdRef.current === runId) setBusy(false);
     }
   };
+
+  // Selecting a person (and a demand) computes the graph immediately — no need
+  // to scroll back up to press "Compute coverage". Selecting either side again
+  // re-runs for the new selection; already-computed selections are not
+  // recomputed on every render.
+  useEffect(() => {
+    if (!twinId || !reqId) return;
+    if (results && results.twinId === twinId && results.reqId === reqId) return;
+    void runMatch();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [twinId, reqId]);
 
   // E1: what changed between current and future requirement sets.
   const futureDiff = useMemo(() => {
@@ -399,6 +410,110 @@ export default function SkillGraph() {
                 </p>
               </div>
             )}
+
+            {/* Person skill network — visible edges + analysis + summary */}
+            <div className="mt-8 rounded-lg bg-white p-6">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h2 className="flex items-center gap-2 text-lg font-extrabold tracking-tight text-foreground">
+                  <Share2 className="h-5 w-5 text-primary" strokeWidth={2.5} /> Person skill network
+                </h2>
+                <span className="rounded-md bg-muted px-2 py-1 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                  computed for this selection
+                </span>
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Every skill this person maps against the role is a node; taxonomy relationships between those skills are drawn
+                as edges (Related, Transferable, Prerequisite). Node color shows how each skill supports the match.
+              </p>
+              <PersonSkillNetwork
+                roleTitle={results.current.target_title}
+                items={results.current.classification.direct
+                  .concat(results.current.classification.adjacent, results.current.classification.transferable, results.current.classification.gaps)}
+                graph={graph.data ?? []}
+              />
+
+              {/* Summary strip */}
+              <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-5">
+                <div className="rounded-lg bg-muted p-3">
+                  <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Match score</p>
+                  <p className="text-xl font-extrabold text-primary">{Math.round(results.current.score * 100)}%</p>
+                </div>
+                <div className="rounded-lg bg-muted p-3">
+                  <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Verified skills</p>
+                  <p className="text-xl font-extrabold text-secondary">{coverage?.verified ?? 0}</p>
+                </div>
+                <div className="rounded-lg bg-muted p-3">
+                  <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Claims</p>
+                  <p className="text-xl font-extrabold text-accent">{results.lineage?.assertions.length ?? 0}</p>
+                </div>
+                <div className="rounded-lg bg-muted p-3">
+                  <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Gaps</p>
+                  <p className="text-xl font-extrabold text-foreground">{results.current.classification.gaps.length}</p>
+                </div>
+                <div className="rounded-lg bg-muted p-3">
+                  <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Artifacts</p>
+                  <p className="text-xl font-extrabold text-foreground">{results.artifacts?.count ?? 0}</p>
+                </div>
+              </div>
+
+              {/* Analysis */}
+              <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
+                <div className="rounded-lg bg-muted p-4">
+                  <p className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-secondary">
+                    <BadgeCheck className="h-3.5 w-3.5" /> Verified strengths
+                  </p>
+                  <ul className="mt-2 flex flex-col gap-1.5 text-sm text-foreground">
+                    {(() => {
+                      const strong = results.current.classification.direct.filter((i) => (i.candidate_proficiency ?? 0) >= i.required_proficiency);
+                      return strong.length > 0
+                        ? strong.map((i) => <li key={i.skill}>· {i.skill} — level {i.candidate_proficiency}/{i.required_proficiency}</li>)
+                        : [<li key="none" className="text-muted-foreground">No direct skill reaches its target bar yet.</li>];
+                    })()}
+                  </ul>
+                </div>
+                <div className="rounded-lg bg-muted p-4">
+                  <p className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-accent">
+                    <Sparkles className="h-3.5 w-3.5" /> Close / transferable paths
+                  </p>
+                  <ul className="mt-2 flex flex-col gap-1.5 text-sm text-foreground">
+                    {results.current.classification.adjacent.concat(results.current.classification.transferable).slice(0, 5).map((i) => (
+                      <li key={`${i.skill}-${i.classification}`}>
+                        · <span className="font-semibold">{i.skill}</span> — {i.reason}
+                        {i.edge ? ` (via ${i.edge.from_skill})` : ""}
+                      </li>
+                    ))}
+                    {results.current.classification.adjacent.concat(results.current.classification.transferable).length === 0 && (
+                      <li className="text-muted-foreground">No adjacent or transferable support recorded.</li>
+                    )}
+                  </ul>
+                </div>
+                <div className="rounded-lg bg-muted p-4">
+                  <p className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-destructive">
+                    <Target className="h-3.5 w-3.5" /> Gaps to close
+                  </p>
+                  <ul className="mt-2 flex flex-col gap-1.5 text-sm text-foreground">
+                    {results.current.classification.gaps.slice(0, 6).map((i) => (
+                      <li key={i.skill}>· <span className="font-semibold">{i.skill}</span> — {i.reason}</li>
+                    ))}
+                    {results.current.classification.gaps.length === 0 && <li className="text-muted-foreground">No skill gaps for the current scenario.</li>}
+                  </ul>
+                </div>
+              </div>
+
+              {/* Future outlook */}
+              {results.future && (
+                <p className="mt-4 rounded-lg bg-primary/5 p-3 text-xs leading-relaxed text-foreground">
+                  <span className="font-bold text-primary">Future outlook (12–24 months):</span>{" "}
+                  {Math.round(results.future.score * 100)}% vs {Math.round(results.current.score * 100)}% today
+                  {results.future.score > results.current.score
+                    ? " — the person already trends toward the future target."
+                    : results.future.score < results.current.score
+                      ? " — the future target adds or raises requirements beyond today's profile (see the diff below)."
+                      : " — future requirements match today's profile."}{" "}
+                  <span className="text-muted-foreground">Both numbers are computed from the role's requirement sets and the person's evidence — never hard-coded.</span>
+                </p>
+              )}
+            </div>
 
             {/* Requirements-vs-evidence matrix + gap bars */}
             <div className="mt-8 rounded-lg bg-white p-6">
@@ -694,6 +809,128 @@ function EgoNetwork({
         ))}
         <span className="text-white/50">· A path between skills is a relationship, never proof of mastery in the target skill.</span>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Person skill network: the skills a person maps against a role are laid out on
+ * an ellipse around the role (center), and taxonomy relationships between those
+ * skills are drawn as real edges. Node color = how the skill supports the match.
+ */
+function PersonSkillNetwork({
+  roleTitle,
+  items,
+  graph,
+}: {
+  roleTitle: string;
+  items: { skill: string; classification: string }[];
+  graph: GraphNode[];
+}) {
+  const CLS_COLOR: Record<string, string> = {
+    direct: "var(--secondary)",
+    adjacent: "var(--accent)",
+    transferable: "var(--primary)",
+    gap: "var(--destructive)",
+  };
+  const CLS_LABEL: Record<string, string> = {
+    direct: "Direct match",
+    adjacent: "Adjacent",
+    transferable: "Transferable",
+    gap: "Gap",
+  };
+
+  const unique = [...new Set(items.map((i) => i.skill))];
+  const clsOf = new Map<string, string>();
+  for (const i of items) if (!clsOf.has(i.skill)) clsOf.set(i.skill, i.classification);
+
+  // Edges between skills that are BOTH in this person's mapped set.
+  const lower = new Set(unique.map((s) => s.toLowerCase()));
+  const edges: { from: string; to: string; type: string }[] = [];
+  for (const n of graph) {
+    for (const e of n.outgoing_edges) {
+      if (lower.has(n.skill.toLowerCase()) && lower.has(e.target_skill.toLowerCase())) {
+        edges.push({ from: n.skill, to: e.target_skill, type: e.type });
+      }
+    }
+  }
+
+  const W = 680;
+  const H = 400;
+  const CX = W / 2;
+  const CY = H / 2;
+  const pos = unique.map((s, i) => {
+    const a = -Math.PI / 2 + (unique.length > 1 ? (i / unique.length) * Math.PI * 2 : 0);
+    return { skill: s, x: CX + Math.cos(a) * 250, y: CY + Math.sin(a) * 140 };
+  });
+  const short = (s: string) => (s.length > 14 ? `${s.slice(0, 13)}…` : s);
+
+  return (
+    <div className="mt-4 rounded-lg border border-border bg-muted/40 p-3">
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label={`Skill network for ${roleTitle}`}>
+        {/* edges */}
+        {edges.map((e, i) => {
+          const f = pos.find((p) => p.skill === e.from);
+          const t = pos.find((p) => p.skill === e.to);
+          if (!f || !t) return null;
+          const m = EDGE_LEGEND[e.type] ?? { label: e.type, color: "#94a3b8" };
+          return (
+            <line
+              key={`e-${i}`}
+              x1={f.x}
+              y1={f.y}
+              x2={t.x}
+              y2={t.y}
+              stroke={m.color}
+              strokeWidth={1.6}
+              strokeDasharray={m.dashed ? "5 4" : undefined}
+              opacity={0.75}
+            />
+          );
+        })}
+        {/* role center */}
+        <g transform={`translate(${CX}, ${CY})`}>
+          <circle r={30} fill="rgba(109,94,252,0.12)" stroke="var(--primary)" strokeWidth={2} />
+          <text textAnchor="middle" dy="0.35em" className="text-[10px] font-bold" fill="var(--primary)">
+            {short(roleTitle || "Role")}
+          </text>
+        </g>
+        {/* skill nodes */}
+        {pos.map((p) => {
+          const cls = clsOf.get(p.skill) ?? "gap";
+          const color = CLS_COLOR[cls] ?? "#94a3b8";
+          return (
+            <g key={p.skill} transform={`translate(${p.x}, ${p.y})`}>
+              <circle r={16} fill={color} fillOpacity={cls === "gap" ? 0.15 : 0.22} stroke={color} strokeWidth={1.6} />
+              <text textAnchor="middle" dy="0.35em" className="text-[9px] font-bold" fill="var(--foreground)">
+                {short(p.skill)}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+      {/* legend: classifications + edge types */}
+      <div className="mt-2 flex flex-wrap items-center gap-4 text-[11px] text-muted-foreground">
+        {Object.entries(CLS_LABEL).map(([cls, label]) => (
+          <span key={cls} className="flex items-center gap-1.5">
+            <span className="inline-block h-3 w-3 rounded-full" style={{ background: CLS_COLOR[cls], opacity: 0.55 }} />
+            {label}
+          </span>
+        ))}
+        <span className="text-border">|</span>
+        {Object.entries(EDGE_LEGEND).map(([type, m]) => (
+          <span key={type} className="flex items-center gap-1.5">
+            <svg width="22" height="6" aria-hidden="true">
+              <line x1="0" y1="3" x2="22" y2="3" stroke={m.color} strokeWidth="1.6" strokeDasharray={m.dashed ? "5 4" : undefined} />
+            </svg>
+            {m.label}
+          </span>
+        ))}
+      </div>
+      <p className="mt-2 text-[11px] leading-snug text-muted-foreground">
+        The role sits at the center; colored dots are this person's skills. Lines are taxonomy relationships between skills
+        that both appear here — a relationship is never proof of mastery in the target skill.
+      </p>
     </div>
   );
 }

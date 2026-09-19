@@ -1,5 +1,6 @@
 import Landing from "./pages/landing";
 import Login from "./pages/login";
+import Showcase from "./pages/showcase";
 import CandidateStatus from "./pages/candidate-status";
 import CandidateSession from "./pages/candidate-session";
 import RoleHome from "./pages/role-home";
@@ -26,6 +27,11 @@ export const routers = [
     path: "/login",
     name: "login",
     element: <Login />,
+  },
+  {
+    path: "/showcase",
+    name: "showcase",
+    element: <Showcase />,
   },
   {
     path: "/candidate-status",

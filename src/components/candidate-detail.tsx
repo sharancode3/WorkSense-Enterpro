@@ -27,6 +27,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { FitCard } from "@/components/fit-card";
+import { useAuth } from "@/contexts/auth-context";
 import { ResumeReviewFlow } from "@/components/resume-review-flow";
 import { AssessmentReviewPanel } from "@/components/assessment-review-panel";
 import { classifyQuery } from "@/lib/query-state";
@@ -85,6 +86,11 @@ interface Props {
 
 export function CandidateDetail({ open, onOpenChange, candidate, req, app, initialSessionId, onChanged }: Props) {
   const qc = useQueryClient();
+  const { role } = useAuth();
+  // Resume intake (upload / replace / extract) is a recruitment action. Other
+  // review roles (administrator, HR) see the document and can download it, but
+  // are not offered an upload control.
+  const canManageResume = role === "recruiter";
   const [busy, setBusy] = useState<string | null>(null);
   const [tab, setTab] = useState("profile");
 
@@ -113,7 +119,7 @@ export function CandidateDetail({ open, onOpenChange, candidate, req, app, initi
     queryFn: async () => {
       const { data: docs } = await supabase
         .from("resume_documents")
-        .select("id, file_name, status, page_count, checksum, created_at, low_text")
+        .select("id, file_name, status, page_count, checksum, created_at, low_text, extracted_text")
         .eq("twin_id", candidate.id)
         .order("created_at", { ascending: false });
       const { data: versions } = await supabase
@@ -122,7 +128,7 @@ export function CandidateDetail({ open, onOpenChange, candidate, req, app, initi
         .eq("twin_id", candidate.id)
         .order("version", { ascending: false });
       return {
-        documents: (docs ?? []) as { id: string; file_name: string; status: string; page_count: number | null; checksum: string; created_at: string; low_text: boolean }[],
+        documents: (docs ?? []) as { id: string; file_name: string; status: string; page_count: number | null; checksum: string; created_at: string; low_text: boolean; extracted_text: string | null }[],
         versions: (versions ?? []) as { id: string; document_id: string; version: number; review_state: string; reviewed_at: string | null; created_at: string }[],
       };
     },
@@ -448,10 +454,29 @@ export function CandidateDetail({ open, onOpenChange, candidate, req, app, initi
                       <Download className="h-4 w-4" /> Download
                     </a>
                   </Button>
-                  <Button size="sm" variant="ghost" onClick={() => setResumeMode("text")}>
-                    Import / replace document
-                  </Button>
+                  {canManageResume && (
+                    <Button size="sm" variant="ghost" onClick={() => setResumeMode("text")}>
+                      Import / replace document
+                    </Button>
+                  )}
                 </div>
+                {/* Inline resume text preview — viewing never depends on a file
+                    download opening in the right app. */}
+                {resumeDocuments.data?.documents?.[0]?.extracted_text && (
+                  <details className="mt-3 rounded-md border border-border bg-white">
+                    <summary className="flex cursor-pointer items-center gap-2 px-3 py-2 text-xs font-bold uppercase tracking-wider text-muted-foreground hover:text-foreground">
+                      <FileText className="h-3.5 w-3.5" /> View resume text
+                    </summary>
+                    <pre className="max-h-72 overflow-auto whitespace-pre-wrap px-3 pb-3 pt-1 font-sans text-xs leading-relaxed text-foreground">
+                      {resumeDocuments.data.documents[0].extracted_text}
+                    </pre>
+                  </details>
+                )}
+                {!canManageResume && (
+                  <p className="mt-2 text-[11px] text-muted-foreground">
+                    View-only — resume intake (upload / replace / extract) is a recruiter action.
+                  </p>
+                )}
                 {(resumeDocuments.data?.documents?.length ?? 0) > 1 && (
                   <p className="mt-2 text-xs text-muted-foreground">
                     {resumeDocuments.data?.documents?.length} document(s) · {resumeDocuments.data?.versions?.length ?? 0} version(s) on record.
@@ -463,71 +488,75 @@ export function CandidateDetail({ open, onOpenChange, candidate, req, app, initi
                 No resume document on record for this candidate yet — import one below.
               </p>
             )}
-            <ResumeReviewFlow
-              twin={{ id: candidate.id, name: candidate.name }}
-              reqId={req?.id}
-              onManualImport={() => setResumeMode("text")}
-              onSaved={(res) => {
-                setProvenance({
-                  document_id: res.document_id,
-                  version: res.version,
-                  artifact_ref: res.provenance?.artifact_ref ?? `doc:${res.document_id}:v${res.version}`,
-                  file_name: res.provenance?.file_name ?? "resume document",
-                  checksum_short: res.provenance?.checksum_short ?? "…",
-                });
-                onChanged();
-              }}
-            />
-            {provenance && (
-              <div className="rounded-lg border-2 border-secondary/40 bg-secondary/5 p-4">
-                <p className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-secondary">
-                  <ShieldCheck className="h-3.5 w-3.5" /> Evidence provenance
-                </p>
-                <div className="mt-2 grid grid-cols-1 gap-2 text-sm md:grid-cols-3">
-                  <div>
-                    <p className="text-[11px] text-muted-foreground">Source artifact</p>
-                    <p className="font-mono text-xs font-semibold text-foreground">{provenance.artifact_ref}</p>
-                  </div>
-                  <div>
-                    <p className="text-[11px] text-muted-foreground">File</p>
-                    <p className="font-mono text-xs text-foreground">{provenance.file_name}</p>
-                  </div>
-                  <div>
-                    <p className="text-[11px] text-muted-foreground">Checksum</p>
-                    <p className="font-mono text-xs text-foreground">{provenance.checksum_short}…</p>
-                  </div>
-                </div>
-                <p className="mt-2 text-xs text-muted-foreground">
-                  Every claim quote was validated against the stored source text before saving — fabricated quotes are
-                  rejected server-side.
-                </p>
-              </div>
-            )}
-            {resumeMode === "text" && (
-              <div className="flex flex-col gap-3">
-                <Textarea
-                  rows={5}
-                  value={resumeText}
-                  onChange={(e) => setResumeText(e.target.value)}
-                  placeholder="Fallback: paste the resume text. Treated as untrusted input — instruction-like phrases are neutralized before any model call."
+            {canManageResume && (
+              <>
+                <ResumeReviewFlow
+                  twin={{ id: candidate.id, name: candidate.name }}
+                  reqId={req?.id}
+                  onManualImport={() => setResumeMode("text")}
+                  onSaved={(res) => {
+                    setProvenance({
+                      document_id: res.document_id,
+                      version: res.version,
+                      artifact_ref: res.provenance?.artifact_ref ?? `doc:${res.document_id}:v${res.version}`,
+                      file_name: res.provenance?.file_name ?? "resume document",
+                      checksum_short: res.provenance?.checksum_short ?? "…",
+                    });
+                    onChanged();
+                  }}
                 />
-                <Button onClick={() => void runExtract()} disabled={extractBusy} className="self-start">
-                  {extractBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
-                  Extract skills (text fallback)
-                </Button>
-                {extractResult && (
-                  <div className="rounded-lg bg-muted p-4 text-sm">
-                    <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Extracted</p>
-                    <p className="mt-1 text-foreground">
-                      {extractResult.skills.length > 0 ? extractResult.skills.join(", ") : "Claims recorded — open Fit for the refreshed match."}
+                {provenance && (
+                  <div className="rounded-lg border-2 border-secondary/40 bg-secondary/5 p-4">
+                    <p className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-secondary">
+                      <ShieldCheck className="h-3.5 w-3.5" /> Evidence provenance
                     </p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {extractResult.years > 0 && `${extractResult.years} years experience · `}
-                      match: {extractResult.fit !== null ? `${Math.round(extractResult.fit * 100)}/100` : "—"}
+                    <div className="mt-2 grid grid-cols-1 gap-2 text-sm md:grid-cols-3">
+                      <div>
+                        <p className="text-[11px] text-muted-foreground">Source artifact</p>
+                        <p className="font-mono text-xs font-semibold text-foreground">{provenance.artifact_ref}</p>
+                      </div>
+                      <div>
+                        <p className="text-[11px] text-muted-foreground">File</p>
+                        <p className="font-mono text-xs text-foreground">{provenance.file_name}</p>
+                      </div>
+                      <div>
+                        <p className="text-[11px] text-muted-foreground">Checksum</p>
+                        <p className="font-mono text-xs text-foreground">{provenance.checksum_short}…</p>
+                      </div>
+                    </div>
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      Every claim quote was validated against the stored source text before saving — fabricated quotes are
+                      rejected server-side.
                     </p>
                   </div>
                 )}
-              </div>
+                {resumeMode === "text" && (
+                  <div className="flex flex-col gap-3">
+                    <Textarea
+                      rows={5}
+                      value={resumeText}
+                      onChange={(e) => setResumeText(e.target.value)}
+                      placeholder="Fallback: paste the resume text. Treated as untrusted input — instruction-like phrases are neutralized before any model call."
+                    />
+                    <Button onClick={() => void runExtract()} disabled={extractBusy} className="self-start">
+                      {extractBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+                      Extract skills (text fallback)
+                    </Button>
+                    {extractResult && (
+                      <div className="rounded-lg bg-muted p-4 text-sm">
+                        <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Extracted</p>
+                        <p className="mt-1 text-foreground">
+                          {extractResult.skills.length > 0 ? extractResult.skills.join(", ") : "Claims recorded — open Fit for the refreshed match."}
+                        </p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {extractResult.years > 0 && `${extractResult.years} years experience · `}
+                          match: {extractResult.fit !== null ? `${Math.round(extractResult.fit * 100)}/100` : "—"}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </>
             )}
 
             <div className="rounded-lg bg-white p-4">
