@@ -47,9 +47,12 @@ function ScoreBlock({ fit }: { fit: FitRecord }) {
 function SectionBar({ label, value, detail, weightLabel }: { label: string; value: number; detail: string; weightLabel: string }) {
   return (
     <div className="rounded-lg bg-muted p-4">
-      <div className="flex items-baseline justify-between">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5">
         <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">{label}</span>
-        <span className="text-lg font-extrabold text-foreground">{pct(value)}<span className="text-xs font-semibold text-muted-foreground">% of this section</span></span>
+        <span className="whitespace-nowrap text-lg font-extrabold text-foreground">
+          {pct(value)}
+          <span className="text-[10px] font-semibold text-muted-foreground">% of section</span>
+        </span>
       </div>
       <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-white">
         <div className="h-full bg-foreground" style={{ width: `${value * 100}%` }} />

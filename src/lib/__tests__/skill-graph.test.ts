@@ -100,8 +100,8 @@ describe("coverageBreakdown (E2)", () => {
   });
 });
 
-describe("projectedFutureReadiness (§53)", () => {
-  it("projected score is always >= the raw future score when foundations exist", () => {
+describe("projectedFutureReadiness (§53/§55)", () => {
+  it("projected score is always >= the raw future score", () => {
     // 4 future requirements: 1 met direct, 1 partial direct, 1 adjacent, 1 pure gap.
     const f = fit({
       direct: [{ ...item("Go", "direct"), candidate_proficiency: 4, required_proficiency: 3 }, item("SQL", "direct")],
@@ -109,31 +109,45 @@ describe("projectedFutureReadiness (§53)", () => {
       gaps: [item("ML Ops", "gap")],
     });
     const r = projectedFutureReadiness(f);
-    // met(1) + closable(partial direct + adjacent = 2) / 4 -> 0.75 direct
     expect(r.score).toBeGreaterThan(f.score);
-    expect(r.closable.length).toBe(2);
-    expect(r.remaining.length).toBe(1);
-    expect(r.directMet).toBe(1);
     expect(r.total).toBe(4);
+    expect(r.metSkills).toBe(1);
+    // partial direct + adjacent + pure gap all still need development
+    expect(r.developmentPlan.length).toBe(3);
+    expect(r.alreadyMet.map((i) => i.skill)).toEqual(["Go"]);
   });
 
-  it("matches the raw score when there is nothing closable (all met or pure gaps)", () => {
+  it("credits learning even with zero foundation (pure gaps still project forward)", () => {
+    // No overlap at all: the classic "current == future" case.
+    const f = fit({ gaps: [item("Policy Management", "gap"), item("People Analytics", "gap")] });
+    const r = projectedFutureReadiness(f);
+    expect(r.total).toBe(2);
+    expect(r.metSkills).toBe(0);
+    expect(r.developmentPlan.length).toBe(2);
+    // 2 × 0.35 / 2 = 0.35 direct → 0.5*0.35 + 0.25*0 + 0.15*1 + 0.1*1 = 0.425
+    expect(r.score).toBeCloseTo(0.425, 5);
+    expect(r.score).toBeGreaterThan(f.score);
+  });
+
+  it("ranks stronger foundations first in the development plan", () => {
+    const f = fit({
+      adjacent: [item("Kubernetes", "adjacent")],
+      transferable: [item("Redis", "transferable")],
+      gaps: [item("ML Ops", "gap")],
+    });
+    const r = projectedFutureReadiness(f);
+    expect(r.developmentPlan.map((d) => d.skill)).toEqual(["Kubernetes", "Redis", "ML Ops"]);
+    expect(r.developmentPlan.map((d) => d.attainment)).toEqual([0.85, 0.6, 0.35]);
+  });
+
+  it("matches the raw score when there is nothing to develop (all met)", () => {
     const met = { ...item("Go", "direct"), candidate_proficiency: 4, required_proficiency: 3 };
-    const gap = item("ML Ops", "gap");
-    const f = fit({ direct: [met], gaps: [gap] });
+    const f = fit({ direct: [met] });
     const r = projectedFutureReadiness(f);
-    expect(r.closable.length).toBe(0);
-    // direct = 1/2, adjacent stays 0, evidence 1, seniority 1
-    expect(r.score).toBeCloseTo(0.5 * 0.5 + 0.25 * 0 + 0.15 * 1 + 0.1 * 1, 5);
-  });
-
-  it("reaches the projected ceiling when every requirement is closable", () => {
-    const f = fit({ adjacent: [item("K8s", "adjacent"), item("Docker", "adjacent")] });
-    const r = projectedFutureReadiness(f);
-    expect(r.remaining.length).toBe(0);
-    // direct = 2/2 = 1; adjacent = 1 (no pure gaps left); evidence 1; seniority 1
-    expect(r.score).toBeCloseTo(0.5 * 1 + 0.25 * 1 + 0.15 * 1 + 0.1 * 1, 5);
-    expect(r.score).toBe(1);
+    expect(r.developmentPlan.length).toBe(0);
+    expect(r.metSkills).toBe(1);
+    // direct = 1, adjacent raw 0, evidence 1, seniority 1
+    expect(r.score).toBeCloseTo(0.5 * 1 + 0.25 * 0 + 0.15 * 1 + 0.1 * 1, 5);
   });
 
   it("handles an empty requirement set without dividing by zero", () => {

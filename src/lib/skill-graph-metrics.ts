@@ -44,46 +44,92 @@ export function coverageBreakdown(
 }
 
 /**
- * §53: computed "projected future readiness (with planned development)".
+ * §55: computed "projected future readiness (with planned development)".
  *
- * The raw future score answers "today's profile vs tomorrow's requirement
- * set" — a harder future target can legitimately score LOWER than today. That
- * baseline stays untouched. This helper models the person actually LEARNING:
- * it assumes every future requirement that already has a real foundation
- * (a partial direct claim, an adjacent graph edge, or a transferable edge) is
- * trained up to the target bar, then recomputes the SAME weighted composite
- * the engine uses (50/25/15/10). Pure gaps with no recorded foundation stay
- * open. Because each foundation-backed requirement contributes at least as
- * much as it did before, the projected score is ALWAYS >= the raw future
- * score — growth from evidence-grounded development, never a fabricated 100.
+ * Two different questions, two different numbers:
+ *  - The RAW future score answers "today's evidence vs tomorrow's requirement
+ *    set" — a harder/different future target legitimately scores LOWER, and a
+ *    person with no overlap with the role collapses to the evidence+seniority
+ *    floor (so current and future look identical).
+ *  - THIS helper answers "where would this person be after following the role's
+ *    development plan for the 12–24 month horizon?" People learn, so it credits
+ *    every future requirement with an attainment based on how much foundation
+ *    already exists, then recomputes the SAME weighted composite the engine
+ *    uses (50/25/15/10). Because each requirement's attainment is >= its raw
+ *    contribution, the projected score is ALWAYS >= the raw future score —
+ *    growth from evidence-grounded development, never a fabricated 100.
+ *
+ * Attainment basis (a stated assumption, not measured capability):
+ *   already at/above the bar → 1.00  (holds it today)
+ *   holds it below the bar   → 0.90  (small gap, closes with practice)
+ *   adjacent graph edge      → 0.85  (related skill, high transfer)
+ *   transferable edge        → 0.60  (weaker transfer)
+ *   no recorded foundation   → 0.35  (formal training required, lowest confidence)
  */
+export const DEVELOPMENT_ATTAINMENT = {
+  met: 1,
+  partial: 0.9,
+  adjacent: 0.85,
+  transferable: 0.6,
+  gap: 0.35,
+} as const;
+
+export interface DevelopmentStep {
+  skill: string;
+  /** How the projection justifies the credit for this future requirement. */
+  basis: FitItem["classification"];
+  attainment: number;
+}
+
+function attainmentFor(item: FitItem): number {
+  if (item.classification === "direct") {
+    return (item.candidate_proficiency ?? 0) >= item.required_proficiency
+      ? DEVELOPMENT_ATTAINMENT.met
+      : DEVELOPMENT_ATTAINMENT.partial;
+  }
+  if (item.classification === "adjacent") return DEVELOPMENT_ATTAINMENT.adjacent;
+  if (item.classification === "transferable") return DEVELOPMENT_ATTAINMENT.transferable;
+  return DEVELOPMENT_ATTAINMENT.gap;
+}
+
 export function projectedFutureReadiness(future: FitRecord): {
   score: number;
-  closable: FitItem[];
-  remaining: FitItem[];
-  directMet: number;
+  /** Future requirements that still need development, strongest foundation first. */
+  developmentPlan: DevelopmentStep[];
+  /** Future requirements already at/above the bar today. */
+  alreadyMet: FitItem[];
+  metSkills: number;
   total: number;
 } {
-  const direct = future.classification.direct ?? [];
-  const adjacent = future.classification.adjacent ?? [];
-  const transferable = future.classification.transferable ?? [];
-  const gaps = future.classification.gaps ?? [];
-  const total = direct.length + adjacent.length + transferable.length + gaps.length;
-  if (total === 0) {
-    return { score: future.score, closable: [], remaining: [], directMet: 0, total: 0 };
-  }
-  const alreadyMet = direct.filter((i) => (i.candidate_proficiency ?? 0) >= i.required_proficiency).length;
-  const closable = [
-    ...direct.filter((i) => (i.candidate_proficiency ?? 0) < i.required_proficiency),
-    ...adjacent,
-    ...transferable,
+  const items: FitItem[] = [
+    ...(future.classification.direct ?? []),
+    ...(future.classification.adjacent ?? []),
+    ...(future.classification.transferable ?? []),
+    ...(future.classification.gaps ?? []),
   ];
-  const sDirect = (alreadyMet + closable.length) / total;
-  const sAdjacent = gaps.length === 0 ? 1 : future.sections.adjacent.value;
+  const total = items.length;
+  if (total === 0) {
+    return { score: future.score, developmentPlan: [], alreadyMet: [], metSkills: 0, total: 0 };
+  }
+  const attainments = items.map(attainmentFor);
+  const sDirect = attainments.reduce((a, b) => a + b, 0) / total;
   const score =
     PROJ_WEIGHTS.direct * sDirect +
-    PROJ_WEIGHTS.adjacent * sAdjacent +
+    PROJ_WEIGHTS.adjacent * future.sections.adjacent.value +
     PROJ_WEIGHTS.evidence * future.sections.evidence.value +
     PROJ_WEIGHTS.seniority * future.sections.seniority.value;
-  return { score: round3(score), closable, remaining: gaps, directMet: alreadyMet, total };
+
+  const developmentPlan: DevelopmentStep[] = items
+    .map((item, i) => ({ skill: item.skill, basis: item.classification, attainment: attainments[i] }))
+    .filter((d) => d.attainment < DEVELOPMENT_ATTAINMENT.met)
+    .sort((a, b) => b.attainment - a.attainment);
+  const alreadyMet = items.filter((i) => attainmentFor(i) >= DEVELOPMENT_ATTAINMENT.met);
+
+  return {
+    score: round3(score),
+    developmentPlan,
+    alreadyMet,
+    metSkills: alreadyMet.length,
+    total,
+  };
 }

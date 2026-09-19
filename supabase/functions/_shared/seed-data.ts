@@ -224,6 +224,10 @@ export const REQUISITIONS = [
       { skill: "REST APIs", target_proficiency: 3 },
     ],
     future_skills: [
+      { skill: "Go", target_proficiency: 4 },
+      { skill: "PostgreSQL", target_proficiency: 4 },
+      { skill: "Docker", target_proficiency: 3 },
+      { skill: "REST APIs", target_proficiency: 3 },
       { skill: "Kubernetes", target_proficiency: 2 },
       { skill: "Event-driven architecture", target_proficiency: 2 },
     ],
@@ -248,6 +252,10 @@ export const REQUISITIONS = [
       { skill: "Tableau", target_proficiency: 2 },
     ],
     future_skills: [
+      { skill: "SQL", target_proficiency: 4 },
+      { skill: "Python", target_proficiency: 4 },
+      { skill: "Data Modeling", target_proficiency: 3 },
+      { skill: "Tableau", target_proficiency: 2 },
       { skill: "dbt", target_proficiency: 2 },
       { skill: "Machine Learning fundamentals", target_proficiency: 2 },
     ],

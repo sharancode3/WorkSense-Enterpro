@@ -137,15 +137,51 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
       "target_id": "33333333-3333-3333-3333-333333333301",
       "target_title": "Senior Backend Engineer",
       "scenario": "future",
-      "score": 0.17,
+      "score": 0.311,
       "sections": {
         "direct": {
-          "value": 0,
-          "items": []
+          "value": 0.236,
+          "items": [
+            {
+              "skill": "Go",
+              "classification": "direct",
+              "required_proficiency": 4,
+              "candidate_proficiency": 3,
+              "edge": null,
+              "contribution": 0.75,
+              "reason": "Holds Go at 3/4 — below the required bar.",
+              "limitation": null
+            },
+            {
+              "skill": "Docker",
+              "classification": "direct",
+              "required_proficiency": 3,
+              "candidate_proficiency": 2,
+              "edge": null,
+              "contribution": 0.6666666666666666,
+              "reason": "Holds Docker at 2/3 — below the required bar.",
+              "limitation": null
+            }
+          ]
         },
         "adjacent": {
-          "value": 0,
-          "items": []
+          "value": 0.09,
+          "items": [
+            {
+              "skill": "REST APIs",
+              "classification": "adjacent",
+              "required_proficiency": 3,
+              "candidate_proficiency": null,
+              "edge": {
+                "from_skill": "Go",
+                "type": "ADJACENT_TO",
+                "weight": 0.6
+              },
+              "contribution": 0.36,
+              "reason": "No direct REST APIs; backed by Go → REST APIs (ADJACENT_TO, 0.60).",
+              "limitation": "Adjacent support is NOT direct equivalence: this person has no evidence for the required skill itself. Confirm real capability before relying on it."
+            }
+          ]
         },
         "evidence": {
           "value": 0.6,
@@ -159,9 +195,55 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
         }
       },
       "classification": {
-        "direct": [],
-        "adjacent": [],
+        "direct": [
+          {
+            "skill": "Go",
+            "classification": "direct",
+            "required_proficiency": 4,
+            "candidate_proficiency": 3,
+            "edge": null,
+            "contribution": 0.75,
+            "reason": "Holds Go at 3/4 — below the required bar.",
+            "limitation": null
+          },
+          {
+            "skill": "Docker",
+            "classification": "direct",
+            "required_proficiency": 3,
+            "candidate_proficiency": 2,
+            "edge": null,
+            "contribution": 0.6666666666666666,
+            "reason": "Holds Docker at 2/3 — below the required bar.",
+            "limitation": null
+          }
+        ],
+        "adjacent": [
+          {
+            "skill": "REST APIs",
+            "classification": "adjacent",
+            "required_proficiency": 3,
+            "candidate_proficiency": null,
+            "edge": {
+              "from_skill": "Go",
+              "type": "ADJACENT_TO",
+              "weight": 0.6
+            },
+            "contribution": 0.36,
+            "reason": "No direct REST APIs; backed by Go → REST APIs (ADJACENT_TO, 0.60).",
+            "limitation": "Adjacent support is NOT direct equivalence: this person has no evidence for the required skill itself. Confirm real capability before relying on it."
+          }
+        ],
         "transferable": [
+          {
+            "skill": "PostgreSQL",
+            "classification": "transferable",
+            "required_proficiency": 4,
+            "candidate_proficiency": null,
+            "edge": null,
+            "contribution": null,
+            "reason": "No direct or adjacent path; SQL shares the same category (Data).",
+            "limitation": "Transferable support is the weakest signal: it does not establish any proficiency in the required skill and contributes no points to the score. Treat it as a development candidate, not capability."
+          },
           {
             "skill": "Kubernetes",
             "classification": "transferable",

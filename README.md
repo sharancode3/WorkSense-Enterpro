@@ -22,7 +22,7 @@ fit percentages and statuses are computed by backend functions from the seeded r
 | **HR Policy Reasoning Agent** | `/policy` (Policy Studio) | Deterministic retrieval with verbatim quotes, date-aware applicability filters; the model grounds answers in citations or honestly abstains. |
 | **Employee Attrition Prediction** | `/workforce` (Workforce Review) | A Workforce Review Index (0–100) built from workforce patterns + engagement signals — decision support, honestly labeled as not a probability. |
 | **AI Performance Intelligence** | `/workforce` reviewer drafts | Goals/feedback/performance history synthesized into strengths + improvement areas; drafts are human-confirmed, never auto-finalized. |
-| **Workforce Skill Graph** | `/graph` (Skill Graph) | Maps verified skills vs current and **future** requirements with evidence lineage, taxonomy edges, and a computed **development trajectory** (Today → Future target → Projected with planned development). |
+| **Workforce Skill Graph** | `/graph` (Skill Graph) | Maps verified skills vs current and **future** requirements with evidence lineage, taxonomy edges, and a computed **development trajectory** (Today → Future target → Projected with planned development). Deep-linkable: `/graph?person=<id>&demand=<id>`. |
 | **Intelligent Interview Agent** | `/recruitment` (Recruitment & Interview Studio) | Role-specific question kits, rubric-based assessment, structured insights; sessions are human-reviewed end to end. |
 | **HR Decision Dashboard** | `/app` home + `/workforce` | Combines onboarding, workforce review, hiring funnel, future-skill readiness heatmap and recommendations into actionable panels, server-scoped per role. |
 

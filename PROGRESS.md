@@ -727,3 +727,68 @@ Browser: manager + HR homes verified after the refactor. Demo left pristine.
 
 **Remaining:** none. Concrete blockers: pre-existing external Qwen gateway outage (affects only
 the live model-written leg, batch-6 13/14); all deterministic functionality proven green.
+
+## 55. Skill graph: learning actually moves the score, for every listed role
+
+Reviewer: "skill graph is still not working properly… it's giving similar stuff always vs better for
+future when we learn… if I am missing on something tell me the logic… fix it for ALL of them that
+is listed so it doesn't look broken in front of a judge."
+
+**The logic (why it looked identical).** The raw future score answers *"today's evidence vs
+tomorrow's requirement set"* — it deliberately assumes **no learning**. So (a) a harder future
+target legitimately scores lower, and (b) a person with **no skill overlap** with the role
+collapses to the evidence+seniority floor in *both* scenarios, producing two identical numbers
+(the reviewer's 20/20). The learning projection existed but sat below the fold and gave no uplift
+when there was no foundation.
+
+**Fix 1 — the projection now models a development plan, so learning always lifts the score.**
+`projectedFutureReadiness()` (src/lib/skill-graph-metrics.ts) credits every future requirement by
+its foundation and recomputes the engine's own 50/25/15/10 composite:
+already held → 1.00 · held below bar → 0.90 · adjacent edge → 0.85 · transferable → 0.60 ·
+no foundation → 0.35 (training pace). Because each credit ≥ its raw contribution, the projected
+score is **always ≥ the raw future score and always a lift** — computed, never hard-coded.
++4 unit tests (419 total).
+
+**Fix 2 — surfaced at the top, with the logic spelled out.** A full-width **Development
+trajectory** card now renders *before* the two fit cards: three tiles (Today · Future target · no
+learning · Projected with development), a position bar, a "How to read this" explanation, and a
+**Development plan** chip list showing each future skill with its basis and credit (e.g.
+`Kubernetes (Transferable) → 60%`). An amber **"this pairing shares no skills"** notice explains a
+mismatched selection instead of showing a mysterious static score.
+
+**Fix 3 — every listed role now has a realistic future requirement set.** The seeds previously
+gave each requisition a *completely different* one-or-two-skill future set, so anyone matching
+today scored badly on the future set (a cliff) and thin data looked weak. All 8 requisitions now
+define an **evolution**: the current requirements (some raised) **plus** emerging skills, e.g.
+Senior Backend Engineer → Go 4 · PostgreSQL 4 · Docker 3 · REST APIs 3 · Kubernetes 2 ·
+Event-driven architecture 2. Edited in `_shared/seed-data.ts`, `_shared/assessment.ts` and the
+fixture generator (`scripts/generate-demo-fixtures.test.ts`), regenerated
+`_shared/generated-demo-fixtures.ts`, rebundled and deployed `reset-demo`.
+
+**Fix 4 — deep links + a race fix.** The graph now honours `?person=<id>&demand=<id>` so a specific
+assessment is shareable/re-openable. This exposed a latent race (the autorun read the requisition
+catalog before it loaded and skipped the future fit) — the run is now gated on the catalog.
+
+**Live verification (verify-53.mjs, 8/8):** all 7 demo requisitions have ≥3 future skills; **42/42**
+person×role matches satisfy projected ≥ future and **every one shows an uplift** (no static
+outcome); the reviewer's exact case — **Fatima Ito vs People Operations Partner — today 20% ·
+future 20% · projected 38%** with a 4-skill plan. Browser-verified at 1440:
+- mismatched pair: amber no-overlap notice + uplift 20% → 38%;
+- **matched pair (Adrian Novak vs Product Designer): today 41% → future 50% → projected 69%** —
+  future *better* than today, with the plan chips naming each basis;
+- dip pair (Alex Chen vs Senior Backend Engineer): today 39% → future 31% → projected 56%, dip
+  explained inline (modest, not a cliff).
+
+**Checks:** lint 0 errors, app tsc green, 419 tests / 41 files, `pnpm build` green, bundles in sync
+after redeploy. Demo re-seeded pristine with the new data.
+
+**Remaining:** none. Concrete blockers: pre-existing external Qwen gateway outage (live model leg
+only).
+
+**Addendum (§55).** Browser verification of the no-overlap case surfaced a real clipping
+defect in the shared `FitCard` section bars: in half-width cards the large section percentage
+collided with the "% of this section" caption and truncated it. Fixed in
+`src/components/fit-card.tsx` (flex-wrap + `whitespace-nowrap`, caption shortened to
+"% of section") — re-verified at 1440: all four columns read `0% of section` / `80% of section`
+cleanly with no overlap. Final gate: lint 0 errors, app tsc green, 419 tests / 41 files, 45
+bundles valid, `pnpm build` green, demo re-seeded pristine.

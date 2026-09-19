@@ -79,7 +79,12 @@ export const PEOPLE_OPS_REQUISITION = {
     { skill: "Policy Management", target_proficiency: 3 },
     { skill: "Stakeholder Management", target_proficiency: 3 },
   ],
-  future_skills: [{ skill: "People Analytics", target_proficiency: 2 }],
+  future_skills: [
+    { skill: "Policy Management", target_proficiency: 4 },
+    { skill: "Stakeholder Management", target_proficiency: 3 },
+    { skill: "People Analytics", target_proficiency: 2 },
+    { skill: "Change Management", target_proficiency: 2 },
+  ],
   applicants: [],
   audit_events: [
     { actor: "dana@worksense.demo", action: "created", note: "Requisition opened (assessment demo).", timestamp: "2026-09-01T09:00:00Z" },

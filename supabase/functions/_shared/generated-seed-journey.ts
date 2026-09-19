@@ -154,13 +154,13 @@ export const SEED_JOURNEY_TASKS: ScheduledTask[] = [
     "blocked": null
   },
   {
-    "id": "future_kubernetes",
-    "title": "Upskilling plan: Kubernetes",
+    "id": "future_go",
+    "title": "Upskilling plan: Go",
     "depends_on": [
       "skill_go"
     ],
-    "skill": "Kubernetes",
-    "target_proficiency": 2,
+    "skill": "Go",
+    "target_proficiency": 4,
     "non_waivable": false,
     "duration_days": 1,
     "waived": false,
@@ -171,13 +171,13 @@ export const SEED_JOURNEY_TASKS: ScheduledTask[] = [
     "blocked": null
   },
   {
-    "id": "future_event_driven_architecture",
-    "title": "Upskilling plan: Event-driven architecture",
+    "id": "future_postgresql",
+    "title": "Upskilling plan: PostgreSQL",
     "depends_on": [
       "skill_go"
     ],
-    "skill": "Event-driven architecture",
-    "target_proficiency": 2,
+    "skill": "PostgreSQL",
+    "target_proficiency": 4,
     "non_waivable": false,
     "duration_days": 1,
     "waived": false,

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { BadgeCheck, Info, Loader2, Lock, Search, Share2, ShieldCheck, Sparkles, Target, Workflow } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
+import { AlertTriangle, BadgeCheck, Info, Loader2, Lock, Search, Share2, ShieldCheck, Sparkles, Target, Workflow } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/auth-context";
 import { AppShell } from "@/components/app-shell";
@@ -56,8 +57,12 @@ interface MatchResults {
 
 export default function SkillGraph() {
   const { role, twin: me, user } = useAuth();
-  const [twinId, setTwinId] = useState("");
-  const [reqId, setReqId] = useState("");
+  // §55: deep-linkable selection (?person=<twinId>&demand=<reqId>) so a specific
+  // assessment can be shared and re-opened — and so the trajectory is reachable
+  // without re-picking both dropdowns.
+  const [searchParams] = useSearchParams();
+  const [twinId, setTwinId] = useState(() => searchParams.get("person") ?? "");
+  const [reqId, setReqId] = useState(() => searchParams.get("demand") ?? "");
   const [results, setResults] = useState<MatchResults | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -187,13 +192,16 @@ export default function SkillGraph() {
   // Selecting a person (and a demand) computes the graph immediately — no need
   // to scroll back up to press "Compute coverage". Selecting either side again
   // re-runs for the new selection; already-computed selections are not
-  // recomputed on every render.
+  // recomputed on every render. The run is gated on the requisition catalog so a
+  // deep-linked selection (?person/&demand) never computes before we know
+  // whether the demand defines future requirements.
   useEffect(() => {
     if (!twinId || !reqId) return;
+    if (!reqs.data) return;
     if (results && results.twinId === twinId && results.reqId === reqId) return;
     void runMatch();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [twinId, reqId]);
+  }, [twinId, reqId, reqs.data]);
 
   // E1: what changed between current and future requirement sets.
   const futureDiff = useMemo(() => {
@@ -213,8 +221,8 @@ export default function SkillGraph() {
     return c.directTotal > 0 ? c : null;
   }, [results]);
 
-  // §53: computed development trajectory for the future outlook — models the
-  // person closing every future gap that already has a real foundation.
+  // §55: computed development trajectory for the future outlook — models the
+  // person working the role's development plan over the 12–24 month horizon.
   const futureProj = useMemo(() => {
     if (!results?.future) return null;
     return projectedFutureReadiness(results.future);
@@ -334,6 +342,125 @@ export default function SkillGraph() {
                 invalidate the cached result automatically (version fingerprint), so Recompute is always current.
               </p>
             )}
+
+            {/* §55: the headline answer to "what if this person learns?" — shown
+                BEFORE the two fit cards so the growth story is not buried. */}
+            {results.future && futureProj && (() => {
+              const today = Math.round(results.current.score * 100);
+              const target = Math.round(results.future.score * 100);
+              const projected = Math.round(futureProj.score * 100);
+              const cur = results.current;
+              const shared =
+                cur.classification.direct.length +
+                cur.classification.adjacent.length +
+                cur.classification.transferable.length;
+              const noOverlap = shared === 0;
+              const person = (twins.data ?? []).find((t) => t.id === results.twinId);
+              const tiles = [
+                { label: "Today", value: today, sub: "current requirements · current evidence", cls: "bg-foreground text-white", subCls: "text-white/60" },
+                {
+                  label: "Future target",
+                  value: target,
+                  sub: "future requirements · no learning",
+                  cls: target < today ? "bg-accent text-foreground" : "bg-secondary text-white",
+                  subCls: target < today ? "text-foreground/60" : "text-white/70",
+                },
+                { label: "Projected with development", value: projected, sub: "after the role's development plan", cls: "bg-primary text-white", subCls: "text-white/70" },
+              ];
+              return (
+                <div className="mt-4 rounded-lg border-2 border-primary/15 bg-primary/5 p-5">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h3 className="flex items-center gap-2 text-base font-extrabold tracking-tight text-foreground">
+                      <Sparkles className="h-5 w-5 text-primary" strokeWidth={2.5} /> Development trajectory (12–24 months)
+                    </h3>
+                    <span className="rounded-md bg-white px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground ring-1 ring-border">
+                      computed · 50/25/15/10 weights
+                    </span>
+                  </div>
+
+                  {noOverlap && (
+                    <p className="mt-3 flex items-start gap-2 rounded-lg bg-accent/15 px-3 py-2.5 text-xs leading-relaxed text-foreground">
+                      <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" />
+                      <span>
+                        <b>This pairing shares no skills.</b> {person?.name ?? "This person"} holds nothing in{" "}
+                        {cur.target_title}'s requirement set, so <b>Today</b> and <b>Future target</b> both collapse to the
+                        evidence + seniority floor and look identical. That is a selection mismatch, not a broken score —
+                        choose a demand in {person?.department ?? "the same field"} to see direct and adjacent matches,
+                        while the projected line below still shows the development path.
+                      </span>
+                    </p>
+                  )}
+
+                  <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                    {tiles.map((s) => (
+                      <div key={s.label} className={`rounded-lg p-3.5 ${s.cls}`}>
+                        <p className={`text-[10px] font-bold uppercase tracking-wider ${s.subCls}`}>{s.label}</p>
+                        <p className="mt-1 text-2xl font-extrabold tracking-tight">{s.value}%</p>
+                        <p className={`mt-0.5 text-[10px] ${s.subCls}`}>{s.sub}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="relative mt-4 h-2 rounded-full bg-muted">
+                    <div
+                      className="absolute h-full rounded-full bg-primary/40"
+                      style={{ left: `${Math.min(today, projected)}%`, width: `${Math.abs(projected - today)}%` }}
+                    />
+                    {[
+                      { v: today, l: "today" },
+                      { v: target, l: "future target (no learning)" },
+                      { v: projected, l: "projected with development" },
+                    ].map((p, i) => (
+                      <span
+                        key={i}
+                        className="absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-primary shadow"
+                        style={{ left: `${p.v}%` }}
+                        title={`${p.l}: ${p.v}%`}
+                      />
+                    ))}
+                  </div>
+                  <div className="mt-2 flex flex-wrap justify-between gap-x-4 text-[11px] font-semibold text-muted-foreground">
+                    <span>Today {today}%</span>
+                    <span>Future target {target}%{target < today ? " (dips — harder target)" : ""}</span>
+                    <span>Projected {projected}%{projected > target ? ` (+${projected - target})` : ""}</span>
+                  </div>
+
+                  <p className="mt-3 text-xs leading-relaxed text-foreground">
+                    <b className="text-primary">How to read this:</b> <b>Today</b> scores the person's evidence against the
+                    role's <b>current</b> requirements. <b>Future target</b> scores the same evidence against the role's{" "}
+                    <b>future</b> requirements with <b>no learning</b> — it dips whenever the future role demands more.{" "}
+                    <b>Projected with development</b> assumes the person works the role's development plan over the horizon:
+                    a skill already held counts fully, a related/adjacent skill transfers strongly, and a completely new
+                    skill is credited at training pace. Every number is computed from the same weighted engine — never
+                    hard-coded.
+                  </p>
+
+                  {futureProj.developmentPlan.length > 0 && (
+                    <div className="mt-3">
+                      <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                        Development plan · {futureProj.developmentPlan.length} future skill
+                        {futureProj.developmentPlan.length === 1 ? "" : "s"} to build
+                      </p>
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {futureProj.developmentPlan.map((d) => (
+                          <span
+                            key={d.skill}
+                            className="rounded-md bg-white px-2 py-1 text-[11px] font-semibold text-foreground ring-1 ring-border"
+                          >
+                            {d.skill} <span className="capitalize text-muted-foreground">({d.basis})</span> → {Math.round(d.attainment * 100)}%
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {futureProj.developmentPlan.length === 0 && (
+                    <p className="mt-3 text-[11px] text-muted-foreground">
+                      No development needed — this person already meets the role's entire future requirement set.
+                    </p>
+                  )}
+                </div>
+              );
+            })()}
 
             <div className="mt-4 grid grid-cols-1 gap-6 lg:grid-cols-2">
               <FitCard fit={results.current} lineage={results.lineage ?? undefined} />
@@ -509,86 +636,6 @@ export default function SkillGraph() {
                 </div>
               </div>
 
-              {/* §53: development trajectory — the future score can dip, but the
-                  projection shows growth from evidence-grounded development. */}
-              {results.future && futureProj && (() => {
-                const today = Math.round(results.current.score * 100);
-                const target = Math.round(results.future.score * 100);
-                const projected = Math.round(futureProj.score * 100);
-                const steps = [today, target, projected];
-                const min = Math.min(...steps) - 10;
-                const max = Math.max(...steps) + 10;
-                const pos = (v: number) => ((v - min) / Math.max(1, max - min)) * 100;
-                return (
-                  <div className="mt-5 rounded-lg border-2 border-primary/15 bg-primary/5 p-4">
-                    <p className="flex items-center gap-2 text-sm font-extrabold text-foreground">
-                      <Sparkles className="h-4 w-4 text-primary" strokeWidth={2.5} /> Development trajectory (12–24 months)
-                    </p>
-                    <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                      The raw future target can score lower than today because the role's future requirements are harder or
-                      different. People learn — so we also compute what this person would reach if they{" "}
-                      <b className="text-foreground">
-                        closed every future requirement that already has a real foundation
-                      </b>{" "}
-                      ({futureProj.closable.length} skill{futureProj.closable.length === 1 ? "" : "s"}: a partial direct claim,
-                      an adjacent path, or transferable experience). Pure gaps with no foundation stay open. Both numbers are
-                      computed with the same weighted engine — never hard-coded.
-                    </p>
-                    <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
-                      {[
-                        { label: "Today", value: today, cls: "bg-foreground text-white" },
-                        { label: "Future target (today's profile)", value: target, cls: target < today ? "bg-accent text-foreground" : "bg-secondary text-white" },
-                        { label: "Projected with planned development", value: projected, cls: "bg-primary text-white" },
-                      ].map((s) => (
-                        <div key={s.label} className={`rounded-lg p-3.5 ${s.cls}`}>
-                          <p className={`text-[10px] font-bold uppercase tracking-wider ${s.cls.includes("text-white") ? "text-white/70" : "text-foreground/60"}`}>{s.label}</p>
-                          <p className="mt-1 text-2xl font-extrabold tracking-tight">{s.value}%</p>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="relative mt-4 h-2 rounded-full bg-muted">
-                      <div className="absolute h-full rounded-full bg-primary" style={{ left: `${pos(today)}%`, width: `${Math.max(2, pos(projected) - pos(today))}%` }} />
-                      {[today, target, projected].map((v, i) => (
-                        <span
-                          key={`${v}-${i}`}
-                          className="absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-primary shadow"
-                          style={{ left: `${pos(v)}%` }}
-                          title={`${["today", "future target", "projected"][i]}: ${v}%`}
-                        />
-                      ))}
-                    </div>
-                    <div className="mt-2 flex justify-between text-[11px] font-semibold text-muted-foreground">
-                      <span>Today {today}%</span>
-                      <span>Future target {target}%</span>
-                      <span>Projected {projected}%</span>
-                    </div>
-                    <p className="mt-3 text-xs leading-relaxed text-foreground">
-                      <span className="font-bold text-primary">Read-out:</span>{" "}
-                      {projected > target
-                        ? `Development lifts the outlook from ${target}% to ${projected}% (+${projected - target} points).`
-                        : `No foundation-backed future gaps remain — the outlook already matches the achievable ceiling.`}{" "}
-                      {today > target && (
-                        <span className="text-muted-foreground">
-                          The dip from {today}% today to {target}% is because the role's future requirements are harder —
-                          the projection below shows the growth path back up.
-                        </span>
-                      )}
-                    </p>
-                    {futureProj.closable.length > 0 && (
-                      <div className="mt-3 flex flex-wrap gap-1.5">
-                        {futureProj.closable.slice(0, 8).map((i) => (
-                          <span key={`${i.skill}-${i.classification}`} className="rounded-md bg-white px-2 py-1 text-[11px] font-semibold text-foreground ring-1 ring-border">
-                            {i.skill} <span className="capitalize text-muted-foreground">({i.classification})</span>
-                          </span>
-                        ))}
-                        {futureProj.closable.length > 8 && (
-                          <span className="px-1 text-[11px] text-muted-foreground">+{futureProj.closable.length - 8} more</span>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                );
-              })()}
             </div>
 
             {/* Requirements-vs-evidence matrix + gap bars */}
