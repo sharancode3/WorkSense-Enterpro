@@ -4176,6 +4176,18 @@ export type Database = {
           },
         ]
       }
+      marker_0900: {
+        Row: {
+          id: string
+        }
+        Insert: {
+          id?: string
+        }
+        Update: {
+          id?: string
+        }
+        Relationships: []
+      }
       model_jobs: {
         Row: {
           actor_id: string

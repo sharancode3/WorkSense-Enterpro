@@ -1,0 +1,1 @@
+create table if not exists public.marker_0900 (id uuid primary key default gen_random_uuid());
