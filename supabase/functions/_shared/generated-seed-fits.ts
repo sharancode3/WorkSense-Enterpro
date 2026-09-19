@@ -9,8 +9,8 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
       "target_id": "33333333-3333-3333-3333-333333333301",
       "target_title": "Senior Backend Engineer",
       "scenario": "current",
-      "score": 0.854,
-      "profile_match": 0.754,
+      "score": 1,
+      "profile_match": 0.888,
       "evidence_confidence": 0.888,
       "mandatory_gate": {
         "met": true,
@@ -27,28 +27,50 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
         "requirements": [
           {
             "skill": "Go",
-            "classification": "below_target",
+            "classification": "verified_direct",
             "relationship": "direct",
             "mandatory": true,
             "required_proficiency": 4,
-            "candidate_proficiency": 3,
-            "effective_proficiency": 3,
-            "gap": 1,
+            "candidate_proficiency": 4,
+            "effective_proficiency": 4,
+            "gap": 0,
             "evidence_state": "reviewer_confirmed",
             "evidence_source": "reviewer_confirmed",
             "freshness_days": null,
             "evidence_factor": 1,
-            "verified_contribution": 0.75,
-            "contribution": 0.75,
+            "verified_contribution": 1,
+            "contribution": 1,
             "verified": true,
             "provisional": true,
-            "next_action": "Close the gap to the target level, then re-verify.",
+            "next_action": "None — requirement met with accepted evidence.",
             "edge": null,
-            "reason": "Holds Go at 3/4 required — evidence state: reviewer_confirmed.",
+            "reason": "Holds Go at 4/4 required — evidence state: reviewer_confirmed.",
             "limitation": null
           },
           {
             "skill": "PostgreSQL",
+            "classification": "verified_direct",
+            "relationship": "direct",
+            "mandatory": true,
+            "required_proficiency": 3,
+            "candidate_proficiency": 4,
+            "effective_proficiency": 3,
+            "gap": 0,
+            "evidence_state": "assessment_supported",
+            "evidence_source": "assessment_supported",
+            "freshness_days": null,
+            "evidence_factor": 0.85,
+            "verified_contribution": 1,
+            "contribution": 0.85,
+            "verified": true,
+            "provisional": true,
+            "next_action": "None — requirement met with accepted evidence.",
+            "edge": null,
+            "reason": "Holds PostgreSQL at 4/3 required — evidence state: assessment_supported.",
+            "limitation": null
+          },
+          {
+            "skill": "Docker",
             "classification": "verified_direct",
             "relationship": "direct",
             "mandatory": true,
@@ -66,29 +88,7 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
             "provisional": true,
             "next_action": "None — requirement met with accepted evidence.",
             "edge": null,
-            "reason": "Holds PostgreSQL at 3/3 required — evidence state: assessment_supported.",
-            "limitation": null
-          },
-          {
-            "skill": "Docker",
-            "classification": "below_target",
-            "relationship": "direct",
-            "mandatory": true,
-            "required_proficiency": 3,
-            "candidate_proficiency": 2,
-            "effective_proficiency": 2,
-            "gap": 1,
-            "evidence_state": "assessment_supported",
-            "evidence_source": "assessment_supported",
-            "freshness_days": null,
-            "evidence_factor": 0.85,
-            "verified_contribution": 0.667,
-            "contribution": 0.567,
-            "verified": true,
-            "provisional": true,
-            "next_action": "Close the gap to the target level, then re-verify.",
-            "edge": null,
-            "reason": "Holds Docker at 2/3 required — evidence state: assessment_supported.",
+            "reason": "Holds Docker at 3/3 required — evidence state: assessment_supported.",
             "limitation": null
           },
           {
@@ -120,14 +120,14 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
           "unmet": 0,
           "unmet_skills": [],
           "gated": false,
-          "readiness": 0.854
+          "readiness": 1
         },
         "preferred": null,
         "verified": {
-          "readiness": 0.854
+          "readiness": 1
         },
         "provisional": {
-          "readiness": 0.754
+          "readiness": 0.888
         },
         "confidence": 0.888,
         "group_weights": {
@@ -143,7 +143,51 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
       "classification": {
         "verified_direct": [
           {
+            "skill": "Go",
+            "classification": "verified_direct",
+            "relationship": "direct",
+            "mandatory": true,
+            "required_proficiency": 4,
+            "candidate_proficiency": 4,
+            "effective_proficiency": 4,
+            "gap": 0,
+            "evidence_state": "reviewer_confirmed",
+            "evidence_source": "reviewer_confirmed",
+            "freshness_days": null,
+            "evidence_factor": 1,
+            "verified_contribution": 1,
+            "contribution": 1,
+            "verified": true,
+            "provisional": true,
+            "next_action": "None — requirement met with accepted evidence.",
+            "edge": null,
+            "reason": "Holds Go at 4/4 required — evidence state: reviewer_confirmed.",
+            "limitation": null
+          },
+          {
             "skill": "PostgreSQL",
+            "classification": "verified_direct",
+            "relationship": "direct",
+            "mandatory": true,
+            "required_proficiency": 3,
+            "candidate_proficiency": 4,
+            "effective_proficiency": 3,
+            "gap": 0,
+            "evidence_state": "assessment_supported",
+            "evidence_source": "assessment_supported",
+            "freshness_days": null,
+            "evidence_factor": 0.85,
+            "verified_contribution": 1,
+            "contribution": 0.85,
+            "verified": true,
+            "provisional": true,
+            "next_action": "None — requirement met with accepted evidence.",
+            "edge": null,
+            "reason": "Holds PostgreSQL at 4/3 required — evidence state: assessment_supported.",
+            "limitation": null
+          },
+          {
+            "skill": "Docker",
             "classification": "verified_direct",
             "relationship": "direct",
             "mandatory": true,
@@ -161,7 +205,7 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
             "provisional": true,
             "next_action": "None — requirement met with accepted evidence.",
             "edge": null,
-            "reason": "Holds PostgreSQL at 3/3 required — evidence state: assessment_supported.",
+            "reason": "Holds Docker at 3/3 required — evidence state: assessment_supported.",
             "limitation": null
           },
           {
@@ -188,59 +232,14 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
           }
         ],
         "provisional_direct": [],
-        "below_target": [
-          {
-            "skill": "Go",
-            "classification": "below_target",
-            "relationship": "direct",
-            "mandatory": true,
-            "required_proficiency": 4,
-            "candidate_proficiency": 3,
-            "effective_proficiency": 3,
-            "gap": 1,
-            "evidence_state": "reviewer_confirmed",
-            "evidence_source": "reviewer_confirmed",
-            "freshness_days": null,
-            "evidence_factor": 1,
-            "verified_contribution": 0.75,
-            "contribution": 0.75,
-            "verified": true,
-            "provisional": true,
-            "next_action": "Close the gap to the target level, then re-verify.",
-            "edge": null,
-            "reason": "Holds Go at 3/4 required — evidence state: reviewer_confirmed.",
-            "limitation": null
-          },
-          {
-            "skill": "Docker",
-            "classification": "below_target",
-            "relationship": "direct",
-            "mandatory": true,
-            "required_proficiency": 3,
-            "candidate_proficiency": 2,
-            "effective_proficiency": 2,
-            "gap": 1,
-            "evidence_state": "assessment_supported",
-            "evidence_source": "assessment_supported",
-            "freshness_days": null,
-            "evidence_factor": 0.85,
-            "verified_contribution": 0.667,
-            "contribution": 0.567,
-            "verified": true,
-            "provisional": true,
-            "next_action": "Close the gap to the target level, then re-verify.",
-            "edge": null,
-            "reason": "Holds Docker at 2/3 required — evidence state: assessment_supported.",
-            "limitation": null
-          }
-        ],
+        "below_target": [],
         "adjacent_support": [],
         "transferable_foundation": [],
         "missing": []
       },
       "versions": {
         "engine": "3",
-        "evidence": "baba97fb",
+        "evidence": "8749f1dc",
         "requisition": "unknown",
         "graph": "8aaab563",
         "context": "b9c72e63",
@@ -257,8 +256,8 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
       "target_id": "33333333-3333-3333-3333-333333333301",
       "target_title": "Senior Backend Engineer",
       "scenario": "future",
-      "score": 0.861,
-      "profile_match": 0.751,
+      "score": 1,
+      "profile_match": 0.875,
       "evidence_confidence": 0.875,
       "mandatory_gate": {
         "met": true,
@@ -275,68 +274,68 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
         "requirements": [
           {
             "skill": "Go",
-            "classification": "below_target",
+            "classification": "verified_direct",
             "relationship": "direct",
             "mandatory": true,
             "required_proficiency": 4,
-            "candidate_proficiency": 3,
-            "effective_proficiency": 3,
-            "gap": 1,
+            "candidate_proficiency": 4,
+            "effective_proficiency": 4,
+            "gap": 0,
             "evidence_state": "reviewer_confirmed",
             "evidence_source": "reviewer_confirmed",
             "freshness_days": null,
             "evidence_factor": 1,
-            "verified_contribution": 0.75,
-            "contribution": 0.75,
+            "verified_contribution": 1,
+            "contribution": 1,
             "verified": true,
             "provisional": true,
-            "next_action": "Close the gap to the target level, then re-verify.",
+            "next_action": "None — requirement met with accepted evidence.",
             "edge": null,
-            "reason": "Holds Go at 3/4 required — evidence state: reviewer_confirmed.",
+            "reason": "Holds Go at 4/4 required — evidence state: reviewer_confirmed.",
             "limitation": null
           },
           {
             "skill": "PostgreSQL",
-            "classification": "below_target",
+            "classification": "verified_direct",
             "relationship": "direct",
             "mandatory": true,
             "required_proficiency": 4,
-            "candidate_proficiency": 3,
-            "effective_proficiency": 3,
-            "gap": 1,
+            "candidate_proficiency": 4,
+            "effective_proficiency": 4,
+            "gap": 0,
             "evidence_state": "assessment_supported",
             "evidence_source": "assessment_supported",
             "freshness_days": null,
             "evidence_factor": 0.85,
-            "verified_contribution": 0.75,
-            "contribution": 0.638,
+            "verified_contribution": 1,
+            "contribution": 0.85,
             "verified": true,
             "provisional": true,
-            "next_action": "Close the gap to the target level, then re-verify.",
+            "next_action": "None — requirement met with accepted evidence.",
             "edge": null,
-            "reason": "Holds PostgreSQL at 3/4 required — evidence state: assessment_supported.",
+            "reason": "Holds PostgreSQL at 4/4 required — evidence state: assessment_supported.",
             "limitation": null
           },
           {
             "skill": "Docker",
-            "classification": "below_target",
+            "classification": "verified_direct",
             "relationship": "direct",
             "mandatory": true,
             "required_proficiency": 3,
-            "candidate_proficiency": 2,
-            "effective_proficiency": 2,
-            "gap": 1,
+            "candidate_proficiency": 3,
+            "effective_proficiency": 3,
+            "gap": 0,
             "evidence_state": "assessment_supported",
             "evidence_source": "assessment_supported",
             "freshness_days": null,
             "evidence_factor": 0.85,
-            "verified_contribution": 0.667,
-            "contribution": 0.567,
+            "verified_contribution": 1,
+            "contribution": 0.85,
             "verified": true,
             "provisional": true,
-            "next_action": "Close the gap to the target level, then re-verify.",
+            "next_action": "None — requirement met with accepted evidence.",
             "edge": null,
-            "reason": "Holds Docker at 2/3 required — evidence state: assessment_supported.",
+            "reason": "Holds Docker at 3/3 required — evidence state: assessment_supported.",
             "limitation": null
           },
           {
@@ -412,14 +411,14 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
           "unmet": 0,
           "unmet_skills": [],
           "gated": false,
-          "readiness": 0.861
+          "readiness": 1
         },
         "preferred": null,
         "verified": {
-          "readiness": 0.861
+          "readiness": 1
         },
         "provisional": {
-          "readiness": 0.751
+          "readiness": 0.875
         },
         "confidence": 0.875,
         "group_weights": {
@@ -434,6 +433,72 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
       },
       "classification": {
         "verified_direct": [
+          {
+            "skill": "Go",
+            "classification": "verified_direct",
+            "relationship": "direct",
+            "mandatory": true,
+            "required_proficiency": 4,
+            "candidate_proficiency": 4,
+            "effective_proficiency": 4,
+            "gap": 0,
+            "evidence_state": "reviewer_confirmed",
+            "evidence_source": "reviewer_confirmed",
+            "freshness_days": null,
+            "evidence_factor": 1,
+            "verified_contribution": 1,
+            "contribution": 1,
+            "verified": true,
+            "provisional": true,
+            "next_action": "None — requirement met with accepted evidence.",
+            "edge": null,
+            "reason": "Holds Go at 4/4 required — evidence state: reviewer_confirmed.",
+            "limitation": null
+          },
+          {
+            "skill": "PostgreSQL",
+            "classification": "verified_direct",
+            "relationship": "direct",
+            "mandatory": true,
+            "required_proficiency": 4,
+            "candidate_proficiency": 4,
+            "effective_proficiency": 4,
+            "gap": 0,
+            "evidence_state": "assessment_supported",
+            "evidence_source": "assessment_supported",
+            "freshness_days": null,
+            "evidence_factor": 0.85,
+            "verified_contribution": 1,
+            "contribution": 0.85,
+            "verified": true,
+            "provisional": true,
+            "next_action": "None — requirement met with accepted evidence.",
+            "edge": null,
+            "reason": "Holds PostgreSQL at 4/4 required — evidence state: assessment_supported.",
+            "limitation": null
+          },
+          {
+            "skill": "Docker",
+            "classification": "verified_direct",
+            "relationship": "direct",
+            "mandatory": true,
+            "required_proficiency": 3,
+            "candidate_proficiency": 3,
+            "effective_proficiency": 3,
+            "gap": 0,
+            "evidence_state": "assessment_supported",
+            "evidence_source": "assessment_supported",
+            "freshness_days": null,
+            "evidence_factor": 0.85,
+            "verified_contribution": 1,
+            "contribution": 0.85,
+            "verified": true,
+            "provisional": true,
+            "next_action": "None — requirement met with accepted evidence.",
+            "edge": null,
+            "reason": "Holds Docker at 3/3 required — evidence state: assessment_supported.",
+            "limitation": null
+          },
           {
             "skill": "REST APIs",
             "classification": "verified_direct",
@@ -502,81 +567,14 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
           }
         ],
         "provisional_direct": [],
-        "below_target": [
-          {
-            "skill": "Go",
-            "classification": "below_target",
-            "relationship": "direct",
-            "mandatory": true,
-            "required_proficiency": 4,
-            "candidate_proficiency": 3,
-            "effective_proficiency": 3,
-            "gap": 1,
-            "evidence_state": "reviewer_confirmed",
-            "evidence_source": "reviewer_confirmed",
-            "freshness_days": null,
-            "evidence_factor": 1,
-            "verified_contribution": 0.75,
-            "contribution": 0.75,
-            "verified": true,
-            "provisional": true,
-            "next_action": "Close the gap to the target level, then re-verify.",
-            "edge": null,
-            "reason": "Holds Go at 3/4 required — evidence state: reviewer_confirmed.",
-            "limitation": null
-          },
-          {
-            "skill": "PostgreSQL",
-            "classification": "below_target",
-            "relationship": "direct",
-            "mandatory": true,
-            "required_proficiency": 4,
-            "candidate_proficiency": 3,
-            "effective_proficiency": 3,
-            "gap": 1,
-            "evidence_state": "assessment_supported",
-            "evidence_source": "assessment_supported",
-            "freshness_days": null,
-            "evidence_factor": 0.85,
-            "verified_contribution": 0.75,
-            "contribution": 0.638,
-            "verified": true,
-            "provisional": true,
-            "next_action": "Close the gap to the target level, then re-verify.",
-            "edge": null,
-            "reason": "Holds PostgreSQL at 3/4 required — evidence state: assessment_supported.",
-            "limitation": null
-          },
-          {
-            "skill": "Docker",
-            "classification": "below_target",
-            "relationship": "direct",
-            "mandatory": true,
-            "required_proficiency": 3,
-            "candidate_proficiency": 2,
-            "effective_proficiency": 2,
-            "gap": 1,
-            "evidence_state": "assessment_supported",
-            "evidence_source": "assessment_supported",
-            "freshness_days": null,
-            "evidence_factor": 0.85,
-            "verified_contribution": 0.667,
-            "contribution": 0.567,
-            "verified": true,
-            "provisional": true,
-            "next_action": "Close the gap to the target level, then re-verify.",
-            "edge": null,
-            "reason": "Holds Docker at 2/3 required — evidence state: assessment_supported.",
-            "limitation": null
-          }
-        ],
+        "below_target": [],
         "adjacent_support": [],
         "transferable_foundation": [],
         "missing": []
       },
       "versions": {
         "engine": "3",
-        "evidence": "baba97fb",
+        "evidence": "8749f1dc",
         "requisition": "unknown",
         "graph": "8aaab563",
         "context": "b9c72e63",
@@ -595,16 +593,14 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
       "target_id": "33333333-3333-3333-3333-333333333302",
       "target_title": "Data Analyst",
       "scenario": "current",
-      "score": 0.75,
-      "profile_match": 0.742,
-      "evidence_confidence": 0.775,
+      "score": 1,
+      "profile_match": 0.888,
+      "evidence_confidence": 0.888,
       "mandatory_gate": {
-        "met": false,
-        "unmet_skills": [
-          "Data Modeling"
-        ],
+        "met": true,
+        "unmet_skills": [],
         "count": 4,
-        "note": "Unmet: Data Modeling. Without accepted evidence these cannot raise verified readiness."
+        "note": "Every mandatory requirement has accepted evidence (direct or accepted-adjacent)."
       },
       "contextual_alignment": {
         "candidate_level": 3,
@@ -659,24 +655,24 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
           },
           {
             "skill": "Data Modeling",
-            "classification": "below_target",
+            "classification": "verified_direct",
             "relationship": "direct",
             "mandatory": true,
             "required_proficiency": 3,
-            "candidate_proficiency": 2,
-            "effective_proficiency": 2,
-            "gap": 1,
-            "evidence_state": "claimed",
-            "evidence_source": "claimed",
+            "candidate_proficiency": 3,
+            "effective_proficiency": 3,
+            "gap": 0,
+            "evidence_state": "assessment_supported",
+            "evidence_source": "assessment_supported",
             "freshness_days": null,
-            "evidence_factor": 0.4,
-            "verified_contribution": 0,
-            "contribution": 0.267,
-            "verified": false,
+            "evidence_factor": 0.85,
+            "verified_contribution": 1,
+            "contribution": 0.85,
+            "verified": true,
             "provisional": true,
-            "next_action": "Close the gap to the target level, then re-verify.",
+            "next_action": "None — requirement met with accepted evidence.",
             "edge": null,
-            "reason": "Holds Data Modeling at 2/3 required — evidence state: claimed.",
+            "reason": "Holds Data Modeling at 3/3 required — evidence state: assessment_supported.",
             "limitation": null
           },
           {
@@ -704,28 +700,26 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
         ],
         "mandatory": {
           "count": 4,
-          "met": 3,
-          "unmet": 1,
-          "unmet_skills": [
-            "Data Modeling"
-          ],
-          "gated": true,
-          "readiness": 0.75
+          "met": 4,
+          "unmet": 0,
+          "unmet_skills": [],
+          "gated": false,
+          "readiness": 1
         },
         "preferred": null,
         "verified": {
-          "readiness": 0.75
+          "readiness": 1
         },
         "provisional": {
-          "readiness": 0.742
+          "readiness": 0.888
         },
-        "confidence": 0.775,
+        "confidence": 0.888,
         "group_weights": {
           "mandatory": 0.7,
           "preferred": 0.3
         },
         "evidence_artifacts": {
-          "count": 7,
+          "count": 9,
           "threshold": 5
         },
         "resolved_from": "current"
@@ -777,6 +771,28 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
             "limitation": null
           },
           {
+            "skill": "Data Modeling",
+            "classification": "verified_direct",
+            "relationship": "direct",
+            "mandatory": true,
+            "required_proficiency": 3,
+            "candidate_proficiency": 3,
+            "effective_proficiency": 3,
+            "gap": 0,
+            "evidence_state": "assessment_supported",
+            "evidence_source": "assessment_supported",
+            "freshness_days": null,
+            "evidence_factor": 0.85,
+            "verified_contribution": 1,
+            "contribution": 0.85,
+            "verified": true,
+            "provisional": true,
+            "next_action": "None — requirement met with accepted evidence.",
+            "edge": null,
+            "reason": "Holds Data Modeling at 3/3 required — evidence state: assessment_supported.",
+            "limitation": null
+          },
+          {
             "skill": "Tableau",
             "classification": "verified_direct",
             "relationship": "direct",
@@ -800,40 +816,17 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
           }
         ],
         "provisional_direct": [],
-        "below_target": [
-          {
-            "skill": "Data Modeling",
-            "classification": "below_target",
-            "relationship": "direct",
-            "mandatory": true,
-            "required_proficiency": 3,
-            "candidate_proficiency": 2,
-            "effective_proficiency": 2,
-            "gap": 1,
-            "evidence_state": "claimed",
-            "evidence_source": "claimed",
-            "freshness_days": null,
-            "evidence_factor": 0.4,
-            "verified_contribution": 0,
-            "contribution": 0.267,
-            "verified": false,
-            "provisional": true,
-            "next_action": "Close the gap to the target level, then re-verify.",
-            "edge": null,
-            "reason": "Holds Data Modeling at 2/3 required — evidence state: claimed.",
-            "limitation": null
-          }
-        ],
+        "below_target": [],
         "adjacent_support": [],
         "transferable_foundation": [],
         "missing": []
       },
       "versions": {
         "engine": "3",
-        "evidence": "8284907a",
+        "evidence": "8a3b3ad1",
         "requisition": "unknown",
         "graph": "8aaab563",
-        "context": "b9c72e63",
+        "context": "b8c72cd0",
         "plan": "none"
       },
       "assumptions": {
@@ -849,8 +842,8 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
       "target_id": "33333333-3333-3333-3333-333333333301",
       "target_title": "Senior Backend Engineer",
       "scenario": "current",
-      "score": 0.87,
-      "profile_match": 0.833,
+      "score": 1,
+      "profile_match": 0.963,
       "evidence_confidence": 0.963,
       "mandatory_gate": {
         "met": true,
@@ -933,29 +926,25 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
           },
           {
             "skill": "REST APIs",
-            "classification": "adjacent_support",
-            "relationship": "adjacent",
+            "classification": "verified_direct",
+            "relationship": "direct",
             "mandatory": true,
             "required_proficiency": 3,
             "candidate_proficiency": 4,
-            "effective_proficiency": 1.44,
-            "gap": 1.56,
+            "effective_proficiency": 3,
+            "gap": 0,
             "evidence_state": "reviewer_confirmed",
             "evidence_source": "reviewer_confirmed",
             "freshness_days": null,
             "evidence_factor": 1,
-            "verified_contribution": 0.48,
-            "contribution": 0.48,
+            "verified_contribution": 1,
+            "contribution": 1,
             "verified": true,
             "provisional": true,
-            "next_action": "Capability in the required skill itself is not yet evidenced — confirm via an assessment.",
-            "edge": {
-              "from_skill": "Go",
-              "type": "ADJACENT_TO",
-              "weight": 0.6
-            },
-            "reason": "No direct REST APIs; backed by Go → REST APIs (ADJACENT_TO, 0.60).",
-            "limitation": "Adjacent support is NOT direct equivalence: this person has no evidence for the required skill itself. Confirm real capability before relying on it."
+            "next_action": "None — requirement met with accepted evidence.",
+            "edge": null,
+            "reason": "Holds REST APIs at 4/3 required — evidence state: reviewer_confirmed.",
+            "limitation": null
           }
         ],
         "mandatory": {
@@ -964,14 +953,14 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
           "unmet": 0,
           "unmet_skills": [],
           "gated": false,
-          "readiness": 0.87
+          "readiness": 1
         },
         "preferred": null,
         "verified": {
-          "readiness": 0.87
+          "readiness": 1
         },
         "provisional": {
-          "readiness": 0.833
+          "readiness": 0.963
         },
         "confidence": 0.963,
         "group_weights": {
@@ -979,7 +968,7 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
           "preferred": 0.3
         },
         "evidence_artifacts": {
-          "count": 3,
+          "count": 6,
           "threshold": 5
         },
         "resolved_from": "current"
@@ -1051,47 +1040,42 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
             "edge": null,
             "reason": "Holds Docker at 3/3 required — evidence state: reviewer_confirmed.",
             "limitation": null
-          }
-        ],
-        "provisional_direct": [],
-        "below_target": [],
-        "adjacent_support": [
+          },
           {
             "skill": "REST APIs",
-            "classification": "adjacent_support",
-            "relationship": "adjacent",
+            "classification": "verified_direct",
+            "relationship": "direct",
             "mandatory": true,
             "required_proficiency": 3,
             "candidate_proficiency": 4,
-            "effective_proficiency": 1.44,
-            "gap": 1.56,
+            "effective_proficiency": 3,
+            "gap": 0,
             "evidence_state": "reviewer_confirmed",
             "evidence_source": "reviewer_confirmed",
             "freshness_days": null,
             "evidence_factor": 1,
-            "verified_contribution": 0.48,
-            "contribution": 0.48,
+            "verified_contribution": 1,
+            "contribution": 1,
             "verified": true,
             "provisional": true,
-            "next_action": "Capability in the required skill itself is not yet evidenced — confirm via an assessment.",
-            "edge": {
-              "from_skill": "Go",
-              "type": "ADJACENT_TO",
-              "weight": 0.6
-            },
-            "reason": "No direct REST APIs; backed by Go → REST APIs (ADJACENT_TO, 0.60).",
-            "limitation": "Adjacent support is NOT direct equivalence: this person has no evidence for the required skill itself. Confirm real capability before relying on it."
+            "next_action": "None — requirement met with accepted evidence.",
+            "edge": null,
+            "reason": "Holds REST APIs at 4/3 required — evidence state: reviewer_confirmed.",
+            "limitation": null
           }
         ],
+        "provisional_direct": [],
+        "below_target": [],
+        "adjacent_support": [],
         "transferable_foundation": [],
         "missing": []
       },
       "versions": {
         "engine": "3",
-        "evidence": "64f51776",
+        "evidence": "80fd38d6",
         "requisition": "unknown",
         "graph": "8aaab563",
-        "context": "6788a556",
+        "context": "6588a230",
         "plan": "none"
       },
       "assumptions": {
@@ -1368,19 +1352,18 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
       "target_id": "33333333-3333-3333-3333-333333333302",
       "target_title": "Data Analyst",
       "scenario": "current",
-      "score": 0,
-      "profile_match": 0.4,
-      "evidence_confidence": 0.4,
+      "score": 0.25,
+      "profile_match": 0.55,
+      "evidence_confidence": 0.55,
       "mandatory_gate": {
         "met": false,
         "unmet_skills": [
           "SQL",
           "Python",
-          "Data Modeling",
-          "Tableau"
+          "Data Modeling"
         ],
         "count": 4,
-        "note": "Unmet: SQL, Python, Data Modeling, Tableau. Without accepted evidence these cannot raise verified readiness."
+        "note": "Unmet: SQL, Python, Data Modeling. Without accepted evidence these cannot raise verified readiness."
       },
       "contextual_alignment": {
         "candidate_level": 2,
@@ -1457,60 +1440,82 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
           },
           {
             "skill": "Tableau",
-            "classification": "provisional_direct",
+            "classification": "verified_direct",
             "relationship": "direct",
             "mandatory": true,
             "required_proficiency": 2,
-            "candidate_proficiency": 2,
+            "candidate_proficiency": 3,
             "effective_proficiency": 2,
             "gap": 0,
-            "evidence_state": "claimed",
-            "evidence_source": "claimed",
+            "evidence_state": "reviewer_confirmed",
+            "evidence_source": "reviewer_confirmed",
             "freshness_days": null,
-            "evidence_factor": 0.4,
-            "verified_contribution": 0,
-            "contribution": 0.4,
-            "verified": false,
+            "evidence_factor": 1,
+            "verified_contribution": 1,
+            "contribution": 1,
+            "verified": true,
             "provisional": true,
-            "next_action": "Verify evidence — accepted evidence would confirm this match.",
+            "next_action": "None — requirement met with accepted evidence.",
             "edge": null,
-            "reason": "Holds Tableau at 2/2 required — evidence state: claimed.",
+            "reason": "Holds Tableau at 3/2 required — evidence state: reviewer_confirmed.",
             "limitation": null
           }
         ],
         "mandatory": {
           "count": 4,
-          "met": 0,
-          "unmet": 4,
+          "met": 1,
+          "unmet": 3,
           "unmet_skills": [
             "SQL",
             "Python",
-            "Data Modeling",
-            "Tableau"
+            "Data Modeling"
           ],
           "gated": true,
-          "readiness": 0
+          "readiness": 0.25
         },
         "preferred": null,
         "verified": {
-          "readiness": 0
+          "readiness": 0.25
         },
         "provisional": {
-          "readiness": 0.4
+          "readiness": 0.55
         },
-        "confidence": 0.4,
+        "confidence": 0.55,
         "group_weights": {
           "mandatory": 0.7,
           "preferred": 0.3
         },
         "evidence_artifacts": {
-          "count": 0,
+          "count": 3,
           "threshold": 5
         },
         "resolved_from": "current"
       },
       "classification": {
-        "verified_direct": [],
+        "verified_direct": [
+          {
+            "skill": "Tableau",
+            "classification": "verified_direct",
+            "relationship": "direct",
+            "mandatory": true,
+            "required_proficiency": 2,
+            "candidate_proficiency": 3,
+            "effective_proficiency": 2,
+            "gap": 0,
+            "evidence_state": "reviewer_confirmed",
+            "evidence_source": "reviewer_confirmed",
+            "freshness_days": null,
+            "evidence_factor": 1,
+            "verified_contribution": 1,
+            "contribution": 1,
+            "verified": true,
+            "provisional": true,
+            "next_action": "None — requirement met with accepted evidence.",
+            "edge": null,
+            "reason": "Holds Tableau at 3/2 required — evidence state: reviewer_confirmed.",
+            "limitation": null
+          }
+        ],
         "provisional_direct": [
           {
             "skill": "SQL",
@@ -1577,28 +1582,6 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
             "edge": null,
             "reason": "Holds Data Modeling at 3/3 required — evidence state: claimed.",
             "limitation": null
-          },
-          {
-            "skill": "Tableau",
-            "classification": "provisional_direct",
-            "relationship": "direct",
-            "mandatory": true,
-            "required_proficiency": 2,
-            "candidate_proficiency": 2,
-            "effective_proficiency": 2,
-            "gap": 0,
-            "evidence_state": "claimed",
-            "evidence_source": "claimed",
-            "freshness_days": null,
-            "evidence_factor": 0.4,
-            "verified_contribution": 0,
-            "contribution": 0.4,
-            "verified": false,
-            "provisional": true,
-            "next_action": "Verify evidence — accepted evidence would confirm this match.",
-            "edge": null,
-            "reason": "Holds Tableau at 2/2 required — evidence state: claimed.",
-            "limitation": null
           }
         ],
         "below_target": [],
@@ -1608,10 +1591,10 @@ export const SEED_FITS: Record<string, FitRecord[]> = {
       },
       "versions": {
         "engine": "3",
-        "evidence": "42a799dd",
+        "evidence": "011a59e4",
         "requisition": "unknown",
         "graph": "8aaab563",
-        "context": "aa574d44",
+        "context": "ac57506a",
         "plan": "none"
       },
       "assumptions": {

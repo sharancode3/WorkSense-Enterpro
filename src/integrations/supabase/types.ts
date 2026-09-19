@@ -5709,6 +5709,61 @@ export type Database = {
           },
         ]
       }
+      skill_fits: {
+        Row: {
+          computed_at: string
+          created_at: string
+          fit: Json
+          id: string
+          org_id: string
+          scenario: string
+          target_id: string
+          target_type: string
+          twin_id: string
+        }
+        Insert: {
+          computed_at?: string
+          created_at?: string
+          fit?: Json
+          id?: string
+          org_id: string
+          scenario: string
+          target_id: string
+          target_type: string
+          twin_id: string
+        }
+        Update: {
+          computed_at?: string
+          created_at?: string
+          fit?: Json
+          id?: string
+          org_id?: string
+          scenario?: string
+          target_id?: string
+          target_type?: string
+          twin_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "skill_fits_org_id_fkey"
+            columns: ["org_id"]
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "skill_fits_target_id_fkey"
+            columns: ["target_id"]
+            referencedRelation: "job_requisitions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "skill_fits_twin_id_fkey"
+            columns: ["twin_id"]
+            referencedRelation: "digital_twins"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       skill_graph: {
         Row: {
           aliases: Json
