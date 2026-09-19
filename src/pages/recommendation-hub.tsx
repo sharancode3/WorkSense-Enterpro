@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import {
   AlertTriangle,
   ArrowRight,
+  BookOpen,
   CheckCircle2,
   ChevronDown,
   FileSearch,
@@ -205,13 +206,12 @@ function TasksPanel({ rec, onTaskAct }: { rec: RecommendationRow; onTaskAct: (ta
                 {t.instructions && <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">{t.instructions}</p>}
                 {t.resource_link && (
                   <p className="mt-1 text-xs">
-                    {/worksense\.demo|learning\.worksense/i.test(t.resource_link) ? (
-                      <span className="rounded bg-accent px-1.5 py-0.5 text-accent-foreground" title="Placeholder resource — replace with the real catalog link before linking owners to it">
-                        Resource: {t.resource_link} (placeholder — replace with the real L&D catalog link)
-                      </span>
-                    ) : (
-                      <span className="text-primary">Resource: {t.resource_link}</span>
-                    )}
+                    <span
+                      title={`Demo L&D catalog link (${t.resource_link}) — point this at your real catalog in production.`}
+                      className="inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 font-semibold text-foreground"
+                    >
+                      <BookOpen className="h-3 w-3" /> Learning resource · demo catalog
+                    </span>
                   </p>
                 )}
                 {(t.required_evidence ?? []).length > 0 && (

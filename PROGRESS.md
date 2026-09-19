@@ -792,3 +792,50 @@ collided with the "% of this section" caption and truncated it. Fixed in
 "% of section") — re-verified at 1440: all four columns read `0% of section` / `80% of section`
 cleanly with no overlap. Final gate: lint 0 errors, app tsc green, 419 tests / 41 files, 45
 bundles valid, `pnpm build` green, demo re-seeded pristine.
+
+## 56. Full end-to-end browser sweep + production-grade demo data
+
+Reviewer: "do a full application check… check visually how the output should be… fix UI/features… the
+dummy data should read like real prod output — professional, better for the PS."
+
+**Browser sweep (real authenticated sessions, desktop 1280):** landing → login → `/showcase` →
+recruiter (`/recruitment?req=…`) → employee onboarding → HR policy studio → HR workforce review →
+recommendation hub → administrator access console → skill graph. Layouts, contrast, responsiveness and
+empty states all verified; the three defects found are fixed below.
+
+**Defect 1 — leftover test artifact in the recruiter pipeline (data).** A candidate named
+**"Test Candidate (disposable)"** appeared as a real applicant. Root cause: reset-demo *intends* to keep
+a disposable sandbox candidate (verify-batch-6/8 look it up by twin id), and its hand-written name/email
+also surfaced in the UI. Fixed by seeding it as a realistic applicant — **Nadia Rahman**
+(`nadia.rahman@worksense.demo`, application code `WS-NADIA-2026`, a full logistics/fintech resume) —
+keeping the same twin id so the acceptance scripts still pass. Verified: 0 unprofessional names,
+0 requisitions referencing it.
+
+**Defect 2 — malformed member emails (data).** The fixture email slug stripped digits and left a double
+dot, so the 60 generated employees showed as `emp..worksense@example.com` in the access console. The
+generator now derives realistic, unique work emails from the person's name
+(`adrian.ali@worksense.demo`, `ava.osei@worksense.demo`, …), with a dedupe set and a `northstar.example`
+domain for the isolation org. RNG draw order is unchanged, so the rest of the fixture stays
+reproducible. Verified: 0 emails containing `..` across all 95 twins.
+
+**Defect 3 — placeholder copy visible in the UI (frontend).** The hub action-task resource row rendered
+`Resource: https://learning.worksense.demo/lnd (placeholder — replace with the real L&D catalog link)`
+in an amber chip. Replaced with a neutral chip ("Learning resource · demo catalog") carrying an honest
+tooltip, so no placeholder text is ever shown to a judge.
+
+**Also hardened:** the recruitment pipeline summary labels could break mid-word
+("NOT MOVING FOR/WARD") — now `tracking-wide` + `leading-tight` with a `min-w-0` cell, and the shared
+`FitCard` section caption no longer collides with its percentage (fixed in §55).
+
+**Teardown correctness (backend).** `reset-demo`'s teardown deleted only a subset of the tables that
+reference `digital_twins`, so FK-blocked deletes were silently swallowed (this is why stray rows could
+survive). It now clears the full dependent set first — `resume_versions`, `resume_documents`,
+`policy_messages`, `policy_conversations`, `recommendation_comments`, `review_case_actions`,
+`staffing_proposals`, `staffing_scenarios`, `skill_fits` — in both the full and compact reset paths.
+Rebundled and redeployed.
+
+**Checks:** lint 0 errors, app tsc green, functions tsc green, 419 tests / 41 files, 45 bundles valid,
+`pnpm build` green. Live: reset-demo 200; DB verified clean (0 malformed emails, 0 test names, 95 twins).
+Demo re-seeded pristine.
+
+**Remaining:** none. Concrete blockers: pre-existing external Qwen gateway outage (live model leg only).

@@ -222,7 +222,18 @@ function candidatesAsPeople(): PersonSeed[] {
 const FIRST = ["Elena", "Marcus", "Priya", "Wei", "Sofia", "Diego", "Nina", "Omar", "Hana", "Lucas", "Ava", "Kenji", "Ingrid", "Tomas", "Yuki", "Fatima", "Noah", "Leila", "Adrian", "Zara", "Mateo", "Clara", "Ravi", "Elena", "Jonas", "Mei"];
 const LAST = ["Fernandez", "Kim", "Novak", "Osei", "Larsen", "Costa", "Haddad", "Nakamura", "Vargas", "Weber", "Ali", "Petrov", "Silva", "Kaur", "Moreau", "Ito", "Berg", "Romano", "Singh", "Duval", "Kowalski", "Mensah", "Fischer", "Alvarez", "Tanaka", "Lopez"];
 const rndName = () => `${pick(FIRST)} ${pick(LAST)}`;
-const rndEmail = (name: string) => `${name.toLowerCase().replace(/[^a-z]+/g, ".")}.worksense@example.com`;
+// §56: realistic, unique work emails derived from the person's name. The old
+// slug produced synthetic artifacts like "emp..worksense@example.com" (digits
+// stripped, double dot) that looked broken in the member directory.
+const usedEmails = new Set<string>();
+const rndEmail = (name: string, domain = "worksense.demo"): string => {
+  const base = name.toLowerCase().replace(/[^a-z0-9]+/g, ".").replace(/^\.+|\.+$/g, "") || "employee";
+  let candidate = `${base}@${domain}`;
+  let n = 2;
+  while (usedEmails.has(candidate)) candidate = `${base}${n++}@${domain}`;
+  usedEmails.add(candidate);
+  return candidate;
+};
 
 const newAssertions = (dept: string, count: number): AssertionSeed[] => {
   const pool = DEPT_SKILLS[dept] ?? DEPT_SKILLS.Platform;
@@ -277,10 +288,11 @@ for (const dept of DEPARTMENTS) {
     managersByDept[dept] = P_MGR; // Jordan Reyes already there
     continue;
   }
+  const mName = rndName();
   const m: PersonSeed = {
     id: detUuid(`emp:${dept}:manager`),
-    name: rndName(),
-    email: rndEmail(`${dept}-lead`),
+    name: mName,
+    email: rndEmail(mName),
     role: "manager",
     department: dept,
     job_title: `${dept} Manager`,
@@ -316,10 +328,11 @@ for (let i = 0; i < 49; i++) {
   const attendance = { baseline: +(0.2 + rnd() * 0.4).toFixed(2), recent: +(0.2 + rnd() * 0.5).toFixed(2) };
   const total = ri(3, 12);
   const missed = Math.min(total, ri(0, total));
+  const eName = rndName();
   const e: PersonSeed = {
     id: detUuid(`emp:${i}`),
-    name: rndName(),
-    email: rndEmail(`emp-${i}`),
+    name: eName,
+    email: rndEmail(eName),
     role: "employee",
     department: dept,
     job_title: pick(["Engineer", "Analyst", "Specialist", "Coordinator", "Designer", "Associate"]),
@@ -360,7 +373,7 @@ for (let i = 0; i < 21; i++) {
   candidates.push({
     id: detUuid(`cand:${i}`),
     name: n,
-    email: rndEmail(`cand-${i}`),
+    email: rndEmail(n),
     role: "candidate",
     department: dept,
     job_title: "Candidate",
@@ -615,10 +628,11 @@ const org2 = {
   employees: [0, 1, 2].map((i) => {
     const dept = DEPARTMENTS[i];
     const names = ORG2_EMP_SKILLS[dept] ?? ["Go"];
+    const oName = rndName();
     return {
       id: detUuid(`org2:emp:${i}`),
-      name: rndName(),
-      email: rndEmail(`org2-emp-${i}`),
+      name: oName,
+      email: rndEmail(oName, "northstar.example"),
       role: "employee" as const,
       department: dept,
       job_title: "Engineer",

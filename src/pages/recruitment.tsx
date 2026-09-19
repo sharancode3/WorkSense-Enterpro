@@ -393,9 +393,11 @@ export default function Recruitment() {
                   </div>
                   <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-5">
                     {(["screening", "technical_interview", "final_round", "selected", "rejected"] as const).map((s) => (
-                      <div key={s} className="rounded-lg bg-muted p-2 text-center">
+                      <div key={s} className="min-w-0 rounded-lg bg-muted p-2 text-center">
                         <p className="text-lg font-extrabold text-foreground">{pipelineStats[s] ?? 0}</p>
-                        <p className={`text-[10px] font-bold uppercase tracking-wider ${s === "rejected" ? "text-destructive" : "text-muted-foreground"}`}>
+                        <p
+                          className={`text-[10px] font-bold uppercase leading-tight tracking-wide ${s === "rejected" ? "text-destructive" : "text-muted-foreground"}`}
+                        >
                           {STAGE_LABEL[s]}
                         </p>
                       </div>

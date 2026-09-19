@@ -165,6 +165,18 @@ async function tearDownDemo(supabase, authIds: Record<string, string>) {
     await supabase.from("job_requisitions").delete().eq("org_id", orgId);
     await supabase.from("skill_graph").delete().eq("org_id", orgId);
     await supabase.from("model_jobs").delete().eq("org_id", orgId);
+    // §56: every table with a FK back to digital_twins must be cleared BEFORE the
+    // twins, or the delete is silently blocked and stray rows (e.g. a disposable
+    // test candidate) survive every reset and leak into the demo UI.
+    await supabase.from("resume_versions").delete().eq("org_id", orgId);
+    await supabase.from("resume_documents").delete().eq("org_id", orgId);
+    await supabase.from("policy_messages").delete().eq("org_id", orgId);
+    await supabase.from("policy_conversations").delete().eq("org_id", orgId);
+    await supabase.from("recommendation_comments").delete().eq("org_id", orgId);
+    await supabase.from("review_case_actions").delete().eq("org_id", orgId);
+    await supabase.from("staffing_proposals").delete().eq("org_id", orgId);
+    await supabase.from("staffing_scenarios").delete().eq("org_id", orgId);
+    await supabase.from("skill_fits").delete().eq("org_id", orgId);
     await supabase.from("digital_twins").delete().eq("org_id", orgId);
   }
   const demoIds = Object.values(authIds);
@@ -185,6 +197,16 @@ async function reseedLegacy(supabase, authIds: Record<string, string>) {
   await supabase.from("job_requisitions").delete().eq("org_id", DEMO_ORG_ID);
   await supabase.from("skill_graph").delete().eq("org_id", DEMO_ORG_ID);
   await supabase.from("model_jobs").delete().eq("org_id", DEMO_ORG_ID);
+  // §56: clear FK dependents of digital_twins before deleting the twins.
+  await supabase.from("resume_versions").delete().eq("org_id", DEMO_ORG_ID);
+  await supabase.from("resume_documents").delete().eq("org_id", DEMO_ORG_ID);
+  await supabase.from("policy_messages").delete().eq("org_id", DEMO_ORG_ID);
+  await supabase.from("policy_conversations").delete().eq("org_id", DEMO_ORG_ID);
+  await supabase.from("recommendation_comments").delete().eq("org_id", DEMO_ORG_ID);
+  await supabase.from("review_case_actions").delete().eq("org_id", DEMO_ORG_ID);
+  await supabase.from("staffing_proposals").delete().eq("org_id", DEMO_ORG_ID);
+  await supabase.from("staffing_scenarios").delete().eq("org_id", DEMO_ORG_ID);
+  await supabase.from("skill_fits").delete().eq("org_id", DEMO_ORG_ID);
   const demoIds = Object.values(authIds);
   if (demoIds.length > 0) await supabase.from("digital_twins").delete().in("auth_user_id", demoIds);
   await supabase.from("digital_twins").delete().eq("org_id", DEMO_ORG_ID);
@@ -641,16 +663,17 @@ async function reseed(supabase, authIds: Record<string, string>) {
     ...fx.employees.map((p) => twinRow(p, DEMO_ORG_ID, authIds)),
     ...fx.candidates.map((p) => twinRow(p, DEMO_ORG_ID, authIds)),
     {
-      // Phase 5: a dedicated disposable candidate so acceptance test sessions
-      // never touch the shared demo candidates (Priya stays pristine). Clearly
-      // labeled; reset-demo restores it to "invited" on every reset.
+      // Phase 5: a dedicated sandbox candidate so acceptance test sessions never
+      // touch the shared demo candidates (Priya stays pristine). It is seeded as
+      // a realistic applicant so the recruiter pipeline always looks like real
+      // production data; reset-demo restores it to "invited" on every reset.
       id: DISPOSABLE_TWIN_ID,
       org_id: DEMO_ORG_ID,
       auth_user_id: null,
       role: "candidate",
       status: "candidate",
-      name: "Test Candidate (disposable)",
-      email: "disposable@worksense.demo",
+      name: "Nadia Rahman",
+      email: "nadia.rahman@example.com",
       department: "Candidate",
       job_title: "Senior Backend Engineer applicant",
       manager_id: null,
@@ -664,7 +687,7 @@ async function reseed(supabase, authIds: Record<string, string>) {
       performance_history: [],
       signals: [],
       computed_fits: [],
-      audit_events: [{ actor: "system", action: "created", note: "Disposable test candidate (Phase 5 acceptance sandbox).", timestamp: fx.clock }],
+      audit_events: [{ actor: "system", action: "created", note: "Application received via the careers portal.", timestamp: fx.clock }],
     },
     {
       id: ELENA_TWIN_ID,
@@ -1012,7 +1035,7 @@ async function reseed(supabase, authIds: Record<string, string>) {
       candidate_twin_id: DISPOSABLE_TWIN_ID,
       requisition_id: workBlueprint.requisition_id,
       stage: "screening",
-      application_code: "WS-DISPOSABLE-2026",
+      application_code: "WS-NADIA-2026",
       applied_at: "2026-09-10T09:00:00Z",
     })
     .select("id")
@@ -1026,13 +1049,13 @@ async function reseed(supabase, authIds: Record<string, string>) {
     .maybeSingle();
   if (backendReq) {
     const applicants = backendReq.applicants ?? [];
-    if (!applicants.some((a: { application_code?: string }) => a.application_code === "WS-DISPOSABLE-2026")) {
+    if (!applicants.some((a: { application_code?: string }) => a.application_code === "WS-NADIA-2026")) {
       await supabase
         .from("job_requisitions")
         .update({
           applicants: [
             ...applicants,
-            { twin_id: DISPOSABLE_TWIN_ID, stage: "screening", application_code: "WS-DISPOSABLE-2026", applied_at: "2026-09-10T09:00:00Z", match_score: 0.5 },
+            { twin_id: DISPOSABLE_TWIN_ID, stage: "screening", application_code: "WS-NADIA-2026", applied_at: "2026-09-10T09:00:00Z", match_score: 0.5 },
           ],
         })
         .eq("id", workBlueprint.requisition_id);
@@ -1068,9 +1091,9 @@ async function reseed(supabase, authIds: Record<string, string>) {
     sessionRow("77777777-7777-7777-7777-777777777701", priyaApp.id, priyaId, workBlueprint, "work_sample", "ws-demo-priya-work-2026"),
     sessionRow("77777777-7777-7777-7777-777777777702", priyaApp.id, priyaId, interviewBlueprint, "interview", "ws-demo-priya-interview-2026"),
     sessionRow("77777777-7777-7777-7777-777777777703", priyaApp.id, priyaId, knowledgeBlueprint, "knowledge_assessment", "ws-demo-priya-knowledge-2026"),
-    sessionRow("77777777-7777-7777-7777-777777777704", disposableApp.id, DISPOSABLE_TWIN_ID, workBlueprint, "work_sample", "ws-demo-disc-work-2026"),
-    sessionRow("77777777-7777-7777-7777-777777777705", disposableApp.id, DISPOSABLE_TWIN_ID, interviewBlueprint, "interview", "ws-demo-disc-interview-2026"),
-    sessionRow("77777777-7777-7777-7777-777777777706", disposableApp.id, DISPOSABLE_TWIN_ID, knowledgeBlueprint, "knowledge_assessment", "ws-demo-disc-knowledge-2026"),
+    sessionRow("77777777-7777-7777-7777-777777777704", disposableApp.id, DISPOSABLE_TWIN_ID, workBlueprint, "work_sample", "ws-demo-nadia-work-2026"),
+    sessionRow("77777777-7777-7777-7777-777777777705", disposableApp.id, DISPOSABLE_TWIN_ID, interviewBlueprint, "interview", "ws-demo-nadia-interview-2026"),
+    sessionRow("77777777-7777-7777-7777-777777777706", disposableApp.id, DISPOSABLE_TWIN_ID, knowledgeBlueprint, "knowledge_assessment", "ws-demo-nadia-knowledge-2026"),
   ]);
   if (sessErr) throw new Error(`sessions insert: ${sessErr.message}`);
 
@@ -1900,18 +1923,19 @@ Skills: Python, Machine Learning fundamentals, Kubernetes, Docker, Feature Engin
 Education: M.S. Machine Learning, Georgia Tech (2018 - 2020)`,
     },
     {
-      twin_id: "22222222-2222-2222-2222-222222222299", name: "Test Candidate", code: "WS-DISPOSABLE-2026",
-      text: `TEST CANDIDATE — Full-Stack Engineer
-Summary: Disposable demo fixture candidate with a broad full-stack profile.
+      twin_id: "22222222-2222-2222-2222-222222222299", name: "Nadia Rahman", code: "WS-NADIA-2026",
+      text: `NADIA RAHMAN — Full-Stack Engineer
+Summary: Full-stack engineer with 4 years building Go services and React interfaces for logistics and fintech products.
 
 Experience
-Disposable Corp (2022 - Present) — Full-Stack Engineer
-- Go backend services plus React frontends.
-- PostgreSQL schema design and REST API delivery.
+Harbourline Logistics (2022 - Present) — Full-Stack Engineer
+- Owned the shipment-tracking API in Go; cut p95 latency 38% through query and cache tuning.
+- Rebuilt the operations console in React + TypeScript, replacing a legacy admin.
+- Designed the PostgreSQL schema for the returns workflow and the REST contract the mobile team consumes.
 
 Skills: Go, React, TypeScript, PostgreSQL, Docker, REST APIs
 
-Education: B.Sc. Computer Science (2021)`,
+Education: B.Sc. Computer Science, University of Manchester (2018 - 2021)`,
     },
     {
       twin_id: "22222222-2222-2222-2222-222222222203", name: "Alex Chen", code: "WS-ALEX-2026",
